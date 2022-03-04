@@ -24,6 +24,7 @@ from __future__ import print_function
 
 
 import numpy
+import pandas as pd
 import os
 import sys
 import shutil
@@ -52,8 +53,8 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     datefmt=_pp_conf.log_datefmt)
 
 
-def register(filenames, telescope, sex_snr, source_minarea, aprad,
-             mancat, obsparam, source_tolerance, nodeblending,
+def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, aprad,
+             mancat, obsparam, source_tolerance, nodeblending, max_rad=10.0,
              display=False, diagnostics=False):
     """
     registration wrapper
@@ -98,6 +99,7 @@ def register(filenames, telescope, sex_snr, source_minarea, aprad,
 
         extractparameters = {'sex_snr': sex_snr,
                              'source_minarea': source_minarea,
+                             'source_maxarea': source_maxarea,
                              'aprad': aprad, 'telescope': telescope,
                              'ignore_saturation': True,
                              'global_background': False,
@@ -125,6 +127,7 @@ def register(filenames, telescope, sex_snr, source_minarea, aprad,
                               object_keyword=obsparam['object'],
                               exptime_keyword=obsparam['exptime'],
                               maxflag=0)
+                #print(cat)
                 ldac_catalogs.append(cat)
 
         if len(ldac_files) == 0:
@@ -148,7 +151,7 @@ def register(filenames, telescope, sex_snr, source_minarea, aprad,
                       'radius ({:.2f} deg) derived').format(
                           ra, dec, rad))
 
-        if rad > 5:  # check if combined field radius >5 deg
+        if rad > max_rad:  # check if combined field radius >max permitted degress
             logging.warning(('combined field radius is huge ({:.1f} deg);'
                              'check if one or more frames can be rejected '
                              'as outliers.').format(rad))
@@ -167,21 +170,21 @@ def register(filenames, telescope, sex_snr, source_minarea, aprad,
             logging.warning(('reject files [{:s}] for registration '
                              'due to large offset from other '
                              'frames [{:s}]').format(
-                ",".join(np.array(filenames)[dist > 5]),
-                ",".join([str(d) for d in dist[dist > 5]])))
+                ",".join(np.array(filenames)[dist > max_rad]),
+                ",".join([str(d) for d in dist[dist > max_rad]])))
             if display:
                 print(('reject files [{:s}] for registration '
                        'due to large offset from other '
                        'frames [{:s}] deg').format(
-                    ",".join(np.array(filenames)[dist > 5]),
-                    ",".join([str(d) for d in dist[dist > 5]])))
+                    ",".join(np.array(filenames)[dist > max_rad]),
+                    ",".join([str(d) for d in dist[dist > max_rad]])))
 
-            badfits += list(np.array(filenames)[dist > 5])
+            badfits += list(np.array(filenames)[dist > max_rad])
 
             # reject files for which dist>threshold
-            filenames = np.array(filenames)[dist < 5]
-            ldac_files = np.array(ldac_files)[dist < 5]
-            ldac_catalogs = np.array(ldac_catalogs)[dist < 5]
+            filenames = np.array(filenames)[dist < max_rad]
+            ldac_files = np.array(ldac_files)[dist < max_rad]
+            ldac_catalogs = np.array(ldac_catalogs)[dist < max_rad]
 
             ra, dec, rad = toolbox.skycenter(ldac_catalogs)
             logging.info(('FoV center ({:.7f}/{:+.7f}) and '
@@ -247,6 +250,9 @@ def register(filenames, telescope, sex_snr, source_minarea, aprad,
         # the contrast values provided by SCAMP
         scamp = _pp_conf.read_scamp_output()
         os.rename('scamp_output.xml', 'astrometry_scamp.xml')
+        # write scamp data to csv file
+        pd_scamp = pd.DataFrame(data=scamp[1], columns=scamp[0])
+        pd_scamp.to_csv('astrometry_data.csv')
         fitresults = []  # store scamp outputs
         for dat in scamp[1]:
             # successful fit

@@ -170,6 +170,8 @@ n_registration_repetitions = 2
 min_sources_photometric_catalog = 3
 
 # SCAMP contrast criteria for a good fit
+# scamp_as_contrast_limit = 2.5
+# scamp_xy_contrast_limit = 2.5
 scamp_as_contrast_limit = 2.5
 scamp_xy_contrast_limit = 2.5
 

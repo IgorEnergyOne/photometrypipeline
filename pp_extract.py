@@ -112,6 +112,7 @@ def extract_singleframe(data):
     else:
         optionstring += ' -BACKPHOTO_TYPE LOCAL '
     optionstring += ' -DETECT_MINAREA %f ' % param['source_minarea']
+    optionstring += ' -DETECT_MAXAREA %f ' % param['source_maxarea']
     optionstring += ' -DETECT_THRESH %f -ANALYSIS_THRESH %f ' % \
                     (param['sex_snr'], param['sex_snr'])
     optionstring += ' -CATALOG_NAME %s ' % ldacname
@@ -154,7 +155,7 @@ def extract_singleframe(data):
     sex.wait()
 
     # read in LDAC file
-    ldac_filename = filename[:filename.find('.fit')]+'.ldac'
+    ldac_filename = filename[:filename.find('.fit')] + '.ldac'
     ldac_data = catalog(ldac_filename)
 
     if not os.path.exists(ldac_filename):
@@ -222,6 +223,7 @@ def extract_multiframe(filenames, parameters):
     output: result properties
     """
 
+    #print(parameters)
     logging.info('extract sources from %d files using Source Extractor' %
                  len(filenames))
     logging.info('extraction parameters: %s' % repr(parameters))
@@ -337,6 +339,7 @@ if __name__ == '__main__':
 
     # prepare parameter dictionary
     parameters = {'sex_snr': sex_snr, 'source_minarea': source_minarea,
+                  'source_maxarea': source_maxarea,
                   'aprad': aprad, 'telescope': telescope,
                   'ignore_saturation': ignore_saturation,
                   'nodeblending': nodeblending, 'quiet': quiet}

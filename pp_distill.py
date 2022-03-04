@@ -400,14 +400,18 @@ def serendipitous_asteroids(catalogs, display=True):
 
     # derive observation midtime of sequence
     midtime = np.average([cat.obstime[0] for cat in catalogs])
-
+    # check if RA is non-nevative (modified)
+    ra_deg = 360 + ra_deg if ra_deg < 0 else ra_deg
+    print("Requested values for IMCCE’s SkyBoT:\n\
+    RA = {} [deg], DEC = {} [deg], RAD = {} [deg]".format(ra_deg,
+                                                         dec_deg,
+                                                         rad_deg))
     r = requests.get(server,
                      params={'RA': ra_deg, 'DEC': dec_deg,
                              'SR': rad_deg, 'EPOCH': str(midtime),
                              '-output': 'object',
                              '-mime': 'text'},
                      timeout=180)
-
     if 'No solar system object was found in the requested FOV' in r.text:
         print('No Solar System object found')
         logging.warning('SkyBot failed: ' + r.text)
@@ -485,7 +489,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
     objects = []  # one dictionary for each target
 
     if display:
-        print('#------ Identify Targets')
+        print('#------ Identify Targets (pp_distill.distill)')
 
     # check for positions file
     if posfile is not None:
@@ -640,12 +644,16 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
 
         outf = open('photometry_%s.dat' %
                     target.translate(_pp_conf.target2filename), 'w')
+
+        # write reduced results to ASCII file
+        outf_reduced = open('photometry_%s_reduced.dat' %
+                            target.translate(_pp_conf.target2filename), 'w')
         outf.write('#                           filename     julian_date      ' +
                    'mag    sig     source_ra    source_dec   [1]   [2]   ' +
                    '[3]   [4]    [5]       ZP ZP_sig inst_mag ' +
                    'in_sig               [6] [7] [8]    [9]          [10] ' +
                    'FWHM"\n')
-
+        outf_reduced.write("#julian_date      mag    sig\n")
         for dat in data:
             # sort measured magnitudes by target
             if dat[0] == target:
@@ -707,6 +715,11 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                            ('%4.2f\n' % (dat[15]*3600)))
                 output['targetframes'][target].append(dat[10][:-4]+'fits')
 
+                # data reduced file
+                outf_reduced.write(('%15.7f ' % dat[9][0]) +
+                                   ('%8.4f ' % dat[7]) +
+                                   ('%6.4f ' % dat[8]))
+
         outf.writelines('#\n# [1]: predicted_RA - source_RA [arcsec]\n' +
                         '# [2]: predicted_Dec - source_Dec [arcsec]\n' +
                         '# [3,4]: manual target offsets in RA and DEC ' +
@@ -718,6 +731,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                         '# [9]: telescope/instrument\n' +
                         '# [10]: photometry method\n')
         outf.close()
+        outf_reduced.close()
 
     # output content
     #
@@ -729,6 +743,8 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
     #                               img_y, origin, flags, fwhm],
     # }
     ###
+
+    # write reduced output file
 
     # create diagnostics
     if diagnostics:

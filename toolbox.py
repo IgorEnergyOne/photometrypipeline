@@ -192,7 +192,6 @@ def get_binning(header, obsparam):
     else:
         binning_x = header[obsparam['binning'][0]]
         binning_y = header[obsparam['binning'][1]]
-
     return (binning_x, binning_y)
 
 
@@ -203,22 +202,33 @@ def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg'):
 
     # using percentiles instead of min/max to get better handle
     # on outliers
-    min_ra = min([np.percentile(cat[ra_key], 1)
+    percent = 5 # oultiers percentile value
+    min_ra = min([np.percentile(cat[ra_key], percent)
                   for cat in catalogs])
-    max_ra = max([np.percentile(cat[ra_key], 99)
+    max_ra = max([np.percentile(cat[ra_key], 100-percent)
                   for cat in catalogs])
-    min_dec = min([np.percentile(cat[dec_key], 1)
+    min_dec = min([np.percentile(cat[dec_key], percent)
                    for cat in catalogs])
-    max_dec = max([np.percentile(cat[dec_key], 99)
+    max_dec = max([np.percentile(cat[dec_key], 100-percent)
                    for cat in catalogs])
 
+    #[print(cat) for cat in catalogs[0]]
     ra, dec = (np.rad2deg(np.angle(np.exp(1j*np.deg2rad(min_ra)) +
                                    np.exp(1j*np.deg2rad(max_ra)))),
                np.rad2deg(np.angle(np.exp(1j*np.deg2rad(min_dec)) +
                                    np.exp(1j*np.deg2rad(max_dec)))))
-
+    print('')
+    print('#####################################################')
+    print('Oultliers percentile value: {} %'.format(percent))
+    print("Derive center position and radius from catalogs(toolbox.skycenter):")
+    print('min_ra = {}, max_ra = {}\nmin_dec = {}, max_dec = {}'.format(
+    min_ra, max_ra, min_dec, max_dec))
     lower_left = SkyCoord(ra=min_ra, dec=min_dec, frame='icrs', unit='deg')
     upper_right = SkyCoord(ra=max_ra, dec=max_dec, frame='icrs', unit='deg')
+    print('Derived lower left and upper right coordinates:')
+    print(lower_left, upper_right)
+    print('#####################################################')
+    print('')
 
     rad = lower_left.separation(upper_right).deg/2
 

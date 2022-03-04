@@ -151,7 +151,7 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                             format(n_raw-n_rejected))
             cat.catalogname += '_solar'
 
-        print(catalogname, filtername)
+        #print(catalogname, filtername)
 
         # transform catalog to requested filtername, if necessesary
         if (n_sources > 0 and
@@ -229,6 +229,8 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
     output = {'filtername': filtername, 'minstars': minstars_external,
               'zeropoints': [], 'clipping_steps': []}
 
+
+    print('\n----- starting pp_calibrate.derive_zeropoints:\n')
     # match catalogs based on coordinates
     for cat in catalogs:
 
@@ -336,8 +338,8 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
             minstars = int(minstars_external)
 
         # max 100 minstars
-        if minstars > 100:
-            minstars = 100
+        if minstars > 300:
+            minstars = 300
 
         # perform clipping to reject one outlier at a time
         zeropoint = 25  # initialize zeropoint
@@ -502,6 +504,8 @@ def calibrate(filenames, minstars, manfilter, manualcatalog,
     for filename in filenames:
         hdulist = fits.open(filename, ignore_missing_end=True)
         try:
+            #input_filter = hdulist[0].header[obsparam['filter']]
+            #filtername = obsparam['filter_translations'][input_filter]
             filtername = hdulist[0].header[obsparam['filter']]
         except KeyError:
             print('Cannot read filter name from file %s' % filename)

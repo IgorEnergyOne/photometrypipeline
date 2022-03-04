@@ -1,0 +1,29 @@
+HISTORY   Astrometric solution by SCAMP version 2.0.4 (2014-07-09)
+COMMENT   (c) 2010-2013 IAP/CNRS/UPMC
+COMMENT   
+EQUINOX =        2000.00000000 / Mean equinox                                  
+RADESYS = 'ICRS    '           / Astrometric system                            
+CTYPE1  = 'RA---TAN'           / WCS projection type for this axis             
+CTYPE2  = 'DEC--TAN'           / WCS projection type for this axis             
+CUNIT1  = 'deg     '           / Axis unit                                     
+CUNIT2  = 'deg     '           / Axis unit                                     
+CRVAL1  =   1.796528749628E+02 / World coordinate on this axis                 
+CRVAL2  =   5.692985791416E-01 / World coordinate on this axis                 
+CRPIX1  =   6.558853853981E+04 / Reference pixel on this axis                  
+CRPIX2  =   1.796270201021E+05 / Reference pixel on this axis                  
+CD1_1   =  -6.022447014867E+23 / Linear projection matrix                      
+CD1_2   =   4.475596802240E+23 / Linear projection matrix                      
+CD2_1   =  -1.198413805648E+24 / Linear projection matrix                      
+CD2_2   =   8.903929901789E+23 / Linear projection matrix                      
+FGROUPNO=                    1 / SCAMP field group label                       
+ASTIRMS1=   0.000000000000E+00 / Astrom. dispersion RMS (intern., high S/N)    
+ASTIRMS2=   0.000000000000E+00 / Astrom. dispersion RMS (intern., high S/N)    
+ASTRRMS1=   0.000000000000E+00 / Astrom. dispersion RMS (ref., high S/N)       
+ASTRRMS2=   0.000000000000E+00 / Astrom. dispersion RMS (ref., high S/N)       
+ASTINST =                    1 / SCAMP astrometric instrument label            
+FLXSCALE=   0.000000000000E+00 / SCAMP relative flux scale                     
+MAGZEROP=           0.00000000 / SCAMP zero-point                              
+PHOTIRMS=           0.00000000 / mag dispersion RMS (internal, high S/N)       
+PHOTINST=                    1 / SCAMP photometric instrument label            
+PHOTLINK=                    F / True if linked to a photometric field         
+END     

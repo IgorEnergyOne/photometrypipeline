@@ -71,11 +71,13 @@ def curve_of_growth_analysis(filenames, parameters,
         os.abort()
 
     logging.info('run pp_extract using %d apertures' % len(aprads))
-    print('* extract sources from %d images using %d apertures' %
+    print('* extract sources from %d images using %d apertures\n\
+    (pp_photometry.curve_of_growth_analysis)' %
           (len(filenames), len(aprads)))
 
     extractparameters = {'sex_snr': parameters['sex_snr'],
                          'source_minarea': parameters['source_minarea'],
+                         'source_maxarea': parameters['source_maxarea'],
                          'paramfile': _pp_conf.rootpath
                          + '/setup/twentyapertures.sexparam',
                          'aprad': aprads, 'telescope': parameters['telescope'],
@@ -339,7 +341,7 @@ def curve_of_growth_analysis(filenames, parameters,
     return output
 
 
-def photometry(filenames, sex_snr, source_minarea, aprad,
+def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
                manobjectname, background_only, target_only,
                telescope, obsparam, nodeblending=False,
                display=False,
@@ -351,6 +353,7 @@ def photometry(filenames, sex_snr, source_minarea, aprad,
     # photometry parameters
     photpar = {'sex_snr': sex_snr,
                'source_minarea': source_minarea,
+               'source_maxarea': source_maxarea,
                'manobjectname': manobjectname,
                'background_only': background_only,
                'target_only': target_only,

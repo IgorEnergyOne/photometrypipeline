@@ -66,9 +66,11 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
 
     # change FITS file extensions to .fits
     for idx, filename in enumerate(filenames):
-        if filename.split('.')[-1] in ['fts', 'FTS', 'FITS', 'fit', 'FIT']:
-            os.rename(filename, '.'.join(filename.split('.')[:-1])+'.fits')
-            filenames[idx] = '.'.join(filename.split('.')[:-1])+'.fits'
+        if filename.split('.')[-1] in ['fts', 'FTS', 'FITS', 'fit', 'FIT', 'fits']:
+            # remove whitespaces in the name if any
+            corename = filename.replace(" ", "").split('.')[:-1]
+            os.rename(filename, '.'.join(corename)+'.fits')
+            filenames[idx] = '.'.join(corename)+'.fits'
             logging.info('change filename from "%s" to "%s"' %
                          (filename, filenames[idx]))
 

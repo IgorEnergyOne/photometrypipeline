@@ -26,6 +26,7 @@ import re
 import os
 import gc
 import sys
+import yaml
 try:
     import numpy as np
 except ImportError:
@@ -54,6 +55,7 @@ import pp_photometry
 import pp_calibrate
 import pp_distill
 from diagnostics import registration as diag
+from pprint import pprint
 
 # setup logging
 logging.basicConfig(filename=_pp_conf.log_filename,
@@ -68,7 +70,6 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     """
     wrapper to run the photometry pipeline
     """
-
     # increment pp process idx
     _pp_conf.pp_process_idx += 1
 
@@ -131,17 +132,41 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     logging.info(('check for same filter for %d ' +
                   'frames') % len(filenames))
     filters = []
-    for idx, filename in enumerate(filenames):
-        try:
-            hdulist = fits.open(filename, ignore_missing_end=True)
-        except IOError:
-            logging.error('cannot open file %s' % filename)
-            print('ERROR: cannot open file %s' % filename)
-            filenames.pop(idx)
-            continue
+    filenames_filter = []
 
-        header = hdulist[0].header
-        filters.append(header[obsparam['filter']])
+    # if to select specific filter from series with multiple filters
+    if man_filtername:
+        for idx, filename in enumerate(filenames):
+            try:
+                hdulist = fits.open(filename, ignore_missing_end=True)
+            except IOError:
+                logging.error('cannot open file %s' % filename)
+                print('ERROR: cannot open file %s' % filename)
+                filenames.pop(idx)
+                continue
+
+            header = hdulist[0].header
+            if man_filtername == header[obsparam['filter']]:
+                filters.append(header[obsparam['filter']])
+                filenames_filter.append(filename)
+            # else:
+            #     header[obsparam['filter']] = man_filtername
+            #     filters.append(header[obsparam['filter']])
+            #     filenames_filter.append(filename)
+
+    # default regime
+    else:
+        for idx, filename in enumerate(filenames):
+            try:
+                hdulist = fits.open(filename, ignore_missing_end=True)
+            except IOError:
+                logging.error('cannot open file %s' % filename)
+                print('ERROR: cannot open file %s' % filename)
+                filenames.pop(idx)
+                continue
+
+            header = hdulist[0].header
+            filters.append(header[obsparam['filter']])
 
     if len(filters) == 0:
         raise KeyError('cannot identify filter; please update' +
@@ -158,6 +183,8 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     if man_filtername is None:
         try:
             filtername = obsparam['filter_translations'][filters[0]]
+            print(filters[0])
+            print(filtername)
         except KeyError:
             print(('Cannot translate filter name (%s); please adjust ' +
                    'keyword "filter_translations" for %s in ' +
@@ -168,6 +195,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
             return None
     else:
         filtername = man_filtername
+        filenames = filenames_filter
     logging.info('%d %s frames identified' % (len(filenames), filtername))
 
     print('run photometry pipeline on %d %s %s frames' %
@@ -177,6 +205,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     if man_targetname is not None:
         change_header['OBJECT'] = man_targetname
 
+    print('\n-----preparing images (pp_prepare.prepare)')
     # prepare fits files for photometry pipeline
     preparation = pp_prepare.prepare(filenames, obsparam,
                                      change_header,
@@ -184,24 +213,33 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                                      keep_wcs=keep_wcs)
 
     # run wcs registration
-
     if not keep_wcs:
         # default sextractor/scamp parameters
-        snr, source_minarea = obsparam['source_snr'], obsparam['source_minarea']
-        aprad = obsparam['aprad_default']
-
+        if auto:
+            snr, source_minarea = obsparam['source_snr'], obsparam['source_minarea']
+            aprad = obsparam['aprad_default']
+            src_tol = obsparam['source_tolerance']
+            mancat = None
+            max_rad = 5.0
+            source_maxarea = 0
+        # parameters from config file
+        else:
+            snr, source_minarea, source_maxarea = reg_snr, reg_minarea, reg_maxarea
+            aprad = reg_aprad
+            src_tol = source_tolerance
+            mancat = reg_cat
+            max_rad = reg_max_rad
         registration_run_number = 0
         while True:
-
-            print('\n----- run image registration\n')
+            print('\n----- run image registration (pp_register.register)')
             registration = pp_register.register(filenames, telescope, snr,
-                                                source_minarea, aprad,
-                                                None, obsparam,
-                                                obsparam['source_tolerance'],
-                                                False,
+                                                source_minarea, source_maxarea, aprad,
+                                                mancat, obsparam,
+                                                src_tol,
+                                                nodeblending=False,
+                                                max_rad=max_rad,
                                                 display=True,
                                                 diagnostics=True)
-
             if len(registration['badfits']) == len(filenames):
                 summary_message = "<FONT COLOR=\"red\">registration failed</FONT>"
             elif len(registration['goodfits']) == len(filenames):
@@ -233,16 +271,22 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
         return None
 
     # run photometry (curve-of-growth analysis)
-    snr, source_minarea = 1.5, obsparam['source_minarea']
-    background_only = False
-    target_only = False
+    if auto:
+        snr, source_minarea = 1.5, obsparam['source_minarea']
+        source_maxarea = obsparam['source_maxarea']
+        background_only = False
+        target_only = False
+    else:
+        snr, source_minarea, source_maxarea = photo_snr, photo_minarea, photo_maxarea
+        background_only = photo_background
+        target_only = photo_target
     if fixed_aprad == 0:
         aprad = None  # force curve-of-growth analysis
     else:
         aprad = fixed_aprad  # skip curve_of_growth analysis
 
-    print('\n----- derive optimum photometry aperture\n')
-    phot = pp_photometry.photometry(filenames, snr, source_minarea, aprad,
+    print('\n----- derive optimum photometry aperture (pp_photometry.photometry)\n')
+    phot = pp_photometry.photometry(filenames, snr, source_minarea, source_maxarea, aprad,
                                     man_targetname, background_only,
                                     target_only,
                                     telescope, obsparam, display=True,
@@ -268,15 +312,23 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
         diag.insert_into_summary(summary_message)
 
     # run photometric calibration
-    minstars = _pp_conf.minstars
-    manualcatalog = None
+    if auto:
+        minstars = _pp_conf.minstars
+        manualcatalog = None
+        maxflag = 3
+    # taking pp_calibrate parameters from configfile
+    else:
+        minstars = cal_minstars
+        manualcatalog = cal_catalog
+        maxflag = cal_maxflag
 
-    print('\n----- run photometric calibration\n')
+    print('\n----- run photometric calibration (pp_calibrate.calibrate)\n')
 
     while True:
         calibration = pp_calibrate.calibrate(filenames, minstars,
                                              filtername,
                                              manualcatalog, obsparam,
+                                             maxflag=maxflag,
                                              solar=solar,
                                              display=True,
                                              diagnostics=True)
@@ -315,7 +367,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
         diag.insert_into_summary(summary_message)
 
     # distill photometry results
-    print('\n----- distill photometry results\n')
+    print('\n----- distill photometry results (pp_distill.distill)\n')
     distillate = pp_distill.distill(calibration['catalogs'],
                                     man_targetname, [0, 0],
                                     None, None,
@@ -342,11 +394,29 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
 
     gc.collect()  # collect garbage; just in case, you never know...
 
+def read_yml_config(path_config: str) -> dict:
+    """
+    reads YAML config into a dictionary
+    """
+    with open('{}'.format(path_config)) as file:
+        config = yaml.load(file, Loader=yaml.FullLoader)
+        print("\n----- Configfile parameters (pp_run.read_yml_config):")
+        for key, value in config.items():
+            print("{}:\n{}".format(key, str(value)))
+    return config
+
+
 
 if __name__ == '__main__':
-
+    import os
     # command line arguments
     parser = argparse.ArgumentParser(description='automated WCS registration')
+    parser.add_argument('-auto',
+                        help='use automatic (default) pipeline procedure instead\
+                         of the config file', action='store_true', default=False)
+    parser.add_argument('-config',
+                        help='use a custom configfile provided\
+                         instead of a default one', default=False)
     parser.add_argument('-prefix', help='data prefix',
                         default=None)
     parser.add_argument('-target', help='primary targetname override',
@@ -366,7 +436,7 @@ if __name__ == '__main__':
                         help=('rerun registration step if not '
                               'successful for all images'),
                         action="store_true", default=False)
-    parser.add_argument('-asteroids',
+    parser.add_argument('-asteroids',                           # NOT WORKING CORRECTLY
                         help='extract all known asteroids',
                         action="store_true", default=False)
     parser.add_argument('-reject',
@@ -378,19 +448,72 @@ if __name__ == '__main__':
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
 
+    core_path = os.environ.get('PHOTPIPEDIR')
     args = parser.parse_args()
-    prefix = args.prefix
-    man_targetname = args.target
-    man_filtername = args.filter
-    fixed_aprad = float(args.fixed_aprad)
-    source_tolerance = args.source_tolerance
-    solar = args.solar
-    rerun_registration = args.rerun_registration
-    asteroids = args.asteroids
-    rejectionfilter = args.reject
-    keep_wcs = args.keep_wcs
-    filenames = sorted(args.images)
-
+    auto = args.auto
+    config = args.config
+    # if auto - then reading console arguments
+    if auto:
+        prefix = args.prefix
+        man_targetname = args.target
+        man_filtername = args.filter
+        fixed_aprad = float(args.fixed_aprad)
+        source_tolerance = args.source_tolerance
+        solar = args.solar
+        rerun_registration = args.rerun_registration
+        asteroids = args.asteroids
+        rejectionfilter = args.reject
+        keep_wcs = args.keep_wcs
+        filenames = sorted(args.images)
+    # if path to config is provided - use it instead of default config
+    else:
+        if config:
+            configpath = args.config
+        else:
+            # path to the default configfile
+            configpath = core_path + '/user_scripts/pp_config.yml'
+            print('Using default config at {}'.format(configpath))
+        # ======user modification ================
+        # read configfile with pp_run arguments
+        # path to photometrypipeline directory
+        core_path = os.environ.get('PHOTPIPEDIR')
+        # print('using configfile parameters, file {}'.format(configpath))
+        config = read_yml_config(path_config=configpath)
+        # =========== pp_run arguments ==========================
+        prefix = config['pp_run'].get('prefix')
+        man_targetname = config['pp_run'].get('target')
+        man_filtername = config['pp_run'].get('filter')
+        fixed_aprad = config['pp_run'].get('fixed_aprad')
+        solar = config['pp_run'].get('solar')
+        rerun_registration = config['pp_run'].get('rerun_registration')
+        asteroids = config['pp_run'].get('asteroids')
+        rejectionfilter = config['pp_run'].get('reject')
+        keep_wcs = config['pp_run'].get('keep_wcs')
+        filenames = sorted(args.images)
+        # ========== pp_prepare arguments =======================
+        ra = config['pp_prepare'].get('ra')
+        dec = config['pp_prepare'].get('dec')
+        flipx = config['pp_prepare'].get('flipx')
+        flipy = config['pp_prepare'].get('flipy')
+        rotate = config['pp_prepare'].get('rotate')
+        # ========= pp_register arguments =====================
+        reg_max_rad = config['pp_register'].get('max_rad')
+        reg_snr = config['pp_register'].get('snr')
+        reg_minarea = config['pp_register'].get('minarea')
+        reg_maxarea = config['pp_register'].get('maxarea')
+        reg_aprad = config['pp_register'].get('aprad')
+        source_tolerance = config['pp_register'].get('src_tol')
+        reg_cat = config['pp_register'].get('reg_cat')
+        # ========= pp_photometry argumetns ====================
+        photo_snr = config['pp_photometry'].get('snr')
+        photo_minarea = config['pp_photometry'].get('minarea')
+        photo_maxarea = config['pp_photometry'].get('maxarea')
+        photo_background = config['pp_photometry'].get('background_only')
+        photo_target = config['pp_photometry'].get('target_only')
+        # ========= pp_calibrate ===============================
+        cal_minstars = config['pp_calibrate'].get('minstars')
+        cal_catalog = config['pp_calibrate'].get('catalog')
+        cal_maxflag = config['pp_calibrate'].get('maxflag')
     # if filenames = ['all'], walk through directories and run pipeline
     # each dataset
     _masterroot_directory = os.getcwd()
