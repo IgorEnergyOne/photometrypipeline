@@ -236,7 +236,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                                                 source_minarea, source_maxarea, aprad,
                                                 mancat, obsparam,
                                                 src_tol,
-                                                nodeblending=False,
+                                                nodeblending=True,
                                                 max_rad=max_rad,
                                                 display=True,
                                                 diagnostics=True)

@@ -223,7 +223,6 @@ def extract_multiframe(filenames, parameters):
     output: result properties
     """
 
-    #print(parameters)
     logging.info('extract sources from %d files using Source Extractor' %
                  len(filenames))
     logging.info('extraction parameters: %s' % repr(parameters))

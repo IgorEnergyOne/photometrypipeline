@@ -300,6 +300,8 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
             header['AIRMASS'] = (header[obsparam['airmass']], 'PP: copied')
         else:
             header['AIRMASS'] = (1, 'PP: fake airmass')
+        # if obsparam.get('source_maxarea') is None:
+        #     header['source_maxarea'] = 0
 
         # check if filter can be translated by PP
         try:

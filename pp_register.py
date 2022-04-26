@@ -256,6 +256,8 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
         fitresults = []  # store scamp outputs
         for dat in scamp[1]:
             # successful fit
+            print(float(dat[scamp[0]['AS_Contrast']]),
+                  float(dat[scamp[0]['XY_Contrast']]))
             if ((float(dat[scamp[0]['AS_Contrast']]) <
                  _pp_conf.scamp_as_contrast_limit)
                 or (float(dat[scamp[0]['XY_Contrast']]) <
@@ -474,8 +476,12 @@ if __name__ == '__main__':
     if source_tolerance is None:
         source_tolerance = obsparam['source_tolerance']
 
+    if nodeblending is None:
+        nodeblending = True
+
     # run registration wrapper
     registration = register(filenames, telescope, snr,
                             source_minarea, aprad, mancat, obsparam,
-                            source_tolerance, nodeblending,
+                            source_tolerance=source_tolerance,
+                            nodeblending=nodeblending,
                             display=True, diagnostics=True)

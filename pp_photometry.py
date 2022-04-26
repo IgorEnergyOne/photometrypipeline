@@ -189,6 +189,7 @@ def curve_of_growth_analysis(filenames, parameters,
             # n_src = data.shape[0] # use all sources
             n_src = 50  # use only 50 sources
             for idx, src in enumerate(data.data[:n_src]):
+                print(src)
                 if (numpy.any(numpy.isnan(src['FLUX_'+_pp_conf.photmode])) or
                     numpy.any(numpy.isnan(src['FLUXERR_'+_pp_conf.photmode]))
                         or src['FLAGS'] > 3):

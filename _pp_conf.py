@@ -122,7 +122,7 @@ use_diagnostics_summary = False
 
 # logging setup
 log_formatline = '%(filename)s: %(message)s [%(asctime)s]'
-log_level = logging.DEBUG
+log_level = logging.INFO
 log_datefmt = '%m/%d/%Y %H:%M:%S'
 log_filename = 'LOG'
 
@@ -172,8 +172,8 @@ min_sources_photometric_catalog = 3
 # SCAMP contrast criteria for a good fit
 # scamp_as_contrast_limit = 2.5
 # scamp_xy_contrast_limit = 2.5
-scamp_as_contrast_limit = 2.5
-scamp_xy_contrast_limit = 2.5
+scamp_as_contrast_limit = 0.5 # edited
+scamp_xy_contrast_limit = 0.5 # edited
 
 # positional uncertainty (arcsec) for target identification and
 # cross-matching used in pp_photometry
