@@ -9,8 +9,8 @@ are available online; photometry is measured using Source Extractor
 aperture photometry. PP has been designed for asteroid observations,
 but can be used with any kind of imaging data.
 
-
-Please note that this project is still under development. 
+PP is fully functional, but development has stalled; tailored support
+can only be provided in exceptional cases. 
 
 See `this document`_ for a list of supported instruments and catalogs.
 
@@ -52,12 +52,6 @@ Documentation
 See the documentation for more information: `documentation`_
 
 
-User Group
-----------
-
-If you want to stay up-to-date on PP changes, feel free to sign up for the `photometrypipeline users' group`_.
-
-
 
 Acknowledgments
 ---------------
@@ -76,9 +70,7 @@ License and Contact
 
 The Photometry Pipeline is distributed under the GNU GPLv3 license.
 
-Copyright (C) 2016  Michael Mommert 
-
-Feel free to contact me in case of questions or suggestions: mommermiscience (at) gmail . com
+Copyright (C) 2016-2022  Michael Mommert 
 
 
 .. _github: http://github.com/mommermi/photometrypipeline

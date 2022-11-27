@@ -42,10 +42,11 @@ The following features are currently available as part of PP:
 * support of Gaia (DR1) astrometry for image registration
 * Python 2 and 3 compatibility (thanks to `boada`_)
   
-Future versions of the pipeline will support newly available catalogs
-for astrometry and photometry (e.g., GAIA DR2). If you are interesting
-in using PP for a specific task, let me know!
+Status
+------
 
+The development of PP has stalled; please be aware that tailored support
+can only be provided in exceptional cases. 
 
 Contents
 --------
@@ -66,11 +67,7 @@ License and Contact
 
 The Photometry Pipeline is distributed under the GNU GPLv3 license.
 
-Copyright (C) 2016  Michael Mommert 
-
-Feel free to contact me in case of questions or suggestions: michael
-. mommert (at) nau . edu
-
+Copyright (C) 2016-2022  Michael Mommert 
 
 
 Acknowledgments

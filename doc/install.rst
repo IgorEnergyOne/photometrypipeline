@@ -270,9 +270,6 @@ follow these steps:
    :func:`pp_prepare` is correct. If not, play with the `flipx`,
    `flipy` parameters in your `telescope file`.
 
-If this sounds too confusing, send me one of your images in an email
-and I will take care of implementing your telescope.
-
 
 .. _github: https://github.com/mommermi/photometrypipeline
 .. _git: http://www.git-scm.com/

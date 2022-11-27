@@ -138,9 +138,7 @@ It is recommended to stitch images from cameras with multiple amplifiers
 together using the correct orientations. Furthermore, it is recommended to
 flatten FITS files with multiple headers by simply combining the individual
 headers under a single extension.
- 
-If you would like to use the pipeline for other observatories, please
-contact me.
+
 
 .. _supported_catalogs:
 
@@ -188,10 +186,6 @@ column identifies if this catalog is supported by SCAMP in order to
 use it for image registration. All filter bands marked with an
 asterisk (*) are obtained through transformations from other bands;
 the respective photometric system is shown in brackets.
-
-
-If you are interested in using catalogs other than those listed,
-please let me know.
 
 
 

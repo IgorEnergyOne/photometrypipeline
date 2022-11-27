@@ -209,7 +209,8 @@ class Prepare_Diagnostics(Diagnostics_Html):
                      "<TD>{:.1f} x {:.1f}</TD>\n"
                      "</TR>\n").format(
                          idx+1, framename,
-                         Time(header["MIDTIMJD"], format='jd').iso,
+                         Time(header["MIDTIMJD"], format='jd').to_value(
+                             'iso', subfmt='date_hm'),
                          str(objectname),
                          float(header[obsparam['airmass']]),
                          float(header[obsparam['exptime']]),
@@ -308,7 +309,8 @@ class Prepare_Diagnostics(Diagnostics_Html):
                         str(header[obsparam['ra']]),
                         str(header[obsparam['dec']]),
                         str(header[obsparam['exptime']]),
-                        str(Time(header['MIDTIMJD'], format='jd').iso),
+                        str(Time(header['MIDTIMJD'], format='jd').to_value(
+                            'iso', subfmt='date_hm')),
                         filenames[(idx-1) % len(filenames)]+'.html',
                         filenames[(idx+1) % len(filenames)]+'.html')
 
@@ -673,8 +675,7 @@ class Photometry_Diagnostics(Diagnostics_Html):
 
         ax.set_title('Median PSF FWHM per Frame')
         ax.set_xlabel('Minutes after {:s} UT'.format(
-            Time(frame_midtimes.min(), format='jd',
-                 out_subfmt='date_hm').iso))
+            Time(frame_midtimes.min(), format='jd').to_value('iso', subfmt='date_hm')))
         ax.set_ylabel('Point Source FWHM (px)')
         ax.scatter((frame_midtimes-frame_midtimes.min())*1440,
                    fwhm, marker='o',
@@ -794,8 +795,7 @@ class Calibration_Diagnostics(Diagnostics_Html):
         ax.errorbar((times-times.min())*1440, zp, yerr=zperr, linestyle='',
                     color='blue', marker='s', capsize=3)
         ax.set_xlabel('Minutes after {:s} UT'.format(
-            Time(times.min(), format='jd',
-                 out_subfmt='date_hm').iso))
+            Time(times.min(), format='jd').to_value('iso', subfmt='date_hm')))
         ax.set_ylabel(
             '{:s}-Band Magnitude Zeropoints (mag)'.format(
                 data['filtername']))
@@ -1228,8 +1228,7 @@ class Distill_Diagnostics(Diagnostics_Html):
             fig, ax = plt.subplots()
             ax.set_title(target.replace('_', ' '))
             ax.set_xlabel('Minutes after {:s} UT'.format(
-                Time(midtimes.min(), format='jd',
-                     out_subfmt='date_hm').iso))
+                Time(midtimes.min(), format='jd').to_value('iso', subfmt='date_hm')))
             ax.set_ylabel('Magnitude')
             ax.errorbar((midtimes-midtimes.min())*1440,
                         [dat[7] for dat in data[target]],
@@ -1237,7 +1236,8 @@ class Distill_Diagnostics(Diagnostics_Html):
                         linestyle='', color='red',
                         marker='o', capsize=3)
             ax.set_ylim([ax.get_ylim()[1], ax.get_ylim()[0]])
-            ax.set_xticklabels = [Time(t, format='jd').iso
+            ax.set_xticklabels = [Time(t, format='jd').to_value('iso',
+                                                                subfmt='date_hm')
                                   for t in plt.xticks()[0]]
             ax.grid()
 
