@@ -111,12 +111,13 @@ def fractionalyear_to_jd(date):
 
 # ASTROMATIC tools
 
-def read_scamp_output():
+def read_scamp_output(xml_filename='scamp_output.xml'):
     """ routine to read in the 'scamp.xml' file """
-    raw = open('scamp_output.xml', 'r').readlines()
-    headers, hdr_idx, data = {}, 0, []
+    raw = open(xml_filename, 'r').readlines()
+    headers, hdr_idx, data, data_idx = {}, 0, [], 0
     read_this, idx = False, 0
     while idx < len(raw):
+        # print(f"idx={idx}, {read_this}: {raw[idx].rstrip()}XXX hdr_idx={hdr_idx} ({len(headers)}), data_idx={data_idx}")
         # read header
         if read_this and raw[idx].find('<FIELD name=') > -1:
             headers[raw[idx][raw[idx].find('<FIELD name')+13:
@@ -217,6 +218,7 @@ def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg'):
                                    np.exp(1j*np.deg2rad(max_ra)))),
                np.rad2deg(np.angle(np.exp(1j*np.deg2rad(min_dec)) +
                                    np.exp(1j*np.deg2rad(max_dec)))))
+    if ra < 0: ra += 360.0
     print('')
     print('#####################################################')
     print('Oultliers percentile value: {} %'.format(percent))
@@ -225,8 +227,7 @@ def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg'):
     min_ra, max_ra, min_dec, max_dec))
     lower_left = SkyCoord(ra=min_ra, dec=min_dec, frame='icrs', unit='deg')
     upper_right = SkyCoord(ra=max_ra, dec=max_dec, frame='icrs', unit='deg')
-    print('Derived lower left and upper right coordinates:')
-    print(lower_left, upper_right)
+    print(f'Derived lower left and upper right coordinates:\n{lower_left}, {upper_right}')
     print('#####################################################')
     print('')
 
