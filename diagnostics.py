@@ -980,7 +980,7 @@ class Calibration_Diagnostics(Diagnostics_Html):
                 world_coo = [[dat['match'][0][3][idx],
                               dat['match'][0][4][idx]]
                              for idx in dat['zp_usedstars']]
-                img_coo = w.wcs_world2pix(world_coo, True)
+                img_coo = w.all_world2pix(world_coo, True)
                 plt.scatter([c[0]*resize_factor for c in img_coo],
                             [c[1]*resize_factor for c in img_coo],
                             s=10, marker='o', edgecolors='red',

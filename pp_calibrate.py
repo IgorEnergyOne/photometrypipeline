@@ -58,6 +58,7 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                              preferred_catalogs,
                              min_sources=_pp_conf.min_sources_photometric_catalog,
                              max_sources=1e4, mag_accuracy=0.1,
+                             max_mag=21,
                              solar=False, use_all_stars=False,
                              display=False):
     """create a photometric catalog of the field of view"""
@@ -69,7 +70,8 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
         n_sources = cat.download_catalog(ra_deg, dec_deg, rad_deg,
                                          max_sources,
                                          use_all_stars=use_all_stars,
-                                         save_catalog=True)
+                                         save_catalog=True,
+                                         max_mag=max_mag)
 
         if display:
             print(n_sources, 'sources downloaded from', catalogname)

@@ -255,7 +255,7 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
         pd_scamp.to_csv('astrometry_data.csv')
         fitresults = []  # store scamp outputs
         for dat in scamp[1]:
-            # successful fit
+            # failed fit
             print(float(dat[scamp[0]['AS_Contrast']]),
                   float(dat[scamp[0]['XY_Contrast']]))
             if ((float(dat[scamp[0]['AS_Contrast']]) <
@@ -269,7 +269,7 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
                        > -1:
                         filename = file
                 badfits.append(filename)
-            # failed fit
+            # successful fit
             else:
                 filename = dat[scamp[0]['Catalog_Name']]
                 for file in os.listdir('.'):
@@ -355,13 +355,19 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
             key = line[:8].strip()
             try:
                 value = float(line[10:30].replace('\'', ' ').strip())
+                is_float = True
             except ValueError:
                 value = line[10:30].replace('\'', ' ').strip()
+                is_float = False
             comment = line[30:].strip()
             if key.find('END') > -1:
                 break
             # print key, '|',  value, '|',  comment
-            hdu[0].header[key] = (str(value), comment)
+            #hdu[0].header[key] = (str(value), comment)
+            if is_float:
+                hdu[0].header[key] = (value, comment)
+            else:
+                hdu[0].header[key] = (str(value), comment)
 
         # other header keywords
         hdu[0].header['RADECSYS'] = (hdu[0].header['RADESYS'],
@@ -386,7 +392,7 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
     outf.writelines('# filename AS_contrast XY_contrast '
                     + 'Chi2_catalog Chi2_int Pos_uncertainty(arcsec)\n')
     for idx, data in enumerate(fitresults):
-        outf.writelines('%25.25s %5.2f %5.2f %10.7f %10.7f %7.4f\n' %
+        outf.writelines('%42.42s %5.2f %5.2f %10.7f %10.7f %7.4f\n' %
                         (data[0], data[1], data[2], data[5], data[6],
                          numpy.sqrt(data[3]**2+data[4]**2)))
     outf.close()
