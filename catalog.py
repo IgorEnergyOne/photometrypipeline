@@ -365,6 +365,9 @@ class catalog(object):
             self.data.rename_column('Epoch', 'epoch_yr')
             self.data['mag'] = self.data['Gmag']  # required for scamp
 
+            self.data.add_column(Column(np.ones(len(self.data)) * 2457206.375,
+                                        name='epoch_jd', unit=u.day))
+
             # TBD:
             # - implement proper error ellipse handling
             # - implement propor motion handling for DR2
@@ -789,7 +792,10 @@ class catalog(object):
             self.data.rename_column('XWIN_WORLD', 'ra_deg')
         if 'YWIN_WORLD' in self.fields:
             self.data.rename_column('YWIN_WORLD', 'dec_deg')
-
+        if 'ALPHA_J2000' in self.fields:
+            self.data.rename_column('ALPHA_J2000', 'ra_deg')
+        if 'DELTA_J2000' in self.fields:
+            self.data.rename_column('DELTA_J2000', 'dec_deg')
         # force positive RA values
         flip_idc = np.where(self.data['ra_deg'] < 0)[0]
         self.data['ra_deg'][flip_idc] += 360
