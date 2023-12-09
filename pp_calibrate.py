@@ -272,10 +272,10 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
         if 'idx' not in ref_cat.fields:
             ref_cat.add_field('idx',
                               list(range(ref_cat.shape[0])),
-                              field_type=np.int)
+                              field_type=int)
         if 'idx' not in cat.fields:
             cat.add_field('idx', list(range(cat.shape[0])),
-                          field_type=np.int)
+                          field_type=int)
 
         match = ref_cat.match_with(
             cat,
@@ -411,7 +411,7 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
             caldata_filename = cat.catalogname[:-5]+conf.save_caldata_suffix
             matched_ref_cat = ref_cat[match[0][5].data]
             # build `fit` column that indicates whether star is used in fit
-            used_in_fit = np.zeros(len(matched_ref_cat), dtype=np.int)
+            used_in_fit = np.zeros(len(matched_ref_cat), dtype=int)
             used_in_fit[clipping_steps[idx][3]] = 1
             matched_ref_cat.add_column(Column(used_in_fit, 'fit'))
             matched_ref_cat.remove_column('idx')
