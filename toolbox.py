@@ -203,7 +203,7 @@ def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg'):
 
     # using percentiles instead of min/max to get better handle
     # on outliers
-    percent = 5 # oultiers percentile value
+    percent = 5  # outliers percentile value
     min_ra = min([np.percentile(cat[ra_key], percent)
                   for cat in catalogs])
     max_ra = max([np.percentile(cat[ra_key], 100-percent)
@@ -218,7 +218,7 @@ def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg'):
                                    np.exp(1j*np.deg2rad(max_ra)))),
                np.rad2deg(np.angle(np.exp(1j*np.deg2rad(min_dec)) +
                                    np.exp(1j*np.deg2rad(max_dec)))))
-    if ra < 0: ra += 360.0
+    #if ra < 0: ra += 360.0
     print('')
     print('#####################################################')
     print('Oultliers percentile value: {} %'.format(percent))
@@ -231,7 +231,7 @@ def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg'):
     print('#####################################################')
     print('')
 
-    rad = lower_left.separation(upper_right).deg/2
+    rad = lower_left.separation(upper_right).deg / 2
 
     return ra, dec, rad
 
