@@ -4536,9 +4536,6 @@ telescope_parameters = {'VATT4K':       vatt4k_param,
                         'GTCOSIRIS': gtcosiris_param,
                         'CFHTMEGAPRIME': cfhtmegaprime_param,
                         'PWFLINPOI': pwflinpoi_param,
-                        'bucharest': bucharest_param,
-                        'cluj': cluj_param,
-                        'crowson': crowson_param,
                         'CFHTMEGAPRIME': cfhtmegaprime_param,
                         'PWFLINPOI': pwflinpoi_param}
 
