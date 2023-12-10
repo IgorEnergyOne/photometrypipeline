@@ -55,7 +55,6 @@ import pp_photometry
 import pp_calibrate
 import pp_distill
 from diagnostics import registration as diag
-from pprint import pprint
 
 # setup logging
 logging.basicConfig(filename=_pp_conf.log_filename,
@@ -183,8 +182,6 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     if man_filtername is None:
         try:
             filtername = obsparam['filter_translations'][filters[0]]
-            print(filters[0])
-            print(filtername)
         except KeyError:
             print(('Cannot translate filter name (%s); please adjust ' +
                    'keyword "filter_translations" for %s in ' +
@@ -232,10 +229,14 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
         registration_run_number = 0
         while True:
             print('\n----- run image registration (pp_register.register)')
-            registration = pp_register.register(filenames, telescope, snr,
-                                                source_minarea, source_maxarea, aprad,
-                                                mancat, obsparam,
-                                                src_tol,
+            registration = pp_register.register(filenames=filenames, telescope=telescope,
+                                                sex_snr=snr,
+                                                source_minarea=source_minarea,
+                                                source_maxarea=source_maxarea,
+                                                aprad=aprad,
+                                                mancat=mancat,
+                                                obsparam=obsparam,
+                                                source_tolerance=src_tol,
                                                 nodeblending=True,
                                                 max_rad=max_rad,
                                                 display=True,
@@ -272,7 +273,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
 
     # run photometry (curve-of-growth analysis)
     if auto:
-        snr, source_minarea = 1.5, obsparam['source_minarea']
+        snr, source_minarea = 1.5, obsparam.get('source_minarea', 0)
         source_maxarea = obsparam.get('source_maxarea', 0)
         background_only = False
         target_only = False
