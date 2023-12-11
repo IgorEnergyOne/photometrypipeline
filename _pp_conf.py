@@ -122,7 +122,7 @@ use_diagnostics_summary = False
 
 # logging setup
 log_formatline = '%(filename)s: %(message)s [%(asctime)s]'
-log_level = logging.INFO
+log_level = logging.DEBUG
 log_datefmt = '%m/%d/%Y %H:%M:%S'
 log_filename = 'LOG'
 

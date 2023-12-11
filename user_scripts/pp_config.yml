@@ -3,7 +3,7 @@
 pp_run:
   prefix: NULL              # the prefix of all science data images if pp_run is called using images = all
                             # (default: NULL)
-  target: NULL              # the target name to be used in all images, this overwrites the OBJECT keyword in the FITS headers
+  target: NULL           # the target name to be used in all images, this overwrites the OBJECT keyword in the FITS headers
                             # (default: NULL)
   filter: NULL              # manual filter name override for the photometric calibration step
                             # (default:NULL)
@@ -35,7 +35,7 @@ pp_prepare:
 pp_register:                # astrometric calibration of the input images using SCAMP
   max_rad: 5.0              # maximum permitted combined field radius (pixels)
                             # (default: 5.0)
-  snr: 3.0                  # minimum SNR of sources to be extracted for the registration
+  snr: 7.0                  # minimum SNR of sources to be extracted for the registration
                             # (default: 3.0)
   minarea: 12               # minimum number of connected pixels above the SNR threshold for a valid source, (pixels)
                             # (default: 12)
@@ -52,23 +52,23 @@ pp_register:                # astrometric calibration of the input images using 
                             # 'GAIA(DR2)', 'USNO-B1', 'TGAS', '2MASS', 'URAT-1', 'SDSS-R9', 'SDSS-R13'
 
 pp_photometry:              # curve-of-growth analysis of the input images and source extraction using a derived optimum aperture radius resulting in final instrumental magnitudes
-  snr: 3.0                  # minimum SNR of sources to be accounted for in the analysis
+  snr: 5.0                  # minimum SNR of sources to be accounted for in the analysis
                             # (default: 3.0)
   background_only: False    # only account for background sources in the curve-of-growth analysis
                             # (default: False)
-  target_only: False       # only account for the target in the curve-of-growth analysis
+  target_only: True        # only account for the target in the curve-of-growth analysis
                             # (default: False)
   minarea: 12               # minimum number of connected pixels above the SNR threshold for a valid source, default: 12
   maxarea: 24               # minimum number of connected pixels above the SNR threshold for a valid source, (pixels)
                             # (default: 24)
 
 pp_calibrate:
-  minstars: 0.5             #minimum number of reference stars used in the photometric calibration;
+  minstars: 0.9             #minimum number of reference stars used in the photometric calibration;
                             #if int, use at least this number of stars;
                             #if float use at least this fraction of the available reference stars;
                             #the default is 0.5 (i.e., use at least 50% of all available reference stars)
   catalog: 'GAIA'           #manual override for the reference catalog;  if this option is not used, the photometric reference catalogs list in the Telescope Setup are used
                             # '2MASS', 'URAT-1', 'SDSS-R9', 'APASS9', 'PANSTARRS', 'SkyMapper', 'GAIA(DR2)'
-  maxflag: 3                #sources to be still considered in the calibration process and written into the resulting photometry database;
+  maxflag: 2                #sources to be still considered in the calibration process and written into the resulting photometry database;
                             #flag values as tabulated in the Source Extractor manual; default value is 3, allowing for sources to have bright neighbors and to be blended with another source;
                             # value of 7 permits sources to be (partially) saturated

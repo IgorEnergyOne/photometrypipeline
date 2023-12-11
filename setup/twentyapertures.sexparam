@@ -1,5 +1,5 @@
-#NUMBER                 Running object number
-#EXT_NUMBER             FITS extension number
+#NUMBER                 Running object number                                     
+#EXT_NUMBER             FITS extension number                                     
 #FLUX_ISO               Isophotal flux                                             [count]
 #FLUXERR_ISO            RMS error for isophotal flux                               [count]
 #MAG_ISO                Isophotal magnitude                                        [mag]
@@ -8,14 +8,14 @@ FLUX_ISOCOR            Corrected isophotal flux                                 
 FLUXERR_ISOCOR         RMS error for corrected isophotal flux                     [count]
 MAG_ISOCOR             Corrected isophotal magnitude                              [mag]
 MAGERR_ISOCOR          RMS error for corrected isophotal magnitude                [mag]
-#FLUX_APER(20) #             Flux vector within fixed circular aperture(s)              [count]
-#FLUXERR_APER(20) #           RMS error vector for aperture flux(es)                     [count]
-#MAG_APER(20)   #            Fixed aperture magnitude vector                            [mag]
-#MAGERR_APER(20) #            RMS error vector for fixed aperture mag.                   [mag]
-FLUX_AUTO(20)             # Flux within a Kron-like elliptical aperture                [count]
-FLUXERR_AUTO(20)          # RMS error for AUTO flux                                    [count]
-MAG_AUTO(20)              # Kron-like elliptical aperture magnitude                    [mag]
-MAGERR_AUTO(20)           # RMS error for AUTO magnitude                               [mag]
+FLUX_APER(20) #             Flux vector within fixed circular aperture(s)              [count]
+FLUXERR_APER(20) #           RMS error vector for aperture flux(es)                     [count]
+MAG_APER(20)   #            Fixed aperture magnitude vector                            [mag]
+MAGERR_APER(20) #            RMS error vector for fixed aperture mag.                   [mag]
+#FLUX_AUTO              Flux within a Kron-like elliptical aperture                [count]
+#FLUXERR_AUTO           RMS error for AUTO flux                                    [count]
+#MAG_AUTO               Kron-like elliptical aperture magnitude                    [mag]
+#MAGERR_AUTO            RMS error for AUTO magnitude                               [mag]
 #FLUX_PETRO             Flux within a Petrosian-like elliptical aperture           [count]
 #FLUXERR_PETRO          RMS error for PETROsian flux                               [count]
 #MAG_PETRO              Petrosian-like elliptical aperture magnitude               [mag]
@@ -32,10 +32,10 @@ MAGERR_AUTO(20)           # RMS error for AUTO magnitude                        
 #FLUXERR_SOMFIT         RMS error for SOMFIT flux                                  [count]
 #MAG_SOMFIT             Magnitude derived from SOM fit                             [mag]
 #MAGERR_SOMFIT          Magnitude error derived from SOM fit                       [mag]
-#ERROR_SOMFIT           Reduced Chi-square error of the SOM fit
-#VECTOR_SOMFIT          Position vector of the winning SOM node
-#KRON_RADIUS            Kron apertures in units of A or B
-#PETRO_RADIUS           Petrosian apertures in units of A or B
+#ERROR_SOMFIT           Reduced Chi-square error of the SOM fit                   
+#VECTOR_SOMFIT          Position vector of the winning SOM node                   
+#KRON_RADIUS            Kron apertures in units of A or B                         
+#PETRO_RADIUS           Petrosian apertures in units of A or B                    
 #BACKGROUND             Background at centroid position                            [count]
 #THRESHOLD              Detection threshold above background                       [count]
 FLUX_MAX               Peak flux above background                                 [count]
@@ -163,7 +163,7 @@ ERRTHETAWIN_IMAGE      Windowed error ellipse pos angle (CCW/x)                 
 #ERRTHETAWIN_SKY        Native windowed error ellipse pos. angle (east of north)   [deg]
 #ERRTHETAWIN_J2000      J2000 windowed error ellipse pos. angle (east of north)    [deg]
 #ERRTHETAWIN_B1950      B1950 windowed error ellipse pos. angle (east of north)    [deg]
-#NITER_WIN              Number of iterations for WIN centering
+#NITER_WIN              Number of iterations for WIN centering                    
 #MU_THRESHOLD           Detection threshold above background                       [mag * arcsec**(-2)]
 #MU_MAX                 Peak surface brightness above background                   [mag * arcsec**(-2)]
 #ISOAREA_WORLD          Isophotal area above Analysis threshold                    [deg**2]
@@ -176,24 +176,24 @@ ERRTHETAWIN_IMAGE      Windowed error ellipse pos angle (CCW/x)                 
 #ISO5                   Isophotal area at level 5                                  [pixel**2]
 #ISO6                   Isophotal area at level 6                                  [pixel**2]
 #ISO7                   Isophotal area at level 7                                  [pixel**2]
-FLAGS                  Extraction flags
-#FLAGS_WEIGHT           Weighted extraction flags
-#FLAGS_WIN              Flags for WINdowed parameters
-#IMAFLAGS_ISO           FLAG-image flags OR'ed over the iso. profile
-#NIMAFLAGS_ISO          Number of flagged pixels entering IMAFLAGS_ISO
+FLAGS                  Extraction flags                                          
+#FLAGS_WEIGHT           Weighted extraction flags                                 
+#FLAGS_WIN              Flags for WINdowed parameters                             
+#IMAFLAGS_ISO           FLAG-image flags OR'ed over the iso. profile              
+#NIMAFLAGS_ISO          Number of flagged pixels entering IMAFLAGS_ISO            
 FWHM_IMAGE             FWHM assuming a gaussian core                              [pixel]
 FWHM_WORLD             FWHM assuming a gaussian core                              [deg]
-#ELONGATION             A_IMAGE/B_IMAGE
-#ELLIPTICITY            1 - B_IMAGE/A_IMAGE
-#POLAR_IMAGE            (A_IMAGE^2 - B_IMAGE^2)/(A_IMAGE^2 + B_IMAGE^2)
-#POLAR_WORLD            (A_WORLD^2 - B_WORLD^2)/(A_WORLD^2 + B_WORLD^2)
-#POLARWIN_IMAGE         (AWIN^2 - BWIN^2)/(AWIN^2 + BWIN^2)
-#POLARWIN_WORLD         (AWIN^2 - BWIN^2)/(AWIN^2 + BWIN^2)
-#CLASS_STAR             S/G classifier output
+#ELONGATION             A_IMAGE/B_IMAGE                                           
+#ELLIPTICITY            1 - B_IMAGE/A_IMAGE                                       
+#POLAR_IMAGE            (A_IMAGE^2 - B_IMAGE^2)/(A_IMAGE^2 + B_IMAGE^2)           
+#POLAR_WORLD            (A_WORLD^2 - B_WORLD^2)/(A_WORLD^2 + B_WORLD^2)           
+#POLARWIN_IMAGE         (AWIN^2 - BWIN^2)/(AWIN^2 + BWIN^2)                       
+#POLARWIN_WORLD         (AWIN^2 - BWIN^2)/(AWIN^2 + BWIN^2)                       
+#CLASS_STAR             S/G classifier output                                     
 #VIGNET(20,20) #                Pixel data around detection                                [count]
 #VIGNET_SHIFT           Pixel data around detection, corrected for shift           [count]
-#VECTOR_ASSOC           ASSOCiated parameter vector
-#NUMBER_ASSOC           Number of ASSOCiated IDs
+#VECTOR_ASSOC           ASSOCiated parameter vector                               
+#NUMBER_ASSOC           Number of ASSOCiated IDs                                  
 #THRESHOLDMAX           Maximum threshold possible for detection                   [count]
 #FLUX_GROWTH(20)       Cumulated growth-curve                                     [count]
 #FLUX_GROWTHSTEP(20)    Step for growth-curves                                     [pixel]
@@ -214,8 +214,8 @@ FLUX_RADIUS #            Fraction-of-light radii                                
 #FLUXERR_PSF            RMS flux error for PSF-fitting                             [count]
 #MAG_PSF                Magnitude from PSF-fitting                                 [mag]
 #MAGERR_PSF             RMS magnitude error from PSF-fitting                       [mag]
-#NITER_PSF              Number of iterations for PSF-fitting
-#CHI2_PSF               Reduced chi2 from PSF-fitting
+#NITER_PSF              Number of iterations for PSF-fitting                      
+#CHI2_PSF               Reduced chi2 from PSF-fitting                             
 #ERRX2PSF_IMAGE         Variance of PSF position along x                           [pixel**2]
 #ERRY2PSF_IMAGE         Variance of PSF position along y                           [pixel**2]
 #ERRXYPSF_IMAGE         Covariance of PSF position between x and y                 [pixel**2]
@@ -237,11 +237,11 @@ FLUX_RADIUS #            Fraction-of-light radii                                
 #ERRTHTPSF_SKY          Native PSF error ellipse pos. angle (east of north)        [deg]
 #ERRTHTPSF_J2000        J2000 PSF error ellipse pos. angle (east of north)         [deg]
 #ERRTHTPSF_B1950        B1950 PSF error ellipse pos. angle (east of north)         [deg]
-#VECTOR_MODEL           Model-fitting coefficients
-#VECTOR_MODELERR        Model-fitting coefficient uncertainties
-#CHI2_MODEL             Reduced Chi2 of the fit
-#FLAGS_MODEL            Model-fitting flags
-#NITER_MODEL            Number of iterations for model-fitting
+#VECTOR_MODEL           Model-fitting coefficients                                
+#VECTOR_MODELERR        Model-fitting coefficient uncertainties                   
+#CHI2_MODEL             Reduced Chi2 of the fit                                   
+#FLAGS_MODEL            Model-fitting flags                                       
+#NITER_MODEL            Number of iterations for model-fitting                    
 #FLUX_MODEL             Flux from model-fitting                                    [count]
 #FLUXERR_MODEL          RMS error on model-fitting flux                            [count]
 #MAG_MODEL              Magnitude from model-fitting                               [mag]
@@ -280,12 +280,12 @@ FLUX_RADIUS #            Fraction-of-light radii                                
 #X2MODEL_IMAGE          Variance along x from model-fitting                        [pixel**2]
 #Y2MODEL_IMAGE          Variance along y from model-fitting                        [pixel**2]
 #XYMODEL_IMAGE          Covariance between x and y from model-fitting              [pixel**2]
-#E1MODEL_IMAGE          Ellipticity component from model-fitting
-#E2MODEL_IMAGE          Ellipticity component from model-fitting
-#EPS1MODEL_IMAGE        Ellipticity component (quadratic) from model-fitting
-#EPS2MODEL_IMAGE        Ellipticity component (quadratic) from model-fitting
-#CONCENTRATION_MODEL    Concentration parameter from model-fitting
-#CLASS_STAR_MODEL       S/G classifier from model-fitting
+#E1MODEL_IMAGE          Ellipticity component from model-fitting                  
+#E2MODEL_IMAGE          Ellipticity component from model-fitting                  
+#EPS1MODEL_IMAGE        Ellipticity component (quadratic) from model-fitting      
+#EPS2MODEL_IMAGE        Ellipticity component (quadratic) from model-fitting      
+#CONCENTRATION_MODEL    Concentration parameter from model-fitting                
+#CLASS_STAR_MODEL       S/G classifier from model-fitting                         
 #FLUX_BACKOFFSET        Background offset from fitting                             [count]
 #FLUXERR_BACKOFFSET     RMS error on fitted background offset                      [count]
 #FLUX_SPHEROID          Spheroid total flux from fitting                           [count]
@@ -296,10 +296,10 @@ FLUX_RADIUS #            Fraction-of-light radii                                
 #SPHEROID_REFFERR_IMAGE RMS error on fitted spheroid effective radius              [pixel]
 #SPHEROID_REFF_WORLD    Spheroid effective radius from fitting                     [deg]
 #SPHEROID_REFFERR_WORLD RMS error on fitted spheroid effective radius              [deg]
-#SPHEROID_ASPECT_IMAGE  Spheroid aspect ratio from fitting
-#SPHEROID_ASPECTERR_IMA RMS error on fitted spheroid aspect ratio
-#SPHEROID_ASPECT_WORLD  Spheroid aspect ratio from fitting
-#SPHEROID_ASPECTERR_WOR RMS error on fitted spheroid aspect ratio
+#SPHEROID_ASPECT_IMAGE  Spheroid aspect ratio from fitting                        
+#SPHEROID_ASPECTERR_IMA RMS error on fitted spheroid aspect ratio                 
+#SPHEROID_ASPECT_WORLD  Spheroid aspect ratio from fitting                        
+#SPHEROID_ASPECTERR_WOR RMS error on fitted spheroid aspect ratio                 
 #SPHEROID_THETA_IMAGE   Spheroid position angle (CCW/x) from fitting               [deg]
 #SPHEROID_THETAERR_IMAG RMS error on spheroid position angle                       [deg]
 #SPHEROID_THETA_WORLD   Spheroid position angle (CCW/world-x)                      [deg]
@@ -307,8 +307,8 @@ FLUX_RADIUS #            Fraction-of-light radii                                
 #SPHEROID_THETA_SKY     Spheroid position angle (east of north, native)            [deg]
 #SPHEROID_THETA_J2000   Spheroid position angle (east of north, J2000)             [deg]
 #SPHEROID_THETA_B1950   Spheroid position angle (east of north, B1950)             [deg]
-#SPHEROID_SERSICN       Spheroid Sersic index from fitting
-#SPHEROID_SERSICNERR    RMS error on fitted spheroid Sersic index
+#SPHEROID_SERSICN       Spheroid Sersic index from fitting                        
+#SPHEROID_SERSICNERR    RMS error on fitted spheroid Sersic index                 
 #FLUX_DISK              Disk total flux from fitting                               [count]
 #FLUXERR_DISK           RMS error on fitted disk total flux                        [count]
 #MAG_DISK               Disk total magnitude from fitting                          [mag]
@@ -317,10 +317,10 @@ FLUX_RADIUS #            Fraction-of-light radii                                
 #DISK_SCALEERR_IMAGE    RMS error on fitted disk scalelength                       [pixel]
 #DISK_SCALE_WORLD       Disk scalelength from fitting (world coords)               [deg]
 #DISK_SCALEERR_WORLD    RMS error on fitted disk scalelength (world coords)        [deg]
-#DISK_ASPECT_IMAGE      Disk aspect ratio from fitting
-#DISK_ASPECTERR_IMAGE   RMS error on fitted disk aspect ratio
-#DISK_ASPECT_WORLD      Disk aspect ratio from fitting
-#DISK_ASPECTERR_WORLD   RMS error on disk aspect ratio
+#DISK_ASPECT_IMAGE      Disk aspect ratio from fitting                            
+#DISK_ASPECTERR_IMAGE   RMS error on fitted disk aspect ratio                     
+#DISK_ASPECT_WORLD      Disk aspect ratio from fitting                            
+#DISK_ASPECTERR_WORLD   RMS error on disk aspect ratio                            
 #DISK_INCLINATION       Disk inclination from fitting                              [deg]
 #DISK_INCLINATIONERR    RMS error on disk inclination from fitting                 [deg]
 #DISK_THETA_IMAGE       Disk position angle (CCW/x) from fitting                   [deg]
@@ -330,7 +330,7 @@ FLUX_RADIUS #            Fraction-of-light radii                                
 #DISK_THETA_SKY         Disk position angle (east of north, native)                [deg]
 #DISK_THETA_J2000       Disk position angle (east of north, J2000)                 [deg]
 #DISK_THETA_B1950       Disk position angle (east of north, B1950)                 [deg]
-#DISK_PATTERN_VECTOR    Disk pattern fitted coefficients
-#DISK_PATTERNMOD_VECTOR Disk pattern fitted moduli
+#DISK_PATTERN_VECTOR    Disk pattern fitted coefficients                          
+#DISK_PATTERNMOD_VECTOR Disk pattern fitted moduli                                
 #DISK_PATTERNARG_VECTOR Disk pattern fitted arguments                              [deg]
-#DISK_PATTERN_SPIRAL    Disk pattern spiral index
+#DISK_PATTERN_SPIRAL    Disk pattern spiral index                                 

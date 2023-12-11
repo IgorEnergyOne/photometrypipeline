@@ -718,7 +718,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                 # data reduced file
                 outf_reduced.write(('%15.7f ' % dat[9][0]) +
                                    ('%8.4f ' % dat[7]) +
-                                   ('%6.4f ' % dat[8]))
+                                   ('%6.4f\n' % dat[8]))
 
         outf.writelines('#\n# [1]: predicted_RA - source_RA [arcsec]\n' +
                         '# [2]: predicted_Dec - source_Dec [arcsec]\n' +

@@ -273,7 +273,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
 
     # run photometry (curve-of-growth analysis)
     if auto:
-        snr, source_minarea = 1.5, obsparam.get('source_minarea', 0)
+        snr, source_minarea = 1.5, obsparam['source_minarea']
         source_maxarea = obsparam.get('source_maxarea', 0)
         background_only = False
         target_only = False

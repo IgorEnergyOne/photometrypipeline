@@ -46,7 +46,7 @@ Status
 ------
 
 The development of PP has stalled; please be aware that tailored support
-can only be provided in exceptional cases. 
+can only be provided in exceptional cases.
 
 Contents
 --------
@@ -67,7 +67,7 @@ License and Contact
 
 The Photometry Pipeline is distributed under the GNU GPLv3 license.
 
-Copyright (C) 2016-2022  Michael Mommert 
+Copyright (C) 2016-2022  Michael Mommert
 
 
 Acknowledgments
