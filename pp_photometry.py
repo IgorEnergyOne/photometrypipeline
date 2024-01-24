@@ -333,7 +333,7 @@ def curve_of_growth_analysis(filenames, parameters,
     # display results
     if display:
         print('\n#################################### PHOTOMETRY SUMMARY:\n###')
-        print('### best-fit aperture radius %5.2f (px)' % (optimum_aprad))
+        print('### best-fit aperture radius %5.2f (px) [%s mode]' % (optimum_aprad, _pp_conf.photmode))
         print('###\n#####################################################\n')
 
     logging.info('==> best-fit aperture radius: %3.1f (px)' % (optimum_aprad))
