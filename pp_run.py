@@ -414,15 +414,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='automated WCS registration')
     parser.add_argument('-auto',
                         help='use automatic (default) pipeline procedure instead\
-                         of the config file', action='store_true', default=False)
+                         of the config file, works with console arguments,\
+                         else work with the default config file',
+                        action='store_true', default=False)
     parser.add_argument('-config',
-                        help='use a custom configfile provided\
+                        help='use a custom configfile provided by the user\
                          instead of a default one', default=False)
     parser.add_argument('-prefix', help='data prefix',
                         default=None)
     parser.add_argument('-target', help='primary targetname override',
                         default=None)
-    parser.add_argument('-filter', help='filter name override',
+    parser.add_argument('-filter', help='process images only with specified filter',
                         default=None)
     parser.add_argument('-fixed_aprad', help='fixed aperture radius (px)',
                         default=0)
@@ -482,7 +484,7 @@ if __name__ == '__main__':
         config = read_yml_config(path_config=configpath)
         # =========== pp_run arguments ==========================
         prefix = config['pp_run'].get('prefix')
-        man_targetname = config['pp_run'].get('target')
+        man_targetname = str(config['pp_run'].get('target'))
         man_filtername = config['pp_run'].get('filter')
         fixed_aprad = config['pp_run'].get('fixed_aprad')
         solar = config['pp_run'].get('solar')
