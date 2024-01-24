@@ -127,7 +127,6 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
                               object_keyword=obsparam['object'],
                               exptime_keyword=obsparam['exptime'],
                               maxflag=0)
-                #print(cat)
                 ldac_catalogs.append(cat)
 
         if len(ldac_files) == 0:
@@ -256,8 +255,6 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
         fitresults = []  # store scamp outputs
         for dat in scamp[1]:
             # failed fit
-            print(float(dat[scamp[0]['AS_Contrast']]),
-                  float(dat[scamp[0]['XY_Contrast']]))
             if ((float(dat[scamp[0]['AS_Contrast']]) <
                  _pp_conf.scamp_as_contrast_limit)
                 or (float(dat[scamp[0]['XY_Contrast']]) <
@@ -303,6 +300,9 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
 
         logging.info(' > match succeeded for %d/%d images' %
                      (len(goodfits), len(filenames)))
+        logging.info(' > match failed for %d/%d images' %
+                     (len(badfits), len(filenames)))
+        logging.info(f' > match failed for the following images: {badfits}')
         print('\n################################# ' +
               'REGISTRATION SUMMARY:\n###')
         print('### %d/%d images have been registered successfully' %
