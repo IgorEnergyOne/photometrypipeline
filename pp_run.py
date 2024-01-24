@@ -148,12 +148,8 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
             if man_filtername == header[obsparam['filter']]:
                 filters.append(header[obsparam['filter']])
                 filenames_filter.append(filename)
-            # else:
-            #     header[obsparam['filter']] = man_filtername
-            #     filters.append(header[obsparam['filter']])
-            #     filenames_filter.append(filename)
 
-    # default regime
+    # default regime (processing all available data)
     else:
         for idx, filename in enumerate(filenames):
             try:
@@ -369,10 +365,12 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
 
     # distill photometry results
     print('\n----- distill photometry results (pp_distill.distill)\n')
-    distillate = pp_distill.distill(calibration['catalogs'],
-                                    man_targetname, [0, 0],
-                                    None, None,
-                                    rejectionfilter,
+    distillate = pp_distill.distill(catalogs=calibration['catalogs'],
+                                    man_targetname=man_targetname,
+                                    offset=[0, 0],
+                                    fixed_targets_file=None,
+                                    posfile=None,
+                                    rejectionfilter=rejectionfilter,
                                     asteroids=asteroids,
                                     display=True, diagnostics=True)
 
@@ -513,6 +511,7 @@ if __name__ == '__main__':
         photo_maxarea = config['pp_photometry'].get('maxarea')
         photo_background = config['pp_photometry'].get('background_only')
         photo_target = config['pp_photometry'].get('target_only')
+        photomode = config['pp_photometry'].get('photmode')
         # ========= pp_calibrate ===============================
         cal_minstars = config['pp_calibrate'].get('minstars')
         cal_catalog = config['pp_calibrate'].get('catalog')

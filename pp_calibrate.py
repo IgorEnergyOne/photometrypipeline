@@ -153,8 +153,6 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                             format(n_raw-n_rejected))
             cat.catalogname += '_solar'
 
-        #print(catalogname, filtername)
-
         # transform catalog to requested filtername, if necessesary
         if (n_sources > 0 and
             ('SDSS' in catalogname and
