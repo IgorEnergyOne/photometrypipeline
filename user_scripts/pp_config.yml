@@ -78,8 +78,14 @@ pp_calibrate:
                             # if int, use at least this number of stars;
                             # if float use at least this fraction of the available reference stars;
                             # the default is 0.5 (i.e., use at least 50% of all available reference stars)
+  maxstars: 300             # maximum number of reference stars used in the photometric calibration; default is 100
+                            # if int, use at max this number of stars;
+                            # if float, use at max this fraction of the available reference stars;
   catalog: 'GAIA'           # manual override for the reference catalog;  if this option is not used, the photometric reference catalogs list in the Telescope Setup are used
                             # '2MASS', 'URAT-1', 'SDSS-R9', 'APASS9', 'PANSTARRS', 'SkyMapper', 'GAIA(DR2)'
   maxflag: 2                # sources to be still considered in the calibration process and written into the resulting photometry database;
                             # flag values as tabulated in the Source Extractor manual; default value is 3, allowing for sources to have bright neighbors and to be blended with another source;
                             # value of 7 permits sources to be (partially) saturated
+  solar_margin: 0.2         # solar color margin ( solar color filtering allows for color indices
+                            # [color-_pp_conf.solcol -- color+_pp_conf.solcol]
+                            # default 0.2

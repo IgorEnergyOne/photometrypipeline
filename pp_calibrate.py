@@ -221,7 +221,7 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
     return None
 
 
-def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
+def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars_external,
                       use_all_stars=False,
                       display=False, diagnostics=False):
     """derive zeropoint for a number of catalogs based on a reference catalog"""
@@ -331,15 +331,23 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
                                              'success': False})
                 continue
 
-        # if minstars is a fraction, use minstars*len(match[0][0])
+        # if minstars is a fraction (0.0-1.0), use minstars*len(match[0][0])
         if minstars_external < 1:
             minstars = int(minstars_external*len(match[0][0]))
         else:
             minstars = int(minstars_external)
 
-        # max 100 minstars
-        if minstars > 300:
-            minstars = 300
+
+        # if maxstars is a fraction (0.0-1.0), use maxstars*len(match[0][0])
+        if maxstars_external <= 1:
+            maxstars = int(maxstars_external*len(match[0][0]))
+        else:
+            maxstars = int(maxstars_external)
+
+        # if number of stars is larger than maxstars, use maxstars
+        # default was 100
+        if minstars > maxstars:
+            minstars = maxstars
 
         # perform clipping to reject one outlier at a time
         zeropoint = 25  # initialize zeropoint
@@ -490,7 +498,7 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external,
     return output
 
 
-def calibrate(filenames, minstars, manfilter, manualcatalog,
+def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
               obsparam, maxflag=3,
               magzp=None, solar=False,
               use_all_stars=False,
@@ -659,7 +667,7 @@ def calibrate(filenames, minstars, manfilter, manualcatalog,
 
     # match catalogs and derive magnitude zeropoint
     zp_data = derive_zeropoints(ref_cat, catalogs, filtername,
-                                minstars,
+                                minstars, maxstars,
                                 use_all_stars=use_all_stars,
                                 display=display,
                                 diagnostics=diagnostics)

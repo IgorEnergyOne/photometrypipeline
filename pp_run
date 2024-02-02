@@ -55,7 +55,6 @@ import pp_photometry
 import pp_calibrate
 import pp_distill
 from diagnostics import registration as diag
-from pprint import pprint
 
 # setup logging
 logging.basicConfig(filename=_pp_conf.log_filename,
@@ -149,12 +148,8 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
             if man_filtername == header[obsparam['filter']]:
                 filters.append(header[obsparam['filter']])
                 filenames_filter.append(filename)
-            # else:
-            #     header[obsparam['filter']] = man_filtername
-            #     filters.append(header[obsparam['filter']])
-            #     filenames_filter.append(filename)
 
-    # default regime
+    # default regime (processing all available data)
     else:
         for idx, filename in enumerate(filenames):
             try:
@@ -183,8 +178,6 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     if man_filtername is None:
         try:
             filtername = obsparam['filter_translations'][filters[0]]
-            print(filters[0])
-            print(filtername)
         except KeyError:
             print(('Cannot translate filter name (%s); please adjust ' +
                    'keyword "filter_translations" for %s in ' +
@@ -232,11 +225,15 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
         registration_run_number = 0
         while True:
             print('\n----- run image registration (pp_register.register)')
-            registration = pp_register.register(filenames, telescope, snr,
-                                                source_minarea, source_maxarea, aprad,
-                                                mancat, obsparam,
-                                                src_tol,
-                                                nodeblending=False,
+            registration = pp_register.register(filenames=filenames, telescope=telescope,
+                                                sex_snr=snr,
+                                                source_minarea=source_minarea,
+                                                source_maxarea=source_maxarea,
+                                                aprad=aprad,
+                                                mancat=mancat,
+                                                obsparam=obsparam,
+                                                source_tolerance=src_tol,
+                                                nodeblending=True,
                                                 max_rad=max_rad,
                                                 display=True,
                                                 diagnostics=True)
@@ -314,20 +311,25 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     # run photometric calibration
     if auto:
         minstars = _pp_conf.minstars
+        maxstars = 300
         manualcatalog = None
         maxflag = 3
     # taking pp_calibrate parameters from configfile
     else:
         minstars = cal_minstars
+        maxstars = cal_maxstars
         manualcatalog = cal_catalog
         maxflag = cal_maxflag
 
     print('\n----- run photometric calibration (pp_calibrate.calibrate)\n')
 
     while True:
-        calibration = pp_calibrate.calibrate(filenames, minstars,
-                                             filtername,
-                                             manualcatalog, obsparam,
+        calibration = pp_calibrate.calibrate(filenames=filenames,
+                                             minstars=minstars,
+                                             maxstars=maxstars,
+                                             manfilter=filtername,
+                                             manualcatalog=manualcatalog,
+                                             obsparam=obsparam,
                                              maxflag=maxflag,
                                              solar=solar,
                                              display=True,
@@ -368,10 +370,12 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
 
     # distill photometry results
     print('\n----- distill photometry results (pp_distill.distill)\n')
-    distillate = pp_distill.distill(calibration['catalogs'],
-                                    man_targetname, [0, 0],
-                                    None, None,
-                                    rejectionfilter,
+    distillate = pp_distill.distill(catalogs=calibration['catalogs'],
+                                    man_targetname=man_targetname,
+                                    offset=[0, 0],
+                                    fixed_targets_file=None,
+                                    posfile=None,
+                                    rejectionfilter=rejectionfilter,
                                     asteroids=asteroids,
                                     display=True, diagnostics=True)
 
@@ -413,15 +417,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='automated WCS registration')
     parser.add_argument('-auto',
                         help='use automatic (default) pipeline procedure instead\
-                         of the config file', action='store_true', default=False)
+                         of the config file, works with console arguments,\
+                         else work with the default config file',
+                        action='store_true', default=False)
     parser.add_argument('-config',
-                        help='use a custom configfile provided\
+                        help='use a custom configfile provided by the user\
                          instead of a default one', default=False)
     parser.add_argument('-prefix', help='data prefix',
                         default=None)
     parser.add_argument('-target', help='primary targetname override',
                         default=None)
-    parser.add_argument('-filter', help='filter name override',
+    parser.add_argument('-filter', help='process images only with specified filter',
                         default=None)
     parser.add_argument('-fixed_aprad', help='fixed aperture radius (px)',
                         default=0)
@@ -481,7 +487,7 @@ if __name__ == '__main__':
         config = read_yml_config(path_config=configpath)
         # =========== pp_run arguments ==========================
         prefix = config['pp_run'].get('prefix')
-        man_targetname = config['pp_run'].get('target')
+        man_targetname = str(config['pp_run'].get('target'))
         man_filtername = config['pp_run'].get('filter')
         fixed_aprad = config['pp_run'].get('fixed_aprad')
         solar = config['pp_run'].get('solar')
@@ -510,8 +516,10 @@ if __name__ == '__main__':
         photo_maxarea = config['pp_photometry'].get('maxarea')
         photo_background = config['pp_photometry'].get('background_only')
         photo_target = config['pp_photometry'].get('target_only')
+        photomode = config['pp_photometry'].get('photmode')
         # ========= pp_calibrate ===============================
         cal_minstars = config['pp_calibrate'].get('minstars')
+        cal_maxstars = config['pp_calibrate'].get('maxstars')
         cal_catalog = config['pp_calibrate'].get('catalog')
         cal_maxflag = config['pp_calibrate'].get('maxflag')
     # if filenames = ['all'], walk through directories and run pipeline
@@ -546,7 +554,7 @@ if __name__ == '__main__':
 
                 run_the_pipeline(filenames, man_targetname, man_filtername,
                                  fixed_aprad, source_tolerance, solar,
-                                 rerun_registration, asteroids)
+                                 rerun_registration, asteroids, keep_wcs)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
