@@ -30,6 +30,7 @@ import argparse
 import sqlite3
 from astroquery.jplhorizons import Horizons
 from astropy.io import ascii
+import pandas as pd
 
 try:
     from astroquery.vizier import Vizier
@@ -449,6 +450,29 @@ def serendipitous_asteroids(catalogs, display=True):
 
 
 # -------------------
+def read_catalogs(catalogs):
+    """
+    read catalog files
+    """
+    # read in database files (if necessary)
+    if isinstance(catalogs[0], str):
+        filenames = catalogs[:]
+        catalogs = []
+        for filename in filenames:
+            filename = filename[:filename.find('.fit')] + '.ldac.db'
+            cat = catalog(filename)
+            try:
+                cat.read_database(filename)
+            except IOError:
+                logging.error('Cannot find database', filename)
+                print('Cannot find database', filename)
+                continue
+            except sqlite3.OperationalError:
+                logging.error('File %s is not a database file' % filename)
+                print('File %s is not a database file' % filename)
+                continue
+            catalogs.append(cat)
+    return catalogs
 
 
 def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
@@ -654,6 +678,14 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                    'in_sig               [6] [7] [8]    [9]          [10] ' +
                    'FWHM"\n')
         outf_reduced.write("#julian_date      mag    sig\n")
+
+        # column names for Series row and dataframe
+        colnames = ["rejected", "filename", "julian_date", "mag", "sig", "source_ra", "source_dec", "ra_offset",
+                    "dec_offset", "man_ra_offset", "man_dec_offset", "exptime", "zeropoint", "zeropoint_sig",
+                    "inst_mag", "inst_sig", "catalog", "band", "sextractor_flags", "telescope", "photo_method", "FWHM"]
+        datalist = []
+
+        outf_reduced.write("#julian_date      mag    sig\n")
         for dat in data:
             # sort measured magnitudes by target
             if dat[0] == target:
@@ -682,9 +714,9 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                         logging.info(('reject photometry for target {:s} '
                                       'from frame {:s} due to rejection '
                                       'schema {:s}').format(
-                                          dat[0],
-                                          dat[10].replace(' ', '_'),
-                                          reject))
+                            dat[0],
+                            dat[10].replace(' ', '_'),
+                            reject))
                         reject_this_target = True
 
                 if reject_this_target:
@@ -692,6 +724,16 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                 else:
                     outf.write(' ')
                     output[target].append(dat)
+
+                # create pandas series from a row of data
+                data_row = pd.Series([reject_this_target, dat[10].replace(' ', '_'), dat[9][0], dat[7], dat[8],
+                                      dat[3], dat[4], (dat[1] - dat[3]) * 3600., (dat[2] - dat[4]) * 3600., offset[0],
+                                      offset[1], dat[9][1], (dat[7] - dat[5]), np.sqrt(dat[8] ** 2 - dat[6] ** 2),
+                                      dat[5], dat[6], catalogname,filtername, dat[14], dat[13].split(';')[0],
+                                      _pp_conf.photmode, dat[15] * 3600],
+                                     index=colnames)
+                datalist.append(data_row)
+                # create dict with resulting data
                 outf.write(('%35.35s ' % dat[10].replace(' ', '_')) +
                            ('%15.7f ' % dat[9][0]) +
                            ('%8.4f ' % dat[7]) +
@@ -704,7 +746,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                            ('%5.2f ' % offset[1]) +
                            ('%5.2f ' % dat[9][1]) +
                            ('%8.4f ' % (dat[7] - dat[5])) +
-                           ('%6.4f ' % np.sqrt(dat[8]**2 - dat[6]**2)) +
+                           ('%6.4f ' % np.sqrt(dat[8] ** 2 - dat[6] ** 2)) +
                            ('%8.4f ' % dat[5]) +
                            ('%6.4f ' % dat[6]) +
                            ('%s ' % catalogname) +
@@ -712,8 +754,8 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                            ('%3d ' % dat[14]) +
                            ('%s' % dat[13].split(';')[0]) +
                            ('%10s ' % _pp_conf.photmode) +
-                           ('%4.2f\n' % (dat[15]*3600)))
-                output['targetframes'][target].append(dat[10][:-4]+'fits')
+                           ('%4.2f\n' % (dat[15] * 3600)))
+                output['targetframes'][target].append(dat[10][:-4] + 'fits')
 
                 # data reduced file
                 outf_reduced.write(('%15.7f ' % dat[9][0]) +
@@ -732,6 +774,12 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                         '# [10]: photometry method\n')
         outf.close()
         outf_reduced.close()
+
+        # write the same data to csv file
+        # format pandas dataframe with output data
+        photometry_pd = pd.DataFrame.from_records(datalist)
+        filename = 'photometry_%s.dat' % target.translate(_pp_conf.target2filename)
+        photometry_pd.to_csv(filename[:-4] + '.csv', sep=',', index=False)
 
     # output content
     #

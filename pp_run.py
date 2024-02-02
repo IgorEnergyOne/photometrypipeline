@@ -311,20 +311,25 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     # run photometric calibration
     if auto:
         minstars = _pp_conf.minstars
+        maxstars = 300
         manualcatalog = None
         maxflag = 3
     # taking pp_calibrate parameters from configfile
     else:
         minstars = cal_minstars
+        maxstars = cal_maxstars
         manualcatalog = cal_catalog
         maxflag = cal_maxflag
 
     print('\n----- run photometric calibration (pp_calibrate.calibrate)\n')
 
     while True:
-        calibration = pp_calibrate.calibrate(filenames, minstars,
-                                             filtername,
-                                             manualcatalog, obsparam,
+        calibration = pp_calibrate.calibrate(filenames=filenames,
+                                             minstars=minstars,
+                                             maxstars=maxstars,
+                                             manfilter=filtername,
+                                             manualcatalog=manualcatalog,
+                                             obsparam=obsparam,
                                              maxflag=maxflag,
                                              solar=solar,
                                              display=True,
@@ -514,6 +519,7 @@ if __name__ == '__main__':
         photomode = config['pp_photometry'].get('photmode')
         # ========= pp_calibrate ===============================
         cal_minstars = config['pp_calibrate'].get('minstars')
+        cal_maxstars = config['pp_calibrate'].get('maxstars')
         cal_catalog = config['pp_calibrate'].get('catalog')
         cal_maxflag = config['pp_calibrate'].get('maxflag')
     # if filenames = ['all'], walk through directories and run pipeline
@@ -548,7 +554,7 @@ if __name__ == '__main__':
 
                 run_the_pipeline(filenames, man_targetname, man_filtername,
                                  fixed_aprad, source_tolerance, solar,
-                                 rerun_registration, asteroids)
+                                 rerun_registration, asteroids, keep_wcs)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
