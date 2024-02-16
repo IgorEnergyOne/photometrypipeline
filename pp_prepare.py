@@ -21,9 +21,11 @@
 # <http://www.gnu.org/licenses/>.
 
 from astropy import units as u
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 from astropy.coordinates import FK5, ICRS
 from astropy.time import Time
+from astroquery.mpc import MPC
+import math
 import numpy
 import os
 import re
@@ -49,6 +51,40 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     level=_pp_conf.log_level,
                     format=_pp_conf.log_formatline,
                     datefmt=_pp_conf.log_datefmt)
+
+
+def get_obs_location(obs_code: str):
+    """get observatory location by its code"""
+    obs = MPC.get_observatory_location(obs_code)
+    # get longitude and latitude in degrees
+    lon, lat = obs[0].value * u.deg,  math.atan2(obs[2], obs[1]) * 180 / math.pi * u.deg
+    # create astropy location instance
+    location = EarthLocation.from_geodetic(lon, lat, 0 * u.km)  # height is set to 0
+    logging.info('estimated observatory location: ' + str(location))
+    return location
+
+
+def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -> float:
+    """calculates the airmass between the target and the observer"""
+    # get target coordinates from the header
+    target = SkyCoord(header[parameters['ra']],
+                      header[parameters['dec']],
+                      unit=(u.hourangle, u.deg), frame='icrs')
+    # get observation time from the header
+    date = Time(header[parameters['date_keyword']], format='isot', scale='utc')
+    # Define the AltAz frame object at the observation time and location
+    altaz = AltAz(obstime=date, location=location)
+    # Transform the target coordinates to the AltAz frame
+    target_altaz = target.transform_to(altaz)
+    # Calculate and print the airmass
+    airmass = target_altaz.secz
+    airmass = round(airmass.value, 2)
+    # Check if the target is above the horizon
+    if target_altaz.alt <= 0:
+        logging.info("target is below the horizon, airmass is set to 1")
+        airmass = 1
+    logging.info("calculated airmass: " + str(airmass))
+    return airmass
 
 
 def prepare(filenames, obsparam, header_update, keep_wcs=False,
@@ -149,6 +185,8 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         implants['INSTRUME'] = ('GENERIC', 'PP: manually set')
 
     # prepare image headers for photometry pipeline
+    # get observers location
+    obs_location = get_obs_location(obsparam['observatory_code'])
 
     for filename in filenames:
 
@@ -299,7 +337,9 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         if obsparam['airmass'] in header:
             header['AIRMASS'] = (header[obsparam['airmass']], 'PP: copied')
         else:
-            header['AIRMASS'] = (1, 'PP: fake airmass')
+            header['AIRMASS'] = (calculate_airmass(parameters=obsparam,
+                                                   location=obs_location,
+                                                   header=header), 'PP: calculated airmass')
 
         # check if filter can be translated by PP
         try:
