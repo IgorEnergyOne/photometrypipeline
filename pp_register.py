@@ -57,7 +57,10 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
              mancat, obsparam, source_tolerance, nodeblending, max_rad=10.0,
              display=False, diagnostics=False):
     """
-    registration wrapper
+    astrometric calibration of the input images using SCAMP
+    automatically calls pp_extract() to identify all sources in the field of view of each image;
+    the source catalogs are stored as .ldac files. pp_register utilizes SCAMP to match the source catalogs
+    with astrometric catalogs as specified for the telescope/instrument combination
     output: diagnostic properties
     """
 
