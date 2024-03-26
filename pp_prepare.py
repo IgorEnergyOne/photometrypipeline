@@ -21,10 +21,11 @@
 # <http://www.gnu.org/licenses/>.
 
 from astropy import units as u
-from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz, Angle
 from astropy.coordinates import FK5, ICRS
 from astropy.time import Time
 from astroquery.mpc import MPC
+from astroquery.jplhorizons import Horizons
 import math
 import numpy
 import os
@@ -64,6 +65,15 @@ def get_obs_location(obs_code: str):
     return location
 
 
+def get_object_coordinates(header: dict, parameters: dict) -> SkyCoord:
+    """get target coordinates from the header"""
+    target = SkyCoord(header[parameters['ra']],
+                      header[parameters['dec']],
+                      unit=(u.hourangle, u.deg), frame='icrs')
+    logging.info('target coordinates: ' + str(target))
+    return target
+
+
 def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -> float:
     """calculates the airmass between the target and the observer"""
     # get target coordinates from the header
@@ -86,13 +96,33 @@ def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -
     logging.info("calculated airmass: " + str(airmass))
     return airmass
 
+def get_radec(target_name: str, obs_code: str, epoch: float):
+    """gets objects ra and dec coordinates from the Horizon system"""
+    obj_data = Horizons(id=target_name, location=obs_code,
+               epochs=epoch)
+    eph = obj_data.ephemerides()
+    return eph['RA'], eph['DEC']
+
+
+def radec_formatter(ra: float, dec: float, separator: str):
+    """formats RA and DEC angles from decimal angles to hour and dms with sign"""
+    ra = Angle(ra).to_string(unit=u.hour, sep=separator)[0]
+    dec = Angle(dec).signed_dms
+    # format dec string
+    d = str(int(dec[1][0]))
+    m = str(int(dec[2][0]))
+    s = float(dec[3][0])
+    dec = separator.join([d, m, "{:.1f}".format(s)])
+    return ra, dec
+
 
 def prepare(filenames, obsparam, header_update, keep_wcs=False,
             flipx=False, flipy=False, rotate=0, man_ra=None,
             man_dec=None, diagnostics=False, display=False):
     """
-    prepare wrapper
-    output: diagnostic properties
+    This function prepares the image data by creating necessary FITS header keywords
+    (e.g., the observation midtime MIDTIMJD, the pixel scale SECPIX, …), and by including
+    fake wcs information that is required by SCAMP.
     """
 
     # start logging
@@ -334,6 +364,43 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         header[obsparam['filter']] = header[obsparam['filter']].strip()
         header['FILTER'] = (header[obsparam['filter']], 'PP:copied')
         header['EXPTIME'] = (header[obsparam['exptime']], 'PP: copied')
+
+        # don't override the manual RA/DEC if they are provided
+        if man_ra is None and man_dec is None:
+            pass
+        else:
+            # check if ra/dec are present in a header
+            if (header.get(obsparam['ra']) is None
+                    or header.get(obsparam['ra']) is None):
+                logging.info('RA/DEC not in header')
+                # check if manual target name is present
+                target_man = header_update.get(obsparam['object'])
+                # check if target name is present in fits header
+                target = header.get(obsparam['object'])
+                if target_man is not None:
+                    target = target_man
+                elif target is not None:
+                    target = target
+                else:
+                    logging.warning('target name not in header. Counld not calculate RA/DEC')
+                # get observation time from the header
+                date = Time(header[obsparam['date_keyword']], format='isot', scale='utc')
+                ra, dec = get_radec(target_name=target,
+                                    obs_code=obsparam['observatory_code'],
+                                    epoch=date.jd)
+                logging.info('calculated RA/DEC for the target: %s deg %s deg' % (ra, dec))
+                # set ra/dec in header
+                if obsparam['radec_separator'] == 'XXX':
+                    header[obsparam['ra']] = ra[0]
+                    header[obsparam['dec']] = dec[0]
+                else:
+                    ra_formed, dec_formed = radec_formatter(ra=ra, dec=dec,
+                                                            separator=obsparam['radec_separator'])
+                    print(obsparam['ra'])
+                    header[obsparam['ra']] = ra_formed
+                    header[obsparam['dec']] = dec_formed
+
+
         if obsparam['airmass'] in header:
             header['AIRMASS'] = (header[obsparam['airmass']], 'PP: copied')
         else:
@@ -363,6 +430,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
             header['OBJECT'] = 'None'
         elif len(header['OBJECT'].strip()) == 0:
             header['OBJECT'] = 'None'
+
 
         # add fake wcs information that is necessary to run SCAMP
 
