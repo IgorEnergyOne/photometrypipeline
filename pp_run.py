@@ -132,6 +132,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
                   'frames') % len(filenames))
     filters = []
     filenames_filter = []
+    summary_message = ''
 
     # if to select specific filter from series with multiple filters
     if man_filtername:
