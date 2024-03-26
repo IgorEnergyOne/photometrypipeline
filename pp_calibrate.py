@@ -504,7 +504,17 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
               use_all_stars=False,
               display=False, diagnostics=False):
     """
-    wrapper for photometric calibration
+    Photometric calibration of each input frame in one specific filter
+    Instrumental magnitudes provided by pp_photometry() are matched with photometric catalogs
+    in order to derive the magnitude zeropoint of each input image. Photometric catalogs are a
+    ccessed through CDS Vizier, as specified in the respective Telescope Setup setting, or as
+    specified by the -catalog option. If -catalog is not used, a number of catalogs are tried;
+    if it is used, only one catalog is tried. If no sources are available from either catalog,
+    the function finishes using instrumental magnitudes. The calibration process requires a
+    at least 3 source in the field of view and uses an iterative Chi2 fitting process.
+
+    This function results in a SQLite database file (.db) for each image file, holding calibrated
+    and instrumental magnitudes for all sources found in the field of view.
     """
 
     # read in ldac data into catalogs
