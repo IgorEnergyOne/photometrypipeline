@@ -479,7 +479,13 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
             rejectionfilter='pos', display=False, diagnostics=False,
             variable_stars=False, asteroids=False):
     """
-    distill wrapper
+    Extraction of calibrated photometry for targets
+    Function automatically reads the target name from the FITS images (or use the manually provided one),
+    pulls target positions from JPL Horizons, and extracts calibrated photometry from the database catalogs
+    created with pp_calibrate() in to a photometry_<targetname>.dat file. In addition to the primary target,
+    this function also creates a photometry output file for one relatively bright star that is present
+    in the first and the last image of the series - this star serves as a control star to check the consistency
+    of the derive magnitude zeropoints.
     """
 
     # start logging
@@ -725,11 +731,19 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                     outf.write(' ')
                     output[target].append(dat)
 
+                # column names for Series row and dataframe
+                # colnames = ["rejected", "filename", "julian_date", "mag", "sig", "source_ra", "source_dec", "ra_offset",
+                #             "dec_offset", "man_ra_offset", "man_dec_offset", "exptime", "zeropoint", "zeropoint_sig",
+                #             "inst_mag", "inst_sig", "catalog", "band", "sextractor_flags", "telescope", "photo_method",
+                #             "FWHM"]
+                # mag, sig - calibrated values for magnitude
+                # source_ra, source_dec - measured coordinates from the image
+                # ra_offset, dec_offset - offset of measured coordinates from the expected ones (catalogue)
                 # create pandas series from a row of data
                 data_row = pd.Series([reject_this_target, dat[10].replace(' ', '_'), dat[9][0], dat[7], dat[8],
                                       dat[3], dat[4], (dat[1] - dat[3]) * 3600., (dat[2] - dat[4]) * 3600., offset[0],
                                       offset[1], dat[9][1], (dat[7] - dat[5]), np.sqrt(dat[8] ** 2 - dat[6] ** 2),
-                                      dat[5], dat[6], catalogname,filtername, dat[14], dat[13].split(';')[0],
+                                      dat[5], dat[6], catalogname, filtername, dat[14], dat[13].split(';')[0],
                                       _pp_conf.photmode, dat[15] * 3600],
                                      index=colnames)
                 datalist.append(data_row)
