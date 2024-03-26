@@ -367,8 +367,6 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
 
         # don't override the manual RA/DEC if they are provided
         if man_ra is None and man_dec is None:
-            pass
-        else:
             # check if ra/dec are present in a header
             if (header.get(obsparam['ra']) is None
                     or header.get(obsparam['ra']) is None):
@@ -396,7 +394,6 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
                 else:
                     ra_formed, dec_formed = radec_formatter(ra=ra, dec=dec,
                                                             separator=obsparam['radec_separator'])
-                    print(obsparam['ra'])
                     header[obsparam['ra']] = ra_formed
                     header[obsparam['dec']] = dec_formed
 
