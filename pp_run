@@ -225,6 +225,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
         registration_run_number = 0
         while True:
             print('\n----- run image registration (pp_register.register)')
+            # astrometric calibration of the images using SCAMP
             registration = pp_register.register(filenames=filenames, telescope=telescope,
                                                 sex_snr=snr,
                                                 source_minarea=source_minarea,
