@@ -32,6 +32,7 @@ from astropy.io import fits
 import matplotlib
 matplotlib.use('Agg')
 from astroquery.mpc import MPC
+from astropy.time import Time
 
 # only import if Python3 is used
 if sys.version_info > (3, 0):
@@ -136,7 +137,7 @@ def curve_of_growth_analysis(filenames, parameters,
 
             # call HORIZONS to get target coordinates
             obj = get_radec_mpc(targetname.replace('_', ' '),
-                                epoch=date,
+                                epoch=Time(date, format('isot'), scale='utc'),
                                 obs_code=str(obsparam['observatory_code']))
             try:
                 n = len(obj)

@@ -29,6 +29,7 @@ import logging
 import argparse
 import sqlite3
 from astroquery.mpc import MPC
+from astropy.time import Time
 from astropy.io import ascii
 import pandas as pd
 
@@ -197,7 +198,7 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
             targetname = man_targetname.replace('_', ' ')
         for smallbody in [True, False]:
             obj = get_radec_mpc(targetname.replace('_', ' '),
-                                epoch=cat.obstime[0],
+                                epoch=Time(cat.obstime[0], format=('isot'), scale='utc'),
                                 obs_code=obsparam['observatory_code'])
             n = 0
             try:
@@ -229,7 +230,7 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
             targetname = man_targetname.replace('_', ' ')
             cat.obj = targetname
         obj = get_radec_mpc(targetname.replace('_', ' '),
-                            epoch=cat.obstime[0],
+                            epoch=Time(cat.obstime[0], format=('isot'), scale='utc'),
                             obs_code=obsparam['observatory_code'])
         try:
             n = len(obj)
