@@ -137,7 +137,7 @@ def curve_of_growth_analysis(filenames, parameters,
 
             # call HORIZONS to get target coordinates
             obj = get_radec_mpc(targetname.replace('_', ' '),
-                                epoch=Time(date, format('isot'), scale='utc'),
+                                epoch=Time(date, format='jd', scale='utc'),
                                 obs_code=str(obsparam['observatory_code']))
             try:
                 n = len(obj)
@@ -149,7 +149,7 @@ def curve_of_growth_analysis(filenames, parameters,
             if n is None or n == 0:
                 logging.warning('WARNING: No position from Horizons!' +
                                 'Name (%s) correct?' % targetname)
-                logging.warning('HORIZONS call: %s' % obj.uri)
+                #logging.warning('HORIZONS call: %s' % obj.uri)
                 logging.info('proceeding with background sources analysis')
                 parameters['background_only'] = True
             else:

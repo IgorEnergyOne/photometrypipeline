@@ -198,7 +198,7 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
             targetname = man_targetname.replace('_', ' ')
         for smallbody in [True, False]:
             obj = get_radec_mpc(targetname.replace('_', ' '),
-                                epoch=Time(cat.obstime[0], format=('isot'), scale='utc'),
+                                epoch=Time(cat.obstime[0], format='jd', scale='utc'),
                                 obs_code=obsparam['observatory_code'])
             n = 0
             try:
@@ -230,7 +230,7 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
             targetname = man_targetname.replace('_', ' ')
             cat.obj = targetname
         obj = get_radec_mpc(targetname.replace('_', ' '),
-                            epoch=Time(cat.obstime[0], format=('isot'), scale='utc'),
+                            epoch=Time(cat.obstime[0], format='jd', scale='utc'),
                             obs_code=obsparam['observatory_code'])
         try:
             n = len(obj)
@@ -252,7 +252,6 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
         if n is None or n == 0:
             logging.warning('WARNING: No position from Horizons! ' +
                             'Name (%s) correct?' % cat.obj.replace('_', ' '))
-            logging.warning('HORIZONS call: %s' % obj.uri)
             if display and not message_shown:
                 print('  no Horizons data for %s ' % cat.obj.replace('_', ' '))
                 message_shown = True
@@ -265,7 +264,6 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
                             'dec_deg': obj[0]['Dec'] - offset[1] / 3600})
             logging.info('Successfully grabbed Horizons position for %s ' %
                          cat.obj.replace('_', ' '))
-            logging.info('HORIZONS call: %s' % obj.uri)
             if display and not message_shown:
                 print(cat.obj.replace('_', ' '), "identified")
                 message_shown = True
