@@ -198,7 +198,7 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
         for smallbody in [True, False]:
             obj = get_radec_mpc(targetname.replace('_', ' '),
                                 epoch=cat.obstime[0],
-                                location=obsparam['observatory_code'])
+                                obs_code=obsparam['observatory_code'])
             n = 0
             try:
                 n = len(obj)
@@ -230,7 +230,7 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
             cat.obj = targetname
         obj = get_radec_mpc(targetname.replace('_', ' '),
                             epoch=cat.obstime[0],
-                            location=obsparam['observatory_code'])
+                            obs_code=obsparam['observatory_code'])
         try:
             n = len(obj)
         except ValueError:

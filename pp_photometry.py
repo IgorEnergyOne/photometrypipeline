@@ -137,7 +137,7 @@ def curve_of_growth_analysis(filenames, parameters,
             # call HORIZONS to get target coordinates
             obj = get_radec_mpc(targetname.replace('_', ' '),
                                 epoch=date,
-                                location=str(obsparam['observatory_code']))
+                                obs_code=str(obsparam['observatory_code']))
             try:
                 n = len(obj)
             except ValueError:
