@@ -96,22 +96,22 @@ def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -
     logging.info("calculated airmass: " + str(airmass))
     return airmass
 
-def get_radec(target_name: str, obs_code: str, epoch: float):
+def get_radec(target_name: str, obs_code: str, epochs: iter):
     """gets objects ra and dec coordinates from the Horizon system"""
     obj_data = Horizons(id=target_name, location=obs_code,
-               epochs=epoch)
+               epochs=epochs)
     eph = obj_data.ephemerides()
     return eph['RA'], eph['DEC']
 
 
 def radec_formatter(ra: float, dec: float, separator: str):
     """formats RA and DEC angles from decimal angles to hour and dms with sign"""
-    ra = Angle(ra).to_string(unit=u.hour, sep=separator)[0]
+    ra = Angle(ra).to_string(unit=u.hour, sep=separator)
     dec = Angle(dec).signed_dms
     # format dec string
-    d = str(int(dec[1][0]))
-    m = str(int(dec[2][0]))
-    s = float(dec[3][0])
+    d = str(int(dec[1]))
+    m = str(int(dec[2]))
+    s = float(dec[3])
     dec = separator.join([d, m, "{:.1f}".format(s)])
     return ra, dec
 
@@ -217,6 +217,62 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
     # prepare image headers for photometry pipeline
     # get observers location
     obs_location = get_obs_location(obsparam['observatory_code'])
+    # store filenames of files which need ra/dec
+    ra_dec_files = []
+    epochs = []
+
+    # don't override the manual RA/DEC if they are provided
+    if man_ra is None and man_dec is None:
+        # check which files does not have ra/dec in header
+        for filename in filenames:
+            # open image file
+            hdulist = fits.open(filename, mode='update', verify='silentfix',
+                                ignore_missing_end=True)
+            header = hdulist[0].header
+            # check if ra/dec are present in a header
+            if (header.get(obsparam['ra']) is None
+                    or header.get(obsparam['ra']) is None):
+                logging.info(f'{filename}: RA/DEC not in header')
+                ra_dec_files.append(filename)
+                epochs.append(Time(header[obsparam['date_keyword']], format='isot', scale='utc').jd)
+                # check if manual target name is present
+                target_man = header_update.get(obsparam['object'])
+                # check if target name is present in fits header
+                target = header.get(obsparam['object'])
+                if target_man is not None:
+                    target = target_man
+                elif target is not None:
+                    target = target
+                else:
+                    logging.warning('target name not in header. Cannot calculate RA/DEC')
+                    raise ValueError('target name is not in header and not manually provided. Cannot calculate RA/DEC')
+                hdulist.close()
+
+    if len(epochs) > 0:
+        # query JPL horizon for ephemerides for all files in ra/dec list
+        ras, decs = get_radec(target_name=target,
+                            obs_code=obsparam['observatory_code'],
+                            epoch=epochs)
+
+        # add ra and dec to header
+        for idx, filename in enumerate(ra_dec_files):
+            # open image file
+            hdulist = fits.open(filename, mode='update', verify='silentfix',
+                                ignore_missing_end=True)
+            header = hdulist[0].header
+            logging.info('calculated RA/DEC for the target: %s deg %s deg' % (ras[idx], decs[idx]))
+            # set ra/dec in header
+            if obsparam['radec_separator'] == 'XXX':
+                header[obsparam['ra']] = ras[idx]
+                header[obsparam['dec']] = decs[idx]
+            else:
+                ra_formed, dec_formed = radec_formatter(ra=ras[idx] * u.deg, dec=decs[idx] * u.deg,
+                                                        separator=obsparam['radec_separator'])
+                header[obsparam['ra']] = ra_formed
+                header[obsparam['dec']] = dec_formed
+
+            hdulist.flush()
+            hdulist.close()
 
     for filename in filenames:
 
@@ -364,39 +420,6 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         header[obsparam['filter']] = header[obsparam['filter']].strip()
         header['FILTER'] = (header[obsparam['filter']], 'PP:copied')
         header['EXPTIME'] = (header[obsparam['exptime']], 'PP: copied')
-
-        # don't override the manual RA/DEC if they are provided
-        if man_ra is None and man_dec is None:
-            # check if ra/dec are present in a header
-            if (header.get(obsparam['ra']) is None
-                    or header.get(obsparam['ra']) is None):
-                logging.info('RA/DEC not in header')
-                # check if manual target name is present
-                target_man = header_update.get(obsparam['object'])
-                # check if target name is present in fits header
-                target = header.get(obsparam['object'])
-                if target_man is not None:
-                    target = target_man
-                elif target is not None:
-                    target = target
-                else:
-                    logging.warning('target name not in header. Counld not calculate RA/DEC')
-                # get observation time from the header
-                date = Time(header[obsparam['date_keyword']], format='isot', scale='utc')
-                ra, dec = get_radec(target_name=target,
-                                    obs_code=obsparam['observatory_code'],
-                                    epoch=date.jd)
-                logging.info('calculated RA/DEC for the target: %s deg %s deg' % (ra, dec))
-                # set ra/dec in header
-                if obsparam['radec_separator'] == 'XXX':
-                    header[obsparam['ra']] = ra[0]
-                    header[obsparam['dec']] = dec[0]
-                else:
-                    ra_formed, dec_formed = radec_formatter(ra=ra, dec=dec,
-                                                            separator=obsparam['radec_separator'])
-                    header[obsparam['ra']] = ra_formed
-                    header[obsparam['dec']] = dec_formed
-
 
         if obsparam['airmass'] in header:
             header['AIRMASS'] = (header[obsparam['airmass']], 'PP: copied')
