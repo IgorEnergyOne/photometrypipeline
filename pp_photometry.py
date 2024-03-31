@@ -31,7 +31,7 @@ import argparse
 from astropy.io import fits
 import matplotlib
 matplotlib.use('Agg')
-from astroquery.jplhorizons import Horizons
+from astroquery.mpc import MPC
 
 # only import if Python3 is used
 if sys.version_info > (3, 0):
@@ -50,6 +50,12 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     level=_pp_conf.log_level,
                     format=_pp_conf.log_formatline,
                     datefmt=_pp_conf.log_datefmt)
+
+def get_radec_mpc(target_name: str, obs_code: 'str', epoch):
+    """gets objects ra and dec coordinates from the MPC"""
+    obj_data = MPC.get_ephemeris(target_name, location=obs_code,
+                                 start=epoch, number=1)
+    return obj_data
 
 
 def curve_of_growth_analysis(filenames, parameters,
@@ -129,12 +135,11 @@ def curve_of_growth_analysis(filenames, parameters,
                 date = hdu[0].header['MIDTIMJD']
 
             # call HORIZONS to get target coordinates
-            obj = Horizons(targetname.replace('_', ' '),
-                           epochs=date,
-                           location=str(obsparam['observatory_code']))
+            obj = get_radec_mpc(targetname.replace('_', ' '),
+                                epoch=date,
+                                location=str(obsparam['observatory_code']))
             try:
-                eph = obj.ephemerides()
-                n = len(eph)
+                n = len(obj)
             except ValueError:
                 print('Target (%s) not a small body' % targetname)
                 logging.warning('Target (%s) not a small body' % targetname)
@@ -147,9 +152,9 @@ def curve_of_growth_analysis(filenames, parameters,
                 logging.info('proceeding with background sources analysis')
                 parameters['background_only'] = True
             else:
-                logging.info('ephemerides for %s pulled from Horizons' %
+                logging.info('ephemerides for %s pulled from MPC' %
                              targetname)
-                target_ra, target_dec = eph[0]['RA'], eph[0]['DEC']
+                target_ra, target_dec = obj[0]['RA'], obj[0]['Dec']
 
         # pull data from LDAC file
         ldac_filename = filename[:filename.find('.fit')]+'.ldac'

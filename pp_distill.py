@@ -28,7 +28,7 @@ import sys
 import logging
 import argparse
 import sqlite3
-from astroquery.jplhorizons import Horizons
+from astroquery.mpc import MPC
 from astropy.io import ascii
 import pandas as pd
 
@@ -44,7 +44,6 @@ if sys.version_info > (3, 0):
     from builtins import str
     from builtins import range
 
-
 # pipeline-specific modules
 import _pp_conf
 from pp_setup import confdistill as conf
@@ -57,6 +56,13 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     level=_pp_conf.log_level,
                     format=_pp_conf.log_formatline,
                     datefmt=_pp_conf.log_datefmt)
+
+
+def get_radec_mpc(target_name: str, obs_code: 'str', epoch):
+    """gets objects ra and dec coordinates from the MPC"""
+    obj_data = MPC.get_ephemeris(target_name, location=obs_code,
+                                 start=epoch, number=1)
+    return obj_data
 
 
 def manual_positions(posfile, catalogs, display=True):
@@ -79,7 +85,7 @@ def manual_positions(posfile, catalogs, display=True):
                                                 display=False))
 
         if display:
-            print(len(objects)/len(catalogs), 'object(s) found')
+            print(len(objects) / len(catalogs), 'object(s) found')
 
         return (list(np.hstack(objects)))
 
@@ -100,7 +106,7 @@ def manual_positions(posfile, catalogs, display=True):
     except AssertionError:
         print(posfile + ' is not complete; has to provide a position ' +
               'for each frame')
-        logging.error(posfile+' is not complete; has to provide position ' +
+        logging.error(posfile + ' is not complete; has to provide position ' +
                       'for each frame')
         return []
 
@@ -108,19 +114,19 @@ def manual_positions(posfile, catalogs, display=True):
     for cat_idx, cat in enumerate(catalogs):
         try:
             objects.append({'ident': positions[cat_idx]['name'].decode('utf-8'),
-                            'obsdate.jd':  cat.obstime,
-                            'cat_idx':  cat_idx,
-                            'ra_deg':  positions[cat_idx]['ra'],
-                            'dec_deg':  positions[cat_idx]['dec']})
+                            'obsdate.jd': cat.obstime,
+                            'cat_idx': cat_idx,
+                            'ra_deg': positions[cat_idx]['ra'],
+                            'dec_deg': positions[cat_idx]['dec']})
         except:
             objects.append({'ident': 'manual_target',
-                            'obsdate.jd':  cat.obstime,
-                            'cat_idx':  cat_idx,
-                            'ra_deg':  positions[cat_idx]['ra'],
-                            'dec_deg':  positions[cat_idx]['dec']})
+                            'obsdate.jd': cat.obstime,
+                            'cat_idx': cat_idx,
+                            'ra_deg': positions[cat_idx]['ra'],
+                            'dec_deg': positions[cat_idx]['dec']})
 
     if display:
-        print(len(objects)/len(catalogs), 'object(s) found')
+        print(len(objects) / len(catalogs), 'object(s) found')
 
     return objects
 
@@ -142,19 +148,19 @@ def pick_controlstar(catalogs, display=True):
                                        'ra_deg', 'dec_deg', 'FLAGS'],
                                    extract_other_catalog=[
                                        'ra_deg', 'dec_deg', 'FLAGS', 'MAG_APER'],
-                                   tolerance=1/3600)
+                                   tolerance=1 / 3600)
 
     objects = []
     if len(match[0][0]) > 0:
 
-        ctlstar_idx = np.argsort(match[1][3])[int(0.05*len(match[1][3]))]
+        ctlstar_idx = np.argsort(match[1][3])[int(0.05 * len(match[1][3]))]
 
         for cat_idx, cat in enumerate(catalogs):
             objects.append({'ident': 'Control Star',
-                            'obsdate.jd':  cat.obstime[0],
-                            'cat_idx':  cat_idx,
-                            'ra_deg':  match[1][0][ctlstar_idx],
-                            'dec_deg':  match[1][1][ctlstar_idx]})
+                            'obsdate.jd': cat.obstime[0],
+                            'cat_idx': cat_idx,
+                            'ra_deg': match[1][0][ctlstar_idx],
+                            'dec_deg': match[1][1][ctlstar_idx]})
     else:
         print('  no common control star found in first and last frame')
         logging.info('no common control star found in first and last frame')
@@ -190,15 +196,12 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
         if man_targetname is not None:
             targetname = man_targetname.replace('_', ' ')
         for smallbody in [True, False]:
-            obj = Horizons(targetname.replace('_', ' '),
-                           id_type={True: 'smallbody',
-                                    False: 'majorbody'}[smallbody],
-                           epochs=cat.obstime[0],
-                           location=obsparam['observatory_code'])
+            obj = get_radec_mpc(targetname.replace('_', ' '),
+                                epoch=cat.obstime[0],
+                                location=obsparam['observatory_code'])
             n = 0
             try:
-                eph = obj.ephemerides()
-                n = len(eph)
+                n = len(obj)
             except ValueError:
                 if display and smallbody is True:
                     print("'%s' is not a small body" % targetname)
@@ -225,14 +228,11 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
         if man_targetname is not None:
             targetname = man_targetname.replace('_', ' ')
             cat.obj = targetname
-        obj = Horizons(targetname.replace('_', ' '),
-                       id_type={True: 'smallbody',
-                                False: 'majorbody'}[is_asteroid],
-                       epochs=cat.obstime[0],
-                       location=obsparam['observatory_code'])
+        obj = get_radec_mpc(targetname.replace('_', ' '),
+                            epoch=cat.obstime[0],
+                            location=obsparam['observatory_code'])
         try:
-            eph = obj.ephemerides()
-            n = len(eph)
+            n = len(obj)
         except ValueError:
             # if is_asteroid:
             #     if display and not message_shown:
@@ -257,11 +257,11 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
                 message_shown = True
 
         else:
-            objects.append({'ident': eph[0]['targetname'].replace(" ", "_"),
+            objects.append({'ident': targetname,
                             'obsdate.jd': cat.obstime[0],
                             'cat_idx': cat_idx,
-                            'ra_deg': eph[0]['RA']-offset[0]/3600,
-                            'dec_deg': eph[0]['DEC']-offset[1]/3600})
+                            'ra_deg': obj[0]['RA'] - offset[0] / 3600,
+                            'dec_deg': obj[0]['Dec'] - offset[1] / 3600})
             logging.info('Successfully grabbed Horizons position for %s ' %
                          cat.obj.replace('_', ' '))
             logging.info('HORIZONS call: %s' % obj.uri)
@@ -299,7 +299,7 @@ def fixed_targets(fixed_targets_file, catalogs, display=True):
                             'dec_deg': obj['dec']})
 
     if display:
-        print(len(objects)/len(catalogs), 'targets read')
+        print(len(objects) / len(catalogs), 'targets read')
 
     return objects
 
@@ -355,13 +355,12 @@ def serendipitous_variablestars(catalogs, display=True):
                             'dec_deg': star['DEJ2000']})
 
     if display:
-        print(len(objects)/len(catalogs), 'variable stars found')
+        print(len(objects) / len(catalogs), 'variable stars found')
 
     return objects
 
 
 def serendipitous_asteroids(catalogs, display=True):
-
     import requests
     server = 'http://vo.imcce.fr/webservices/skybot/skybotconesearch_query.php'
 
@@ -392,7 +391,7 @@ def serendipitous_asteroids(catalogs, display=True):
     # maximum positional uncertainty = 5 px (unbinned)
     obsparam = _pp_conf.telescope_parameters[
         catalogs[0].origin.split(';')[0].strip()]
-    max_posunc = 5*max(obsparam['secpix'])
+    max_posunc = 5 * max(obsparam['secpix'])
 
     # derive center and radius of field of view of all images
     ra_deg, dec_deg, rad_deg = skycenter(catalogs)
@@ -405,8 +404,8 @@ def serendipitous_asteroids(catalogs, display=True):
     ra_deg = 360 + ra_deg if ra_deg < 0 else ra_deg
     print("Requested values for IMCCE’s SkyBoT:\n\
     RA = {} [deg], DEC = {} [deg], RAD = {} [deg]".format(ra_deg,
-                                                         dec_deg,
-                                                         rad_deg))
+                                                          dec_deg,
+                                                          rad_deg))
     r = requests.get(server,
                      params={'RA': ra_deg, 'DEC': dec_deg,
                              'SR': rad_deg, 'EPOCH': str(midtime),
@@ -427,9 +426,9 @@ def serendipitous_asteroids(catalogs, display=True):
         if obj['posunc'] > max_posunc:
             logging.warning(('asteroid {:s} rejected due to large '
                              'pos. unc ({:f} > {:f} arcsec)').format(
-                                 obj['name'],
-                                 obj['posunc'],
-                                 max_posunc))
+                obj['name'],
+                obj['posunc'],
+                max_posunc))
             continue
         if obj['V'] > max(maglims):
             logging.warning(('asteroid {:s} rejected; too faint '
@@ -444,7 +443,7 @@ def serendipitous_asteroids(catalogs, display=True):
                       'target pool').format(obj['name']))
 
     if display:
-        print(len(objects)/len(catalogs), 'asteroids found')
+        print(len(objects) / len(catalogs), 'asteroids found')
 
     return objects
 
@@ -500,7 +499,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         filenames = catalogs[:]
         catalogs = []
         for filename in filenames:
-            filename = filename[:filename.find('.fit')]+'.ldac.db'
+            filename = filename[:filename.find('.fit')] + '.ldac.db'
             cat = catalog(filename)
             try:
                 cat.read_database(filename)
@@ -550,7 +549,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
 
     if display:
         print('{:d} potential target(s) per frame identified.'.format(
-            int(len(objects)/len(catalogs))))
+            int(len(objects) / len(catalogs))))
 
     # extract source data for identified targets
 
@@ -585,7 +584,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
             continue
 
         # create a new catalog
-        target_cat = catalog('targetlist:_'+cat.catalogname)
+        target_cat = catalog('targetlist:_' + cat.catalogname)
 
         target_cat.add_fields(['ident', 'ra_deg', 'dec_deg'],
                               [[obj['ident'] for obj in objects_thiscat],
@@ -600,14 +599,14 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         mag_keys = ['MAG_APER', 'MAGERR_APER']
         if filtername is not None:
             for key in cat.fields:
-                if filtername+'mag' in key:
+                if filtername + 'mag' in key:
                     mag_keys.append(key)
         # if both catalog magnitudes and transformated magnitudes in mag_keys
         # use the transformed ones (the target is most probably not in the
         # catalog used for photometric calibration)
         fixed_mag_keys = []
         for band in mag_keys:
-            if '_'+band in mag_keys:
+            if '_' + band in mag_keys:
                 continue
             else:
                 fixed_mag_keys.append(band)
@@ -626,23 +625,23 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
             match_keys_this_catalog=('ra_deg', 'dec_deg'),
             match_keys_other_catalog=match_keys_other_catalog,
             extract_this_catalog=['ra_deg', 'dec_deg', 'ident'],
-            extract_other_catalog=extract_other_catalog+mag_keys,
+            extract_other_catalog=extract_other_catalog + mag_keys,
             tolerance=None)
 
         for i in range(len(match[0][0])):
             # derive calibrated magnitudes, if available
             try:
-                cal_mag = match[1][len(extract_other_catalog)+2][i]
-                cal_magerr = match[1][len(extract_other_catalog)+3][i]
+                cal_mag = match[1][len(extract_other_catalog) + 2][i]
+                cal_magerr = match[1][len(extract_other_catalog) + 3][i]
             except IndexError:
                 # use instrumental magnitudes
                 cal_mag = match[1][len(extract_other_catalog)][i]
-                cal_magerr = match[1][len(extract_other_catalog)+1][i]
+                cal_magerr = match[1][len(extract_other_catalog) + 1][i]
 
             data.append([match[0][2][i], match[0][0][i], match[0][1][i],
                          match[1][0][i], match[1][1][i],
                          match[1][len(extract_other_catalog)][i],
-                         match[1][len(extract_other_catalog)+1][i],
+                         match[1][len(extract_other_catalog) + 1][i],
                          cal_mag, cal_magerr,
                          cat.obstime, cat.catalogname,
                          match[1][2][i], match[1][3][i],
