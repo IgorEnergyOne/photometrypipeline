@@ -3,6 +3,7 @@
 """ PP_PREPARE - prepare fits images for photometry pipeline
     v1.0: 2016-02-27, mommermiscience@gmail.com
 """
+import numpy as np
 # Photometry Pipeline
 # Copyright (C) 2016-2018  Michael Mommert, mommermiscience@gmail.com
 
@@ -23,7 +24,7 @@
 from astropy import units as u
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz, Angle
 from astropy.coordinates import FK5, ICRS
-from astropy.time import Time
+from astropy.time import Time, TimeDelta
 from astroquery.mpc import MPC
 from astroquery.jplhorizons import Horizons
 import math
@@ -96,12 +97,14 @@ def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -
     logging.info("calculated airmass: " + str(airmass))
     return airmass
 
-def get_radec(target_name: str, obs_code: str, epochs: iter):
-    """gets objects ra and dec coordinates from the Horizon system"""
-    obj_data = Horizons(id=target_name, location=obs_code,
-               epochs=epochs)
-    eph = obj_data.ephemerides()
-    return eph['RA'], eph['DEC']
+
+def get_radec_mpc(target_name: str, obs_code: 'str', start_time: float, timestep, number: int):
+    """gets objects ra and dec coordinates from the MPC"""
+    if number >= 1441:
+        raise ValueError(f'number of query dates ({number}) should be less than 1441')
+    obj_data = MPC.get_ephemeris(target_name, location=obs_code,
+                                 start=start_time, number=number, step=timestep)
+    return obj_data['RA'], obj_data['Dec']
 
 
 def radec_formatter(ra: float, dec: float, separator: str):
@@ -234,7 +237,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
                     or header.get(obsparam['ra']) is None):
                 logging.info(f'{filename}: RA/DEC not in header')
                 ra_dec_files.append(filename)
-                epochs.append(Time(header[obsparam['date_keyword']], format='isot', scale='utc').jd)
+                epochs.append(Time(header[obsparam['date_keyword']], format='isot', scale='utc'))
                 # check if manual target name is present
                 target_man = header_update.get(obsparam['object'])
                 # check if target name is present in fits header
@@ -249,10 +252,17 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
                 hdulist.close()
 
     if len(epochs) > 0:
+        # calculate estimated timestep between fits images
+        timestep = np.median([abs(epochs[i] - epochs[i-1]) for i in range(1, len(epochs))])
+        # get start and stop times
+        start_time, stop_time = min(epochs), max(epochs)
+        # number of query times
+        queries_num = int((stop_time - start_time) / timestep)
+        timestep = timestep.value * 86400 * u.s
         # query JPL horizon for ephemerides for all files in ra/dec list
-        ras, decs = get_radec(target_name=target,
+        ras, decs = get_radec_mpc(target_name=target,
                             obs_code=obsparam['observatory_code'],
-                            epoch=epochs)
+                            start_time=start_time, timestep=timestep, number=queries_num + 1)
 
         # add ra and dec to header
         for idx, filename in enumerate(ra_dec_files):
