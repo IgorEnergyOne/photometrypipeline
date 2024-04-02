@@ -104,7 +104,7 @@ def get_radec_mpc(target_name: str, obs_code: 'str', start_time: float, timestep
         raise ValueError(f'number of query dates ({number}) should be less than 1441')
     obj_data = MPC.get_ephemeris(target_name, location=obs_code,
                                  start=start_time, number=number, step=timestep)
-    return obj_data['RA'], obj_data['Dec']
+    return obj_data
 
 
 def radec_formatter(ra: float, dec: float, separator: str):
@@ -258,9 +258,9 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         start_time, stop_time = min(epochs), max(epochs)
         # number of query times
         queries_num = int((stop_time - start_time) / timestep)
-        timestep = timestep.value * 86400 * u.s
+        timestep = timestep.sec * u.s
         # query JPL horizon for ephemerides for all files in ra/dec list
-        ras, decs = get_radec_mpc(target_name=target,
+        query_data = get_radec_mpc(target_name=target,
                             obs_code=obsparam['observatory_code'],
                             start_time=start_time, timestep=timestep, number=queries_num + 1)
 
@@ -270,13 +270,18 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
             hdulist = fits.open(filename, mode='update', verify='silentfix',
                                 ignore_missing_end=True)
             header = hdulist[0].header
-            logging.info('calculated RA/DEC for the target: %s deg %s deg' % (ras[idx], decs[idx]))
+            # get the query epoch
+            epoch = epochs[idx]
+            # interpolate between two closest datapoints to get ra/dec
+            ra = np.interp(epoch.jd, query_data['Date'].jd, query_data['RA'].value)
+            dec = np.interp(epoch.jd, query_data['Date'].jd, query_data['Dec'].value)
+            logging.info('calculated RA/DEC for the target at %s: %.3f deg %.3f deg' % (epoch, ra, dec))
             # set ra/dec in header
             if obsparam['radec_separator'] == 'XXX':
-                header[obsparam['ra']] = ras[idx]
-                header[obsparam['dec']] = decs[idx]
+                header[obsparam['ra']] = ra
+                header[obsparam['dec']] = dec
             else:
-                ra_formed, dec_formed = radec_formatter(ra=ras[idx] * u.deg, dec=decs[idx] * u.deg,
+                ra_formed, dec_formed = radec_formatter(ra=ra * u.deg, dec=dec * u.deg,
                                                         separator=obsparam['radec_separator'])
                 header[obsparam['ra']] = ra_formed
                 header[obsparam['dec']] = dec_formed
