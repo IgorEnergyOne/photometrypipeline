@@ -252,7 +252,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         # query JPL horizon for ephemerides for all files in ra/dec list
         ras, decs = get_radec(target_name=target,
                             obs_code=obsparam['observatory_code'],
-                            epoch=epochs)
+                            epochs=epochs)
 
         # add ra and dec to header
         for idx, filename in enumerate(ra_dec_files):
