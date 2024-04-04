@@ -109,10 +109,12 @@ def radec_formatter(ra: float, dec: float, separator: str):
     ra = Angle(ra).to_string(unit=u.hour, sep=separator)
     dec = Angle(dec).signed_dms
     # format dec string
+    sign = "" if dec[0] == 1 else '-'
+    print(dec)
     d = str(int(dec[1]))
     m = str(int(dec[2]))
     s = float(dec[3])
-    dec = separator.join([d, m, "{:.1f}".format(s)])
+    dec = separator.join([sign + d, m, "{:.1f}".format(s)])
     return ra, dec
 
 
