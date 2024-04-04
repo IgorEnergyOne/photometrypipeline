@@ -110,7 +110,6 @@ def radec_formatter(ra: float, dec: float, separator: str):
     dec = Angle(dec).signed_dms
     # format dec string
     sign = "" if dec[0] == 1 else '-'
-    print(dec)
     d = str(int(dec[1]))
     m = str(int(dec[2]))
     s = float(dec[3])
