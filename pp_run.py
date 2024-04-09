@@ -63,9 +63,9 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     datefmt=_pp_conf.log_datefmt)
 
 
-def run_the_pipeline(filenames, man_targetname, man_filtername,
+def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                      fixed_aprad, source_tolerance, solar,
-                     rerun_registration, asteroids, keep_wcs):
+                     rerun_registration, asteroids, keep_wcs, rewrite_radec):
     """
     wrapper to run the photometry pipeline
     """
@@ -134,8 +134,29 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     filenames_filter = []
     summary_message = ''
 
-    # if to select specific filter from series with multiple filters
+    # force rename filtername in fits header
     if man_filtername:
+        for idx, filename in enumerate(filenames):
+            try:
+                hdulist = fits.open(filename, ignore_missing_end=True)
+            except IOError:
+                logging.error('cannot open file %s' % filename)
+                print('ERROR: cannot open file %s' % filename)
+                filenames.pop(idx)
+                continue
+
+            header = hdulist[0].header
+            if man_filtername == header[obsparam['filter']]:
+                filters.append(header[obsparam['filter']])
+                filenames_filter.append(filename)
+            # rename filtername in fits header
+            else:
+                header[obsparam['filter']] = man_filtername
+                filters.append(header[obsparam['filter']])
+                filenames_filter.append(filename)
+
+    # if to select specific filter from series with multiple filters
+    elif select_filter:
         for idx, filename in enumerate(filenames):
             try:
                 hdulist = fits.open(filename, ignore_missing_end=True)
@@ -204,7 +225,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername,
     preparation = pp_prepare.prepare(filenames, obsparam,
                                      change_header,
                                      diagnostics=True, display=True,
-                                     keep_wcs=keep_wcs)
+                                     keep_wcs=keep_wcs, rewrite_radec=rewrite_radec)
 
     # run wcs registration
     if not keep_wcs:
@@ -429,7 +450,9 @@ if __name__ == '__main__':
                         default=None)
     parser.add_argument('-target', help='primary targetname override',
                         default=None)
-    parser.add_argument('-filter', help='process images only with specified filter',
+    parser.add_argument('-select_filter', help='process images only with specified filter',
+                        default=None)
+    parser.add_argument('-manual_filter', help='force filter name',
                         default=None)
     parser.add_argument('-fixed_aprad', help='fixed aperture radius (px)',
                         default=0)
@@ -453,6 +476,9 @@ if __name__ == '__main__':
     parser.add_argument('-keep_wcs',
                         help='keep wcs information and skip registration',
                         action="store_true", default=False)
+    parser.add_argument('-rewrite_radec',
+                        help='rewrites RA/Dec in header of fits files with queried data',
+                        action='store_true', default=False)
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
 
@@ -464,7 +490,8 @@ if __name__ == '__main__':
     if auto:
         prefix = args.prefix
         man_targetname = args.target
-        man_filtername = args.filter
+        man_filtername = args.manual_filter
+        select_filter = args.select_filter
         fixed_aprad = float(args.fixed_aprad)
         source_tolerance = args.source_tolerance
         solar = args.solar
@@ -472,6 +499,7 @@ if __name__ == '__main__':
         asteroids = args.asteroids
         rejectionfilter = args.reject
         keep_wcs = args.keep_wcs
+        rewrite_radec = args.rewrite_radec
         filenames = sorted(args.images)
     # if path to config is provided - use it instead of default config
     else:
@@ -490,13 +518,15 @@ if __name__ == '__main__':
         # =========== pp_run arguments ==========================
         prefix = config['pp_run'].get('prefix')
         man_targetname = str(config['pp_run'].get('target'))
-        man_filtername = config['pp_run'].get('filter')
+        man_filtername = config['pp_run'].get('manual_filter')
+        select_filter = config['pp_run'].get('select_filter')
         fixed_aprad = config['pp_run'].get('fixed_aprad')
         solar = config['pp_run'].get('solar')
         rerun_registration = config['pp_run'].get('rerun_registration')
         asteroids = config['pp_run'].get('asteroids')
         rejectionfilter = config['pp_run'].get('reject')
         keep_wcs = config['pp_run'].get('keep_wcs')
+        rewrite_radec = config['pp_run'].get('rewrite_radec')
         filenames = sorted(args.images)
         # ========== pp_prepare arguments =======================
         ra = config['pp_prepare'].get('ra')
@@ -554,16 +584,16 @@ if __name__ == '__main__':
                 print('\n RUN PIPELINE IN %s' % root)
                 os.chdir(root)
 
-                run_the_pipeline(filenames, man_targetname, man_filtername,
+                run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                  fixed_aprad, source_tolerance, solar,
-                                 rerun_registration, asteroids, keep_wcs)
+                                 rerun_registration, asteroids, keep_wcs, rewrite_radec)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
 
     else:
         # call run_the_pipeline only on filenames
-        run_the_pipeline(filenames, man_targetname, man_filtername,
+        run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                          fixed_aprad, source_tolerance, solar,
-                         rerun_registration, asteroids, keep_wcs)
+                         rerun_registration, asteroids, keep_wcs, rewrite_radec)
         pass

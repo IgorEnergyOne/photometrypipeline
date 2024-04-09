@@ -3,6 +3,8 @@
 """ PP_PREPARE - prepare fits images for photometry pipeline
     v1.0: 2016-02-27, mommermiscience@gmail.com
 """
+import astropy.table
+import pandas as pd
 # Photometry Pipeline
 # Copyright (C) 2016-2018  Michael Mommert, mommermiscience@gmail.com
 
@@ -98,9 +100,18 @@ def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -
 
 def get_radec(target_name: str, obs_code: str, epochs: iter):
     """gets objects ra and dec coordinates from the Horizon system"""
-    obj_data = Horizons(id=target_name, location=obs_code,
-               epochs=epochs)
-    eph = obj_data.ephemerides()
+    def _divide_chunks(epochs: iter, n: int = 50):
+        """divide list into chunks of size n"""
+        for i in range(0, len(epochs), n):
+            yield epochs[i:i + n]
+
+    data_all = []
+    for epochs_chunk in _divide_chunks(epochs=epochs):
+        obj_data = Horizons(id=target_name, location=obs_code,
+                   epochs=epochs_chunk)
+        eph = obj_data.ephemerides()
+        data_all.append(eph)
+    eph = astropy.table.vstack(data_all)
     return eph['RA'], eph['DEC']
 
 
@@ -119,7 +130,7 @@ def radec_formatter(ra: float, dec: float, separator: str):
 
 def prepare(filenames, obsparam, header_update, keep_wcs=False,
             flipx=False, flipy=False, rotate=0, man_ra=None,
-            man_dec=None, diagnostics=False, display=False):
+            man_dec=None, diagnostics=False, display=False, rewrite_radec=False):
     """
     This function prepares the image data by creating necessary FITS header keywords
     (e.g., the observation midtime MIDTIMJD, the pixel scale SECPIX, …), and by including
@@ -232,8 +243,8 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
             header = hdulist[0].header
             # check if ra/dec are present in a header
             if (header.get(obsparam['ra']) is None
-                    or header.get(obsparam['ra']) is None):
-                logging.info(f'{filename}: RA/DEC not in header')
+                    or header.get(obsparam['ra']) is None or rewrite_radec):
+                logging.info(f'{filename}: RA/DEC not in header or radec override is set')
                 ra_dec_files.append(filename)
                 epochs.append(Time(header[obsparam['date_keyword']], format='isot', scale='utc').jd)
                 # check if manual target name is present

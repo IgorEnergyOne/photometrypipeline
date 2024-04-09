@@ -51,7 +51,7 @@ AC32_param = {
     'filter': 'FILTER',  # filter keyword
     'filter_translations': {'V': 'V', 'R': 'R',
                             'I': 'I', 'B': 'B',
-                            'None': 'Clear'},
+                            'Clear': None},
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
