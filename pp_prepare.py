@@ -75,6 +75,23 @@ def get_object_coordinates(header: dict, parameters: dict) -> SkyCoord:
     logging.info('target coordinates: ' + str(target))
     return target
 
+def get_obs_time(header: dict, parameters: dict):
+    """get observation time"""
+    # get observation time from the header
+    exptime = float(header[parameters['exptime']])
+    if parameters['date_keyword'].find('|') == -1:
+        date = header[parameters['date_keyword']]
+        date = toolbox.dateobs_to_jd(date) + exptime / 2. / 86400.
+    else:
+        date_key = parameters['date_keyword'].split('|')[0]
+        time_key = parameters['date_keyword'].split('|')[1]
+        date = header[date_key] + 'T' + \
+               header[time_key]
+        date = toolbox.dateobs_to_jd(date) + exptime / 2. / 86400.
+    date = Time(date, format='jd', scale='utc')
+    logging.info("observation time: " + str(date.to_datetime()))
+    return date
+
 
 def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -> float:
     """calculates the airmass between the target and the observer"""
@@ -83,7 +100,8 @@ def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -
                       header[parameters['dec']],
                       unit=(u.hourangle, u.deg), frame='icrs')
     # get observation time from the header
-    date = Time(header[parameters['date_keyword']], format='isot', scale='utc')
+    date = get_obs_time(header, parameters)
+    logging.info("observation time: " + str(date.to_datetime()))
     # Define the AltAz frame object at the observation time and location
     altaz = AltAz(obstime=date, location=location)
     # Transform the target coordinates to the AltAz frame
@@ -246,7 +264,8 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
                     or header.get(obsparam['ra']) is None or rewrite_radec):
                 logging.info(f'{filename}: RA/DEC not in header or radec override is set')
                 ra_dec_files.append(filename)
-                epochs.append(Time(header[obsparam['date_keyword']], format='isot', scale='utc').jd)
+                epoch = get_obs_time(header, obsparam).jd
+                epochs.append(epoch) # Time(header[obsparam['date_keyword']], format='isot', scale='utc').jd)
                 # check if manual target name is present
                 target_man = header_update.get(obsparam['object'])
                 # check if target name is present in fits header
@@ -429,7 +448,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         header['TEL_KEYW'] = (obsparam['telescope_keyword'],
                               'PP: tel/instr keyword')
 
-        header[obsparam['filter']] = header[obsparam['filter']].strip()
+        header[obsparam['filter']] = header.get(obsparam['filter'], '').strip()
         header['FILTER'] = (header[obsparam['filter']], 'PP:copied')
         header['EXPTIME'] = (header[obsparam['exptime']], 'PP: copied')
 
