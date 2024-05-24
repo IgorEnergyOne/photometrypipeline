@@ -6,7 +6,8 @@ pp_run:
                             # (default: NULL)
   target: NULL              # the target name to be used in all images, this overwrites the OBJECT keyword in the FITS headers
                             # (default: NULL)
-  filter: NULL              # if multiple filters are available, selects for processing only images where specified filter is used
+  select_filter: NULL
+  manual_filter: NULL       # if multiple filters are available, selects for processing only images where specified filter is used
                             # else process all images
                             # (default: NULL)
   fixed_aprad: 0            # set this fixed aperture radius for all data instead of finding the aperture radius in a curve-of-growth analysis (px)
