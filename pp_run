@@ -146,13 +146,13 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                 continue
 
             header = hdulist[0].header
-            if man_filtername == header[obsparam['filter']]:
+            if man_filtername == header.get(obsparam['filter'], None):
                 filters.append(header[obsparam['filter']])
                 filenames_filter.append(filename)
             # rename filtername in fits header
             else:
                 header[obsparam['filter']] = man_filtername
-                filters.append(header[obsparam['filter']])
+                filters.append(man_filtername)
                 filenames_filter.append(filename)
 
     # if to select specific filter from series with multiple filters
@@ -335,7 +335,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
     if auto:
         minstars = _pp_conf.minstars
         maxstars = 300
-        manualcatalog = None
+        manualcatalog = man_photo_catalog
         maxflag = 3
     # taking pp_calibrate parameters from configfile
     else:
@@ -456,6 +456,9 @@ if __name__ == '__main__':
                         default=None)
     parser.add_argument('-fixed_aprad', help='fixed aperture radius (px)',
                         default=0)
+    parser.add_argument('-photo_catalog', help='force photometric catalog',
+                        choices=['2MASS', 'URAT-1', 'SDSS-R9', 'APASS9', 'PANSTARRS', 'SkyMapper', 'GAIA'],
+                        default=None)
     parser.add_argument('-source_tolerance',
                         help='tolerance on source properties for registration',
                         choices=['none', 'low', 'medium', 'high'],
@@ -493,6 +496,7 @@ if __name__ == '__main__':
         man_filtername = args.manual_filter
         select_filter = args.select_filter
         fixed_aprad = float(args.fixed_aprad)
+        man_photo_catalog = args.photo_catalog
         source_tolerance = args.source_tolerance
         solar = args.solar
         rerun_registration = args.rerun_registration
