@@ -116,6 +116,7 @@ def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -
     logging.info("calculated airmass: " + str(airmass))
     return airmass
 
+
 def get_radec(target_name: str, obs_code: str, epochs: iter):
     """gets objects ra and dec coordinates from the Horizon system"""
     def _divide_chunks(epochs: iter, n: int = 50):
@@ -454,7 +455,13 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
 
         if obsparam['airmass'] in header:
             header['AIRMASS'] = (header[obsparam['airmass']], 'PP: copied')
+        elif rewrite_radec:
+            # force recalculating airmass if ra/dec are not correct
+            header['AIRMASS'] = (calculate_airmass(parameters=obsparam,
+                                                   location=obs_location,
+                                                   header=header), 'PP: calculated airmass')
         else:
+            # if the entry is not present in the header
             header['AIRMASS'] = (calculate_airmass(parameters=obsparam,
                                                    location=obs_location,
                                                    header=header), 'PP: calculated airmass')
