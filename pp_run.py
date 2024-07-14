@@ -564,9 +564,9 @@ if __name__ == '__main__':
 
     if len(filenames) == 1 and filenames[0] == 'all':
 
-        # dump data set information into summary file
-        _pp_conf.use_diagnostics_summary = True
-        diag.create_summary()
+        # # dump data set information into summary file
+        # _pp_conf.use_diagnostics_summary = True
+        # diag.create_summary()
 
         # turn prefix and fits suffixes into regular expression
         if prefix is None:
