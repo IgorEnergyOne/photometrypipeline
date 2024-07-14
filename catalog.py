@@ -336,9 +336,10 @@ class catalog(object):
                                      'pmDE', 'Epoch',
                                      'Gmag', 'e_Gmag',
                                      'BPmag', 'e_BPmag',
-                                     'RPmag', 'eRPmag'],
+                                     'RPmag', 'eRPmag', 'Var'],
                             column_filters={"phot_g_mean_mag":
-                                                ("<{:f}".format(max_mag))},
+                                                ("<{:f}".format(max_mag)),
+                                            "Var": "!=VARIABLE"},  #remove variable stars from the catalog
                             row_limit=max_sources,
                             timeout=300)
 
@@ -347,6 +348,51 @@ class catalog(object):
                                                 radius=rad_deg * u.deg,
                                                 catalog="I/345/gaia2",
                                                 cache=False)[0]
+            except IndexError:
+                if self.display:
+                    print('no data available from {:s}'.format(
+                        self.catalogname))
+                logging.error('no data available from {:s}'.format(
+                    self.catalogname))
+                return 0
+
+            # rename column names using PP conventions
+            self.data.rename_column('Source', 'ident')
+            self.data.rename_column('RA_ICRS', 'ra_deg')
+            self.data.rename_column('DE_ICRS', 'dec_deg')
+            self.data.rename_column('e_RA_ICRS', 'e_ra_deg')
+            self.data['e_ra_deg'].convert_unit_to(u.deg)
+            self.data.rename_column('e_DE_ICRS', 'e_dec_deg')
+            self.data['e_dec_deg'].convert_unit_to(u.deg)
+            self.data.rename_column('Epoch', 'epoch_yr')
+            self.data['mag'] = self.data['Gmag']  # required for scamp
+
+            # TBD:
+            # - implement proper error ellipse handling
+            # - implement propor motion handling for DR2
+
+        # --------------------------------------------------------------------
+
+        elif self.catalogname == 'GAIA3':
+            # astrometric and photometric catalog (as of DR2)
+            vquery = Vizier(columns=['Source', 'RA_ICRS', 'DE_ICRS',
+                                     'e_RA_ICRS', 'e_DE_ICRS', 'pmRA',
+                                     'pmDE', 'Epoch',
+                                     'Gmag', 'e_Gmag',
+                                     'BPmag', 'e_BPmag',
+                                     'RPmag', 'eRPmag', 'VarFlag'],
+                            column_filters={"phot_g_mean_mag":
+                                                ("<{:f}".format(max_mag)),
+                                            "VarFlag": "!=VARIABLE"},  # remove variable stars from the catalog
+                            row_limit=max_sources,
+                            timeout=300)
+
+            try:
+                self.data = vquery.query_region(field,
+                                                radius=rad_deg * u.deg,
+                                                catalog="I/355/gaiadr3",
+                                                cache=False)[0]
+                self.data['Epoch'] = 2016.0
             except IndexError:
                 if self.display:
                     print('no data available from {:s}'.format(
