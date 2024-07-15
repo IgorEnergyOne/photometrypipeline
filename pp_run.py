@@ -489,7 +489,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     auto = args.auto
     config = args.config
-    print(str(sys.argv)) # arguments as string)
+    logging.info("running pipeline with following arguments:\n%s",
+                 "pp_run " + " ".join(sys.argv[1:len(args.images) + 1]))
     # if auto - then reading console arguments
     if auto:
         prefix = args.prefix
