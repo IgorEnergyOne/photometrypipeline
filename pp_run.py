@@ -489,6 +489,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     auto = args.auto
     config = args.config
+    print(str(sys.argv)) # arguments as string)
     # if auto - then reading console arguments
     if auto:
         prefix = args.prefix
