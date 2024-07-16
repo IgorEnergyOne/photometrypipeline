@@ -52,6 +52,7 @@ except ImportError:
 import _pp_conf
 import toolbox
 from catalog import *
+import astropy
 
 # setup logging
 logging.basicConfig(filename=_pp_conf.log_filename,
@@ -1318,7 +1319,6 @@ class Distill_Diagnostics(Diagnostics_Html):
                        'CRVAL' in key or 'CRPIX' in key or \
                        'EQUINOX' in key:
                         hdulist[0].header[key] = float(val)
-
                 w = wcs.WCS(hdulist[0].header)
                 obj_x, obj_y = dat[11], dat[12]
                 image_coords = w.wcs_world2pix(np.array([[dat[1], dat[2]]]),
