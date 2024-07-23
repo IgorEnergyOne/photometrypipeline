@@ -140,7 +140,7 @@ else:
 # available catalogs
 
 # list of available catalogs
-allcatalogs = ['URAT-1', '2MASS', 'SDSS-R9', 'SDSS-R13', 'APASS9', 'GAIA',
+allcatalogs = ['URAT-1', '2MASS', 'SDSS-R9', 'SDSS-R13', 'APASS9',  'GAIA', 'GAIA3',
                'PANSTARRS', 'TGAS', 'SkyMapper', 'USNO-B1']
 
 # catalog magnitude systems
@@ -150,6 +150,7 @@ allcatalogs_magsys = {'URAT-1': 'Vega',
                       'SDSS-R13': 'AB',
                       'APASS9': 'Vega',
                       'GAIA': 'Vega',
+                      'GAIA3': 'Vega',
                       'PANSTARRS': 'AB',
                       'TGAS': 'Vega',
                       'SkyMapper': 'AB',

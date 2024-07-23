@@ -234,7 +234,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
             snr, source_minarea = obsparam['source_snr'], obsparam['source_minarea']
             aprad = obsparam['aprad_default']
             src_tol = obsparam['source_tolerance']
-            mancat = None
+            mancat = man_astro_catalog
             max_rad = 5.0
             source_maxarea = 0
         # parameters from config file
@@ -456,8 +456,11 @@ if __name__ == '__main__':
                         default=None)
     parser.add_argument('-fixed_aprad', help='fixed aperture radius (px)',
                         default=0)
-    parser.add_argument('-photo_catalog', help='force photometric catalog',
-                        choices=['2MASS', 'URAT-1', 'SDSS-R9', 'APASS9', 'PANSTARRS', 'SkyMapper', 'GAIA'],
+    parser.add_argument('-photo_catalog', help='which photometric catalog to use',
+                        choices=['2MASS', 'URAT-1', 'SDSS-R9', 'APASS9', 'PANSTARRS', 'SkyMapper', 'GAIA', 'GAIA3'],
+                        default=None)
+    parser.add_argument('-astro_catalog', help='which astrometric catalog to use',
+                        choices=['GAIA', 'GAIA3', 'USNO-B1', 'TGAS', '2MASS', 'URAT-1', 'SDSS-R9', 'SDSS-R13'],
                         default=None)
     parser.add_argument('-source_tolerance',
                         help='tolerance on source properties for registration',
@@ -490,7 +493,7 @@ if __name__ == '__main__':
     auto = args.auto
     config = args.config
     logging.info("running pipeline with following arguments:\n%s",
-                 "pp_run " + " ".join(sys.argv[1:len(args.images)+1]))
+                 "pp_run " + " ".join(sys.argv[1:len(args.images) + 1]))
     # if auto - then reading console arguments
     if auto:
         prefix = args.prefix
@@ -499,6 +502,7 @@ if __name__ == '__main__':
         select_filter = args.select_filter
         fixed_aprad = float(args.fixed_aprad)
         man_photo_catalog = args.photo_catalog
+        man_astro_catalog = args.astro_catalog
         source_tolerance = args.source_tolerance
         solar = args.solar
         rerun_registration = args.rerun_registration
