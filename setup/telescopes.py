@@ -5078,5 +5078,5 @@ telescope_parameters = {'VATT4K': vatt4k_param,
 
 try:
     execfile(rootpath + '/setup/mytelescopes.py')
-except IOError:
+except (IOError, NameError):
     pass
