@@ -1571,11 +1571,153 @@ class catalog(object):
 
             return self.shape[0]
 
+            # Gaia DR3 to Johnson Cousins VRI
+        elif ('GAIA3' in self.catalogname and
+                  targetfilter in ['B', 'V', 'R', 'I']):
+
+            logging.info(('trying to transform {:d} GAIA3 sources to '
+                          + '{:s}').format(self.shape[0], targetfilter))
+
+            # transform magnitudes to Johnson-Cousins, Vega system
+            # https://gea.esac.esa.int/archive/documentation/GDR3/Data_processing/chap_cu5pho/cu5pho_sec_photSystem/cu5pho_ssec_photRelations.html
+
+            if not use_all_stars:
+                if targetfilter == 'B':
+                    colormask = ((self.data['BPmag'] - self.data['RPmag'] > -0.5) &
+                                 (self.data['BPmag'] - self.data['RPmag'] < 5.0))
+                elif targetfilter == 'V':
+                    colormask = ((self.data['BPmag'] - self.data['RPmag'] > -0.5) &
+                                 (self.data['BPmag'] - self.data['RPmag'] < 5.0))
+                elif targetfilter == 'R':
+                    colormask = ((self.data['BPmag'] - self.data['RPmag'] > 0.0) &
+                                 (self.data['BPmag'] - self.data['RPmag'] < 4.0))
+                elif targetfilter == 'I':
+                    colormask = ((self.data['BPmag'] - self.data['RPmag'] > -0.5) &
+                                 (self.data['BPmag'] - self.data['RPmag'] < 4.5))
+
+                self.data = self.data[colormask]
+
+            g = self.data['Gmag'].data
+            e_g = self.data['e_Gmag'].data
+            bp = self.data['BPmag'].data
+            rp = self.data['RPmag'].data
+
+            B = g - (0.01448 - 0.6874 * (bp - rp) - 0.3604 * (bp - rp) ** 2
+                     + 0.06718 * (bp - rp) ** 3 - 0.006061 * (bp - rp) ** 4)
+            e_B = np.sqrt(e_g ** 2 + 0.0633 ** 2)
+            V = g - (-0.02704 + 0.01424 * (bp - rp) - 0.2156 * (bp - rp) ** 2 + 0.01426 * (bp - rp) ** 3)
+            e_V = np.sqrt(e_g ** 2 + 0.03017 ** 2)
+            R = g - (-0.02275 + 0.3961 * (bp - rp) - 0.1243 * (bp - rp) ** 2
+                     - 0.01396 * (bp - rp) ** 3 + 0.003775 * (bp - rp) ** 4)
+            e_R = np.sqrt(e_g ** 2 + 0.03167 ** 2)
+            I = g - (0.01753 + 0.76 * (bp - rp) - 0.0991 * (bp - rp) ** 2)
+            e_I = np.sqrt(e_g ** 2 + 0.03765 ** 2)
+
+            self.data.add_column(Column(data=B, name='_Bmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=e_B, name='_e_Bmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=V, name='_Vmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=e_V, name='_e_Vmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=R, name='_Rmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=e_R, name='_e_Rmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=I, name='_Imag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=e_I, name='_e_Imag',
+                                        unit=u.mag))
+
+            if '_transformed' not in self.catalogname:
+                self.catalogname += '_transformed'
+                self.history += ', {:d} transformed to {:s} (Vega)'.format(
+                    self.shape[0], targetfilter)
+                self.magsystem = 'Vega'
+
+            logging.info(
+                '{:d} sources sucessfully transformed to {:s}'.format(
+                    self.shape[0], targetfilter))
+
+            return self.shape[0]
+
+        # Gaia DR3 to SDSS
+        elif ('GAIA3' in self.catalogname and
+              targetfilter in ['g', 'r', 'i', 'z']):
+
+            logging.info(('trying to transform {:d} GAIA3 sources to '
+                          + '{:s}').format(self.shape[0], targetfilter))
+
+            # transform magnitudes to Johnson-Cousins, Vega system
+            # using http://gea.esac.esa.int/archive/documentation/GDR2/Data_processing/chap_cu5pho/sec_cu5pho_calibr/ssec_cu5pho_PhotTransf.html
+
+            if not use_all_stars:
+                if targetfilter == 'g':
+                    colormask = ((self.data['BPmag'] - self.data['RPmag'] > 0.3) &
+                                 (self.data['BPmag'] - self.data['RPmag'] < 3.0))
+                elif targetfilter == 'r':
+                    colormask = ((self.data['BPmag'] - self.data['RPmag'] > 0.0) &
+                                 (self.data['BPmag'] - self.data['RPmag'] < 3.0))
+                elif targetfilter == 'i':
+                    colormask = ((self.data['BPmag'] - self.data['RPmag'] > 0.5) &
+                                 (self.data['BPmag'] - self.data['RPmag'] < 2.0))
+                elif targetfilter == 'z':
+                    colormask = ((self.data['BPmag'] - self.data['RPmag'] > -0.5) &
+                                 (self.data['BPmag'] - self.data['RPmag'] < 4.5))
+
+                self.data = self.data[colormask]
+
+            g = self.data['Gmag'].data
+            e_g = self.data['e_Gmag'].data
+            bp = self.data['BPmag'].data
+            rp = self.data['RPmag'].data
+
+            g_sdss = g - (0.2199 - 0.6365 * (bp - rp)
+                          - 0.1548 * (bp - rp) ** 2 + 0.0064 * (bp - rp) ** 3)
+            e_g_sdss = np.sqrt(e_g ** 2 + 0.0745 ** 2)
+            r_sdss = g - (-0.09837 + 0.08592 * (bp - rp) + 0.1907 * (bp - rp) ** 2
+                          - 0.1701 * (bp - rp) ** 3 + 0.02263 * (bp - rp) ** 4)
+            e_r_sdss = np.sqrt(e_g ** 2 + 0.03776 ** 2)
+            i_sdss = g - (-0.293 + 0.6404 * (bp - rp) - 0.09609 * (bp - rp) ** 2 - 0.002104 * (bp - rp) ** 3)
+            e_i_sdss = np.sqrt(e_g ** 2 + 0.04092 ** 2)
+            z_sdss = g - (-0.4619 + 0.8992 * (bp - rp) - 0.08271 * (bp - rp) ** 2 + 0.005029 * (bp - rp) ** 3)
+            e_z_sdss = np.sqrt(e_g ** 2 + 0.041161 ** 2)
+
+            self.data.add_column(Column(data=g_sdss, name='_gmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=e_g_sdss, name='_e_gmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=r_sdss, name='_rmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=e_r_sdss, name='_e_rmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=i_sdss, name='_imag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=e_i_sdss, name='_e_imag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=z_sdss, name='_zmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=e_z_sdss, name='_e_zmag',
+                                        unit=u.mag))
+
+            if '_transformed' not in self.catalogname:
+                self.catalogname += '_transformed'
+                self.history += ', {:d} transformed to {:s} (AB)'.format(
+                    self.shape[0], targetfilter)
+                self.magsystem = 'AB'
+
+            logging.info(
+                '{:d} sources sucessfully transformed to {:s}'.format(
+                    self.shape[0], targetfilter))
+
+            return self.shape[0]
+
         # Gaia DR2+ to Johnson Cousins VRI
         elif ('GAIA' in self.catalogname and
               targetfilter in ['V', 'R', 'I']):
 
-            logging.info(('trying to transform {:d} GAIA sources to '
+            logging.info(('trying to transform {:d} GAIA2 sources to '
                           + '{:s}').format(self.shape[0], targetfilter))
 
             # transform magnitudes to Johnson-Cousins, Vega system
@@ -1627,7 +1769,7 @@ class catalog(object):
         elif ('GAIA' in self.catalogname and
               targetfilter in ['g', 'r', 'i']):
 
-            logging.info(('trying to transform {:d} GAIA sources to '
+            logging.info(('trying to transform {:d} GAIA2 sources to '
                           + '{:s}').format(self.shape[0], targetfilter))
 
             # transform magnitudes to Johnson-Cousins, Vega system
@@ -1678,12 +1820,6 @@ class catalog(object):
                 self.history += ', {:d} transformed to {:s} (AB)'.format(
                     self.shape[0], targetfilter)
                 self.magsystem = 'AB'
-
-            logging.info(
-                '{:d} sources sucessfully transformed to {:s}'.format(
-                    self.shape[0], targetfilter))
-
-            return self.shape[0]
 
         else:
             if self.display:
