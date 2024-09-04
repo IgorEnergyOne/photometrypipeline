@@ -365,6 +365,9 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         elif int(header['EPOCH']) < 1950:
             header['EPOCH'] = (2000, 'PP: required for registration')
 
+        if obsparam['filter'] not in header:
+            header[obsparam['filter']] = ('Clear', 'PP: some value is required for pipeline to work')
+
         # add header keywords for SCAMP
         header['PHOTFLAG'] = ('F', 'PP: data is not photometric (SCAMP)')
         header['PHOT_K'] = (0.05, 'PP: assumed extinction coefficient')
