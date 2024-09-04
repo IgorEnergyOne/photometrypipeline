@@ -50,7 +50,7 @@ def create_batches(pp_command: str, base_dir: Path, subdir_name: str, batch_fnam
         # path for every file in the batch
         batch = fpaths[file_idx: file_idx + batch_size]
         # create a subdirectory for each batch
-        batch_dir_name = f"batch_{i}"
+        batch_dir_name = f"batch_{i+1:02d}"
         batch_subdir = base_subdir / batch_dir_name
         os.mkdir(batch_subdir)
         line = pp_command + " " + batch_dir_name + "\n"
