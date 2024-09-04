@@ -83,7 +83,12 @@ AC32_param = {
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS'],
+
+    # additional parameters for atlas files
+    # diameter of the telescope's mirror
+    "telescope_diameter": 'APTDIA',
+    'observer': 'OBSERVER'
 }
 
 # Abastumani AC-32 with old IMG6303E camera (before 2018)
@@ -463,6 +468,132 @@ AZT8_lisnyky_param = {
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
+# Majdanak AZT-22 with Andor CCD/EMCCD (SDK2) camera
+AZT22_param = {
+    'telescope_instrument': 'AZT-22/Andor CCD/EMCCD (SDK2)',  # telescope/instrument name
+    'telescope_keyword':  'AZT-22/Andor CCD/EMCCD (SDK2)',  # telescope/instrument keyword
+    'observatory_code': '188',  # MPC observatory code (186?)
+    'secpix': (0.2676, 0.2676),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Clear': None},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/AC32.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/AC32.scamp',
+    'reg_max_mag': 22.,  # 19
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/AC32.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
+# Majdanak NT-60 with Andor CCD/EMCCD (SDK2) camera
+NT60_param = {
+    'telescope_instrument': 'NT-60/Andor CCD/EMCCD (SDK2)',  # telescope/instrument name
+    'telescope_keyword':  'NT-60/Andor CCD/EMCCD (SDK2)',  # telescope/instrument keyword
+    'observatory_code': '188',  # MPC observatory code (186?)
+    'secpix': (0.38, 0.38),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Clear': None},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/AC32.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/AC32.scamp',
+    'reg_max_mag': 22.,  # 19
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/AC32.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
 rozhen_600 = {
     'telescope_instrument': 'Rozhen Zeiss-600/PL09000',  # telescope/instrument name
     'telescope_keyword': 'Rozhen Zeiss-600/PL09000',  # telescope/instrument keyword
@@ -587,6 +718,74 @@ rozhen_2000 = {
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
+# Kitab Boris Satovsky
+Kitab_param = {
+    'telescope_instrument': 'RC-36/PL-09000',  # telescope/instrument name
+    'telescope_keyword': 'RC-36/PL-09000',  # telescope/instrument keyword
+    'observatory_code': '186',  # MPC observatory code
+    'secpix': (0.858, 0.858),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Clear': None,},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/AC32.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/AC32.scamp',
+    'reg_max_mag': 18.5,  # 19
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/AC32.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS'],
+
+    # additional parameters for atlas files
+    # diameter of the telescope's mirror
+    "telescope_diameter": 'APTDIA',
+    'observer': 'OBSERVER'
+}
+
 # VATT, VATT4k
 BART254_param = {
     'telescope_instrument': 'BART 254/1600 mm',  # telescope/instrument name
@@ -650,11 +849,11 @@ BART254_param = {
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
-Prompt7_param = {
+Prompt6_param = {
     'telescope_instrument': 'FLI',  # telescope/instrument name
-    'telescope_keyword': 'Prompt7',  # telescope/instrument keyword
+    'telescope_keyword': 'Prompt6',  # telescope/instrument keyword
     'observatory_code': '807',  # MPC observatory code
-    'secpix': (1.331, 1.331),  # pixel size (arcsec) before binning
+    'secpix': (0.441, 0.441),  # pixel size (arcsec) before binning
     # 'secpix': (5.324, 5.324),
     # image orientation preferences
     'flipx': False,
@@ -669,6 +868,70 @@ Prompt7_param = {
     'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
     # if already in degrees
     'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'JD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'U':'U', 'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Lum': 'R',
+                            'Lum     ': 'R'},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [5, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/Prompt7.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/Prompt7.scamp',
+    'reg_max_mag': 21.0,
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'low',
+
+    # swarp settings
+    # 'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+    #                 'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+    #                'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    #    'swarp-config-file': rootpath+'/setup/vatt4k.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
+Prompt7_param = {
+    'telescope_instrument': 'FLI',  # telescope/instrument name
+    'telescope_keyword': 'Prompt7',  # telescope/instrument keyword
+    'observatory_code': '807',  # MPC observatory code
+    'secpix': (0.334, 0.334),  # pixel size (arcsec) before binning
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    #'date_keyword': 'DATE|TIME-OBS',  # obs date/time
+   'date_keyword': 'DATE-OBS',  # obs date/time
     # keyword; use
     # 'date|time' if
     # separate
@@ -697,7 +960,7 @@ Prompt7_param = {
 
     # scamp settings
     'scamp-config-file': rootpath + '/setup/Prompt7.scamp',
-    'reg_max_mag': 18.5,
+    'reg_max_mag': 20.0, 
     'reg_search_radius': 1.0,  # deg
     'source_tolerance': 'low',
 
@@ -711,7 +974,7 @@ Prompt7_param = {
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+    'photometry_catalogs': ['PANSTARRS', 'GAIA', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
 vatt4k_param = {
@@ -4853,7 +5116,8 @@ cfhtmegaprime_param = {
 
 
 implemented_telescopes = ['AC32', 'AC32_oldcam', '052',
-                          'BART254', 'Prompt7', 'AZT-8', 'AZT-8_lysnyky',
+                          'BART254', 'Prompt6', 'Prompt7', 'AZT-8', 'AZT-8_lysnyky', 'AZT-22',
+                          'NT-60',
                           'VATT4K', 'DCTLMI', 'ARC35ARCTIC',
                           'ARC35AGILE', 'MAGIMACSL', 'MAGIMACSS',
                           'LOWELL31', 'LOWELL42',
@@ -4893,16 +5157,25 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'FLI ML47-10': 'AZT-8',
                           'ML47-10': 'AZT-8',
                           'AZT-8': 'AZT-8',
+                          
                           '70-cm reflector AZT-8/FLI ML47-10': 'AZT-8',
 
                           'PL47-10 FLI': 'AZT-8_lisnyky',
+                          'AZT-22/Andor CCD/EMCCD (SDK2)': 'AZT-22',
+                          'AZT-22': 'AZT-22',
+                            
+                          'NT-60': 'NT-60',
+                          'NT-60/Andor CCD/EMCCD (SDK2)': 'NT-60',
 
                           'FLI - New': 'Simeiz1000_PL1001E',
                           'ML09000-65': 'Simeiz1000_ML09000',
 
                           'FLI PL09000': 'Rozhen600',
 
+                          'RC-36': 'RC-36/PL-09000',
+
                           'BART 254/1600 mm': 'BART254',
+                          'Prompt6': 'Prompt6',
                           'Prompt7': 'Prompt7',
                           'FLI': 'Prompt7',
                           'LMI': 'DCTLMI',
@@ -4983,11 +5256,11 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
 
 # translate telescope keyword into parameter set defined here
 telescope_parameters = {'VATT4K': vatt4k_param,
-                        # 'AC-32/CCD FLI PL4240': AC32_param,
-                        # 'AC-32, 700/1000 Maksutov, AbAO': AC32_param,
+                        'AC-32/CCD FLI PL4240': AC32_param,
+                        'AC-32, 700/1000 Maksutov, AbAO': AC32_param,
                         'AC-32': AC32_param,
-                        # 'AC32': AC32_param,
-                        # 'AC-32   ': AC32_param,
+                        'AC32': AC32_param,
+                        'AC-32   ': AC32_param,
                         'AC-32_oldcam': AC32_oldcam_param,
                         'CCD FLI PL4240': AC32_param,
                         'Newton 0.61-m f/4.3': code052_param,
@@ -4997,9 +5270,13 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'agent_052': code052_param,
                         'AZT-8': AZT8_param,
                         'AZT-8_lisnyky': AZT8_lisnyky_param,
+                        'AZT-22': AZT22_param,
+                        'NT-60': NT60_param,
                         'Rozhen600': rozhen_600,
+                        'RC-36/PL-09000': Kitab_param,
                         'BART 254/1600 mm': BART254_param,
                         'BART254': BART254_param,
+                        'Prompt6': Prompt6_param,
                         'Prompt7': Prompt7_param,
                         'DCTLMI': dctlmi_param,
                         'ARC35ARCTIC': arc35arctic_param,
