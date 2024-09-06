@@ -344,6 +344,69 @@ simeiz_zeis_1000_ML09000 = {
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
+# Simeiz Zeis 1000 with FLI camera (2020 and newer)
+simeiz_zeis_1000_FLI = {
+    'telescope_instrument': 'Simeiz1000_FLI',  # telescope/instrument name
+    'telescope_keyword': 'Simeiz1000_FLI',  # telescope/instrument keyword
+    'observatory_code': '094',  # MPC observatory code
+    'secpix': (0.37, 0.37),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': True,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS|TIME-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Clear': None, '': None},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/simeiz1000PL1001E.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/simeiz1000PL1001E.scamp',
+    'reg_max_mag': 20,  # 19
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/simeiz1000PL1001E.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
 AZT8_param = {
     'telescope_instrument': '70-cm reflector AZT-8/FLI ML47-10',  # telescope/instrument name
     'telescope_keyword': 'AZT-8',  # telescope/instrument keyword
@@ -5169,6 +5232,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
 
                           'FLI - New': 'Simeiz1000_PL1001E',
                           'ML09000-65': 'Simeiz1000_ML09000',
+                          'ZEISS-1000': 'Simeiz1000_FLI',
 
                           'FLI PL09000': 'Rozhen600',
 
@@ -5266,6 +5330,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'Newton 0.61-m f/4.3': code052_param,
                         'Simeiz1000_PL1001E': simeiz_zeis_1000_PL1001E,
                         'Simeiz1000_ML09000': simeiz_zeis_1000_ML09000,
+                        'Simeiz1000_FLI': simeiz_zeis_1000_FLI,
                         'SBIG ST-10 Dual CCD Camera': code052_param,
                         'agent_052': code052_param,
                         'AZT-8': AZT8_param,
