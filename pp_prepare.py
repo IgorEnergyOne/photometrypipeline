@@ -316,6 +316,12 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
                             ignore_missing_end=True)
         header = hdulist[0].header
 
+        # check if binning keyword is present in header
+        if obsparam['binning'][0] not in header:
+            header[obsparam['binning'][0]] = 1
+        if obsparam['binning'][1] not in header:
+            header[obsparam['binning'][1]] = 1
+
         # add other headers, if available
         if len(hdulist) > 1:
             for i in range(len(hdulist)):
