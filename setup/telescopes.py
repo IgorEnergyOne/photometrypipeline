@@ -349,10 +349,10 @@ simeiz_zeis_1000_FLI = {
     'telescope_instrument': 'Simeiz1000_FLI',  # telescope/instrument name
     'telescope_keyword': 'Simeiz1000_FLI',  # telescope/instrument keyword
     'observatory_code': '094',  # MPC observatory code
-    'secpix': (0.37, 0.37),  # pixel size (arcsec) before binning
+    'secpix': (0.19, 0.19),  # pixel size (arcsec) before binning
 
     # image orientation preferences
-    'flipx': True,
+    'flipx': False,
     'flipy': False,
     'rotate': 0,
 
@@ -363,7 +363,7 @@ simeiz_zeis_1000_FLI = {
     'dec': 'OBJCTDEC',  # telescope pointin, Dec
     'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
     # if already in degrees
-    'date_keyword': 'DATE-OBS|TIME-OBS',  # obs date/time
+    'date_keyword': 'DATE-OBS',  # obs date/time
     # keyword; use
     # 'date|time' if
     # separate
@@ -551,6 +551,69 @@ AZT22_param = {
     'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
     # if already in degrees
     'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Clear': None},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/AC32.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/AC32.scamp',
+    'reg_max_mag': 22.,  # 19
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/AC32.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
+# Majdanak AZT-22 with Andor CCD/EMCCD (SDK2) camera with stupid header
+AZT22_unfilled_param = {
+    'telescope_instrument': 'AZT-22/Andor CCD/EMCCD (SDK2)',  # telescope/instrument name
+    'telescope_keyword':  'AZT-22/Andor CCD/EMCCD (SDK2)',  # telescope/instrument keyword
+    'observatory_code': '188',  # MPC observatory code (186?)
+    'secpix': (0.2676, 0.2676),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'UTDATE|UTSTART',  # obs date/time
     # keyword; use
     # 'date|time' if
     # separate
@@ -5226,6 +5289,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'PL47-10 FLI': 'AZT-8_lisnyky',
                           'AZT-22/Andor CCD/EMCCD (SDK2)': 'AZT-22',
                           'AZT-22': 'AZT-22',
+                          '1.5m' : 'AZT-22_unfilled',
                             
                           'NT-60': 'NT-60',
                           'NT-60/Andor CCD/EMCCD (SDK2)': 'NT-60',
@@ -5336,6 +5400,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'AZT-8': AZT8_param,
                         'AZT-8_lisnyky': AZT8_lisnyky_param,
                         'AZT-22': AZT22_param,
+                        'AZT-22_unfilled': AZT22_unfilled_param,
                         'NT-60': NT60_param,
                         'Rozhen600': rozhen_600,
                         'RC-36/PL-09000': Kitab_param,
