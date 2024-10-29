@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import warnings
+warnings.filterwarnings("ignore")
+
 import os
 import argparse
 from pathlib import Path
@@ -8,7 +11,10 @@ from astropy.io import fits
 from astropy.table import vstack
 from astropy.time import Time
 from astroquery.jplhorizons import Horizons
+from astroquery.jplsbdb import SBDB
 import pandas as pd
+
+
 
 # row order in the atlas header
 row_order = ['object', 'reference', 'info_observer', 'info_reducer', 'observing_site', 'telescope',
@@ -39,6 +45,16 @@ atlas_dict = {
     'zero_mag': 'ZERO MAG',
     'time_unit': 'UNIT OF TIME'
 }
+
+def get_full_name(asteroid_id) -> str:
+    jpl_query = SBDB.query("{}".format(asteroid_id), phys=False)
+    # check if shortname exists (exists for asteroids with names)
+    shortname = jpl_query['object'].get('shortname')
+    if shortname:
+        return shortname
+    else:
+        name = jpl_query['object'].get('fullname')
+        return name
 
 
 def lister(path: Path, name_pattern: str, return_type='name', object_type="file") -> list:
@@ -74,7 +90,7 @@ def init_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_script
     return obs_dict
 
 
-def form_atlas_entry(entry: str, atlas_entry_len=16) -> str:
+def form_atlas_entry(entry: str, atlas_entry_len=15) -> str:
     """forms header entries for atlas files by adding ...: at the end"""
     lendiff = atlas_entry_len - len(entry)
     formed_entry = entry + "." * (lendiff - 1) + ":"
@@ -179,8 +195,8 @@ def form_atlas(filename_header, filename_photometry):
     obs_dict = init_obs_dict()
     # get photometry data
     photometry_data = pd.read_csv(filename_photometry)
-    # zero time of observations (int of julian date)
-    zero_time = int(photometry_data['julian_date'].values[0])
+    # zero time of observations (int of julian date - 0.5)
+    zero_time = int(photometry_data['julian_date'].values[0]) - 0.5
     # (observing time) - mean time of observation
     observing_time = (photometry_data['julian_date'].iloc[0]
                       + photometry_data['julian_date'].iloc[-1]) / 2
@@ -190,18 +206,18 @@ def form_atlas(filename_header, filename_photometry):
         'reduc_time': '   {:.4f}'.format, 'mag': '{:.4f}'.format, 'sig': '{:.4f}'.format})
 
     fits_dict = {
-        "object": header.get(obsparam.get('object')),
+        "object": get_full_name(header.get(obsparam.get('object'))),
         "observer": 'Observer(s): ' + header.get(obsparam.get('observer')),
         "reference": obsparam.get('reference', 'Krugly et al. in prep.'),
-        "info_observer": 'Observer(s): ' + header.get(obsparam['observer']),
+        "info_observer": 'Observer(s): ' + header.get(obsparam.get('observer', 'observer')),
         "info_reducer": 'Reducer(s): Yu. Krugly, pipeline',
         "info_aspect": f"aspect data on observing midtime {julian_to_ymd(observing_time)}",
         'aspect_data': midtime_aspect_data(observing_time,
                                            header.get(obsparam.get('object')),
                                            obsparam.get('observatory_code')),
-        "info_correction": 'Every point was l.t. corrected, mag reduced, sol. ph. angle corrected to midtime',
+        "info_correction": 'Corrected to midtime',
         "info_reduc": 'reduced to midtime of the night',
-        'observing_site': obsparam.get('observatory_code') + ' ' + obs_dict[obsparam.get('observatory_code')],
+        'observing_site': obs_dict[obsparam.get('observatory_code')] + f", code {obsparam.get('observatory_code')}",
         "telescope": obsparam.get('telescope_keyword'),
         "detector": 'CCD',  # header.get(obsparam['detector']),
         "columns": f"#{header.get(obsparam.get('filter'))}.",
@@ -235,19 +251,24 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument('-fname_photo', help='which csv photometry file to use for data',
                         default=None)
-    parser.add_argument('-out_fname', help='name for the resulting atlas file',
+    parser.add_argument('-fname_out', help='name for the resulting atlas file',
                         default=None)
 
     args = parser.parse_args()
     filename_header = args.fname_header
     if filename_header is None:
         filename_header = lister(os.getcwd(), '*.fit*', 'path', 'file')[0]
+    # check if path is a directory
+    elif os.path.isdir(filename_header):
+        filename_header = lister(filename_header, '*.fit*', 'path', 'file')[0]
     filename_photo = args.fname_photo
     if filename_photo is None:
         filename_photo = lister(os.getcwd(), '*_.csv', 'path', 'file')[0]
-    filename_atlas = args.out_fname
+    elif os.path.isdir(filename_photo):
+        filename_photo = lister(filename_photo, '*_.csv', 'path', 'file')[0]
+    filename_atlas = args.fname_out
     if filename_atlas is None:
-        filename_atlas = str(filename_photo).replace('.csv', '.ATL')
+        filename_atlas = str(os.path.basename(filename_photo)).replace('.csv', '.ATL')
 
     rootpath = os.environ.get('PHOTPIPEDIR')  # os.environ.get('PHOTPIPEDIR')
     exec(open(rootpath + '/setup/telescopes.py').read())
