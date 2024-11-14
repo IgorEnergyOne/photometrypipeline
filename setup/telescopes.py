@@ -5299,6 +5299,8 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'ZEISS-1000': 'Simeiz1000_FLI',
 
                           'FLI PL09000': 'Rozhen600',
+                          'Zeiss-600': 'Rozhen600',
+
 
                           'RC-36': 'RC-36/PL-09000',
 

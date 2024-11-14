@@ -675,15 +675,17 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         outf = open('photometry_%s.dat' %
                     target.translate(_pp_conf.target2filename), 'w')
 
-        # write reduced results to ASCII file
-        outf_reduced = open('photometry_%s_reduced.dat' %
-                            target.translate(_pp_conf.target2filename), 'w')
         outf.write('#                           filename     julian_date      ' +
                    'mag    sig     source_ra    source_dec   [1]   [2]   ' +
                    '[3]   [4]    [5]       ZP ZP_sig inst_mag ' +
                    'in_sig               [6] [7] [8]    [9]          [10] ' +
                    'FWHM"\n')
-        outf_reduced.write("#julian_date      mag    sig\n")
+
+        # write reduced results to ASCII file
+        outf_reduced = open('photometry_%s_reduced.dat' %
+                            target.translate(_pp_conf.target2filename), 'w')
+        outf_reduced.write("#                        cal    inst\n")
+        outf_reduced.write("#julian_date      mag    sig    sig\n")
 
         # column names for Series row and dataframe
         colnames = ["rejected", "filename", "julian_date", "mag", "sig", "source_ra", "source_dec", "ra_offset",
@@ -691,7 +693,6 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                     "inst_mag", "inst_sig", "catalog", "band", "sextractor_flags", "telescope", "photo_method", "FWHM"]
         datalist = []
 
-        outf_reduced.write("#julian_date      mag    sig\n")
         for dat in data:
             # sort measured magnitudes by target
             if dat[0] == target:
@@ -774,7 +775,8 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                 # data reduced file
                 outf_reduced.write(('%15.7f ' % dat[9][0]) +
                                    ('%8.4f ' % dat[7]) +
-                                   ('%6.4f\n' % dat[8]))
+                                   ('%6.4f ' % dat[8]) +
+                                   ('%6.4f\n' % dat[6]))
 
         outf.writelines('#\n# [1]: predicted_RA - source_RA [arcsec]\n' +
                         '# [2]: predicted_Dec - source_Dec [arcsec]\n' +
