@@ -255,6 +255,36 @@ def form_atlas(filename_header, filename_photometry):
 
     return formatted_atlas
 
+def combine_atlas(fname_batch: str, fname_out: str):
+    core_path = os.getcwd()
+    with open(fname_batch, 'r') as file:
+        paths = file.readlines()
+    all_atlas = []
+    for path in paths:
+        path = path.replace('\n', '')
+        print(path)
+        path = Path(path)
+        # check if the path is absolute or not
+        if path.is_absolute():
+            atlas_path = path
+        else:
+            atlas_path = Path(core_path) / path
+        # check if the file exists
+        if not atlas_path.is_file():
+            raise FileNotFoundError('file does not exist: %s' % atlas_path)
+
+        with open(atlas_path, 'r') as file:
+            atlas = file.readlines()
+            # remove "END OF OBJECT" character
+            atlas = atlas[:-1]
+            atlas = ''.join(atlas)
+            all_atlas.append(atlas)
+
+    atlas_whole = ''.join(all_atlas)
+    atlas_whole += 'END OF OBJECT'
+    with open(fname_out, 'w') as file:
+        file.write(atlas_whole)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='automated ATLAS file creation')
@@ -264,28 +294,39 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument('-fname_out', help='name for the resulting atlas file',
                         default=None)
+    parser.add_argument('-combine', help='combine multiple ATLAS files into one by the paths from file',
+                        default=None)
 
     args = parser.parse_args()
-    filename_header = args.fname_header
-    if filename_header is None:
-        filename_header = lister(os.getcwd(), '*.fit*', 'path', 'file')[0]
-    # check if path is a directory
-    elif os.path.isdir(filename_header):
-        filename_header = lister(filename_header, '*.fit*', 'path', 'file')[0]
-    filename_photo = args.fname_photo
-    if filename_photo is None:
-        filename_photo = lister(os.getcwd(), '*_.csv', 'path', 'file')[0]
-    elif os.path.isdir(filename_photo):
-        filename_photo = lister(filename_photo, '*_.csv', 'path', 'file')[0]
-    filename_atlas = args.fname_out
-    if filename_atlas is None:
-        filename_atlas = str(os.path.basename(filename_photo)).replace('.csv', '.ATL')
 
-    rootpath = os.environ.get('PHOTPIPEDIR')  # os.environ.get('PHOTPIPEDIR')
-    exec(open(rootpath + '/setup/telescopes.py').read())
-    text_atlas = form_atlas(filename_header, filename_photo)
-    # transform text from UNIX to DOS format
-    text_atlas = text_atlas.replace('\n', '\r\n')
-    print(text_atlas)
-    write_atlas(filename_atlas, text_atlas)
-    print(f'ATLAS file created: {filename_atlas}')
+
+    filename_header = args.fname_header
+    filename_atlas = args.fname_out
+
+    if args.combine is None:
+        rootpath = os.environ.get('PHOTPIPEDIR')
+        if filename_header is None:
+            filename_header = lister(os.getcwd(), '*.fit*', 'path', 'file')[0]
+            # check if path is a directory
+        elif os.path.isdir(filename_header):
+            filename_header = lister(filename_header, '*.fit*', 'path', 'file')[0]
+        filename_photo = args.fname_photo
+        if filename_photo is None:
+            filename_photo = lister(os.getcwd(), '*_.csv', 'path', 'file')[0]
+        elif os.path.isdir(filename_photo):
+            filename_photo = lister(filename_photo, '*_.csv', 'path', 'file')[0]
+        if filename_atlas is None:
+            filename_atlas = str(os.path.basename(filename_photo)).replace('.csv', '.ATL')
+        exec(open(rootpath + '/setup/telescopes.py').read())
+        text_atlas = form_atlas(filename_header, filename_photo)
+        # transform text from UNIX to DOS format
+        text_atlas = text_atlas.replace('\n', '\r\n')
+        print(text_atlas)
+        write_atlas(filename_atlas, text_atlas)
+        print(f'ATLAS file created: {filename_atlas}')
+    else:
+        if filename_atlas is None:
+            filename_atlas = "combined_atlas.ATL"
+        combine_atlas(args.combine, filename_atlas)
+        print(f'combine ATLAS file created: {filename_atlas}')
+
