@@ -112,15 +112,18 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
         raise KeyError('cannot identify telescope/instrument; please update' +
                        '_pp_conf.instrument_keys accordingly')
 
-    # check if there is only one unique instrument
-    if len(set(instruments)) > 1:
-        print('ERROR: multiple instruments used in dataset: %s' %
-              str(set(instruments)))
-        logging.error('multiple instruments used in dataset: %s' %
-                      str(set(instruments)))
-        for i in range(len(filenames)):
-            logging.error('%s %s' % (filenames[i], instruments[i]))
-        sys.exit()
+    # get the associated telescope for every identified instrument
+    if len(instruments) > 1:
+        telescopes = [_pp_conf.instrument_identifiers[instrument] for instrument in instruments]
+        # check if there is only one unique telescope
+        if len(set(telescopes)) > 1:
+            print('ERROR: multiple telescopes used in dataset: %s' %
+                  str(set(instruments)))
+            logging.error('multiple telescopes used in dataset: %s' %
+                          str(set(instruments)))
+            for i in range(len(filenames)):
+                logging.error('%s %s' % (filenames[i], instruments[i]))
+            sys.exit()
 
     telescope = _pp_conf.instrument_identifiers[instruments[0]]
     obsparam = _pp_conf.telescope_parameters[telescope]
