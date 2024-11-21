@@ -5271,6 +5271,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
 
                           'AC-32/CCD FLI PL4240': 'AC-32',
                           'AC-32, 700/1000 Maksutov, AbAO': "AC-32",
+                          'AC-32, 700': "AC-32",
                           'CCD FLI PL4240': 'AC-32',
 
                           'IMG6303E': 'AC-32_oldcam',
