@@ -257,18 +257,29 @@ def form_atlas(filename_header, filename_photometry):
 
 def combine_atlas(fname_batch: str, fname_out: str):
     core_path = os.getcwd()
+    # read paths from the file
     with open(fname_batch, 'r') as file:
         paths = file.readlines()
     all_atlas = []
+    # check every path if correct
     for path in paths:
         path = path.replace('\n', '')
-        print(path)
         path = Path(path)
         # check if the path is absolute or not
         if path.is_absolute():
             atlas_path = path
         else:
             atlas_path = Path(core_path) / path
+
+        # check if it is a directory
+        if atlas_path.is_dir():
+            # look for the atlas file in the directory
+            atlas_files = list(atlas_path.glob('*.ATL'))
+            if len(atlas_files) == 0:
+                raise FileNotFoundError('no atlas files found in the directory: %s' % atlas_path)
+            elif len(atlas_files) > 1:
+                raise ValueError('multiple atlas files found in the directory: %s' % atlas_path)
+            atlas_path = atlas_files[0]
         # check if the file exists
         if not atlas_path.is_file():
             raise FileNotFoundError('file does not exist: %s' % atlas_path)
