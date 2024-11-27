@@ -27,6 +27,7 @@ import os
 import gc
 import sys
 import yaml
+import subprocess
 try:
     import numpy as np
 except ImportError:
@@ -418,6 +419,11 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
     # add information to summary website, if requested
     if _pp_conf.use_diagnostics_summary:
         diag.insert_into_summary(summary_message)
+
+    # create atlas file for photometric results
+    logging.info('create atlas file for photometric results')
+    # change cwd to dir path
+    subprocess.call(['/bin/sh', '-i', '-c', 'pp_atlas'])
 
     print('\nDone!\n')
     logging.info('----- successfully done with this process ----')

@@ -212,6 +212,9 @@ def form_atlas(filename_header, filename_photometry):
     sig_median = np.median(photometry_data['sig'])
     sig_percentiles = np.percentile(photometry_data['sig'], [16, 84]) - sig_median
     #sig_percentiles = f'[{sig_percentiles[0]:.4f}, {sig_percentiles[1]:.4f}]'
+    # get the method of photometry analysis that was conducted
+    photometry_method = photometry_data['photo_method'].iloc[0]
+
 
 
 
@@ -222,7 +225,7 @@ def form_atlas(filename_header, filename_photometry):
         "info_observer": 'Observer(s): ' + header.get(obsparam.get('observer', 'observer'), 'no data'),
         "info_reducer": 'Reducer(s): Yu. Krugly, pipeline',
         "info_aspect": f"aspect data on observing midtime {julian_to_ymd(observing_time)}",
-        "info_add": f"filter: { header.get(obsparam.get('filter'))}",
+        "info_add": f"filter: { header.get(obsparam.get('filter'))}, method: {photometry_method}",
         'aspect_data': midtime_aspect_data(observing_time,
                                            header.get(obsparam.get('object')),
                                            obsparam.get('observatory_code')),
