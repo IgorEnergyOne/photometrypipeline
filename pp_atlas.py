@@ -212,6 +212,11 @@ def form_atlas(filename_header, filename_photometry):
     sig_median = np.median(photometry_data['sig'])
     sig_percentiles = np.percentile(photometry_data['sig'], [16, 84]) - sig_median
     #sig_percentiles = f'[{sig_percentiles[0]:.4f}, {sig_percentiles[1]:.4f}]'
+    # get the method of photometry analysis that was conducted
+    photometry_method = photometry_data['photo_method'].iloc[0]
+    # get the photo filter in which the images were processed (not the one in fits header)
+    reduc_filter = photometry_data['band'].iloc[0]
+
 
 
 
@@ -222,7 +227,7 @@ def form_atlas(filename_header, filename_photometry):
         "info_observer": 'Observer(s): ' + header.get(obsparam.get('observer', 'observer'), 'no data'),
         "info_reducer": 'Reducer(s): Yu. Krugly, pipeline',
         "info_aspect": f"aspect data on observing midtime {julian_to_ymd(observing_time)}",
-        "info_add": f"filter: { header.get(obsparam.get('filter'))}",
+        "info_add": f"filter: {reduc_filter}, method: {photometry_method}",
         'aspect_data': midtime_aspect_data(observing_time,
                                            header.get(obsparam.get('object')),
                                            obsparam.get('observatory_code')),
@@ -231,10 +236,10 @@ def form_atlas(filename_header, filename_photometry):
         'observing_site': obs_dict[obsparam.get('observatory_code')] + f", code {obsparam.get('observatory_code')}",
         "telescope": obsparam.get('telescope_keyword') + f", {header.get(obsparam.get('telescope_diameter', 'diameter'), '')}",
         "detector": 'CCD',  # header.get(obsparam['detector']),
-        "columns": f"#{header.get(obsparam.get('filter'))}-.", # new #R-.
+        "columns": f"#{reduc_filter}-.", # new #R-.
         "exptime": obsparam.get('exptime'),
         "airmass": obsparam.get('airmass'),
-        "filter": header.get(obsparam.get('filter')),
+        "filter": reduc_filter,
         "phot_system": detect_phot_system(header.get(obsparam.get('filter'))),
         'relative_phot': 'F',
         'reduced_mag': 'F',
@@ -255,6 +260,47 @@ def form_atlas(filename_header, filename_photometry):
 
     return formatted_atlas
 
+def combine_atlas(fname_batch: str, fname_out: str):
+    core_path = os.getcwd()
+    # read paths from the file
+    with open(fname_batch, 'r') as file:
+        paths = file.readlines()
+    all_atlas = []
+    # check every path if correct
+    for path in paths:
+        path = path.replace('\n', '')
+        path = Path(path)
+        # check if the path is absolute or not
+        if path.is_absolute():
+            atlas_path = path
+        else:
+            atlas_path = Path(core_path) / path
+
+        # check if it is a directory
+        if atlas_path.is_dir():
+            # look for the atlas file in the directory
+            atlas_files = list(atlas_path.glob('*.ATL'))
+            if len(atlas_files) == 0:
+                raise FileNotFoundError('no atlas files found in the directory: %s' % atlas_path)
+            elif len(atlas_files) > 1:
+                raise ValueError('multiple atlas files found in the directory: %s' % atlas_path)
+            atlas_path = atlas_files[0]
+        # check if the file exists
+        if not atlas_path.is_file():
+            raise FileNotFoundError('file does not exist: %s' % atlas_path)
+
+        with open(atlas_path, 'r') as file:
+            atlas = file.readlines()
+            # remove "END OF OBJECT" character
+            atlas = atlas[:-1]
+            atlas = ''.join(atlas)
+            all_atlas.append(atlas)
+
+    atlas_whole = ''.join(all_atlas)
+    atlas_whole += 'END OF OBJECT'
+    with open(fname_out, 'w') as file:
+        file.write(atlas_whole)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='automated ATLAS file creation')
@@ -264,28 +310,39 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument('-fname_out', help='name for the resulting atlas file',
                         default=None)
+    parser.add_argument('-combine', help='combine multiple ATLAS files into one by the paths from file',
+                        default=None)
 
     args = parser.parse_args()
-    filename_header = args.fname_header
-    if filename_header is None:
-        filename_header = lister(os.getcwd(), '*.fit*', 'path', 'file')[0]
-    # check if path is a directory
-    elif os.path.isdir(filename_header):
-        filename_header = lister(filename_header, '*.fit*', 'path', 'file')[0]
-    filename_photo = args.fname_photo
-    if filename_photo is None:
-        filename_photo = lister(os.getcwd(), '*_.csv', 'path', 'file')[0]
-    elif os.path.isdir(filename_photo):
-        filename_photo = lister(filename_photo, '*_.csv', 'path', 'file')[0]
-    filename_atlas = args.fname_out
-    if filename_atlas is None:
-        filename_atlas = str(os.path.basename(filename_photo)).replace('.csv', '.ATL')
 
-    rootpath = os.environ.get('PHOTPIPEDIR')  # os.environ.get('PHOTPIPEDIR')
-    exec(open(rootpath + '/setup/telescopes.py').read())
-    text_atlas = form_atlas(filename_header, filename_photo)
-    # transform text from UNIX to DOS format
-    text_atlas = text_atlas.replace('\n', '\r\n')
-    print(text_atlas)
-    write_atlas(filename_atlas, text_atlas)
-    print(f'ATLAS file created: {filename_atlas}')
+
+    filename_header = args.fname_header
+    filename_atlas = args.fname_out
+
+    if args.combine is None:
+        rootpath = os.environ.get('PHOTPIPEDIR')
+        if filename_header is None:
+            filename_header = lister(os.getcwd(), '*.fit*', 'path', 'file')[0]
+            # check if path is a directory
+        elif os.path.isdir(filename_header):
+            filename_header = lister(filename_header, '*.fit*', 'path', 'file')[0]
+        filename_photo = args.fname_photo
+        if filename_photo is None:
+            filename_photo = lister(os.getcwd(), '*_.csv', 'path', 'file')[0]
+        elif os.path.isdir(filename_photo):
+            filename_photo = lister(filename_photo, '*_.csv', 'path', 'file')[0]
+        if filename_atlas is None:
+            filename_atlas = str(os.path.basename(filename_photo)).replace('.csv', '.ATL')
+        exec(open(rootpath + '/setup/telescopes.py').read())
+        text_atlas = form_atlas(filename_header, filename_photo)
+        # transform text from UNIX to DOS format
+        text_atlas = text_atlas.replace('\n', '\r\n')
+        print(text_atlas)
+        write_atlas(filename_atlas, text_atlas)
+        print(f'ATLAS file created: {filename_atlas}')
+    else:
+        if filename_atlas is None:
+            filename_atlas = "combined_atlas.ATL"
+        combine_atlas(args.combine, filename_atlas)
+        print(f'combine ATLAS file created: {filename_atlas}')
+

@@ -462,7 +462,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         header['FILTER'] = (header[obsparam['filter']], 'PP:copied')
         header['EXPTIME'] = (header[obsparam['exptime']], 'PP: copied')
 
-        if obsparam['airmass'] in header:
+        if (obsparam['airmass'] in header) and not rewrite_radec:
             header['AIRMASS'] = (header[obsparam['airmass']], 'PP: copied')
         elif rewrite_radec:
             # force recalculating airmass if ra/dec are not correct
@@ -628,7 +628,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         if display:
             print('creating diagnostic output')
         logging.info(' ~~~~~~~~~ creating diagnostic output')
-        diag.add_index(filenames, os.getcwd(), obsparam)
+        diag.add_index(filenames, os.getcwd(), obsparam, header_update)
 
     logging.info('Done! -----------------------------------------------------')
 

@@ -5294,6 +5294,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                             
                           'NT-60': 'NT-60',
                           'NT-60/Andor CCD/EMCCD (SDK2)': 'NT-60',
+                          'Andor CCD/EMCCD (SDK2)': 'NT-60',
 
                           'FLI - New': 'Simeiz1000_PL1001E',
                           'ML09000-65': 'Simeiz1000_ML09000',

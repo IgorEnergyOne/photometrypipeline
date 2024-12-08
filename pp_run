@@ -223,6 +223,8 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
     change_header = {}
     if man_targetname is not None:
         change_header['OBJECT'] = man_targetname
+    if man_filtername is not None:
+        change_header['man_filter'] = man_filtername
 
     print('\n-----preparing images (pp_prepare.prepare)')
     # prepare fits files for photometry pipeline

@@ -27,6 +27,7 @@ import os
 import gc
 import sys
 import yaml
+import subprocess
 try:
     import numpy as np
 except ImportError:
@@ -112,15 +113,18 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
         raise KeyError('cannot identify telescope/instrument; please update' +
                        '_pp_conf.instrument_keys accordingly')
 
-    # check if there is only one unique instrument
-    if len(set(instruments)) > 1:
-        print('ERROR: multiple instruments used in dataset: %s' %
-              str(set(instruments)))
-        logging.error('multiple instruments used in dataset: %s' %
-                      str(set(instruments)))
-        for i in range(len(filenames)):
-            logging.error('%s %s' % (filenames[i], instruments[i]))
-        sys.exit()
+    # get the associated telescope for every identified instrument
+    if len(instruments) > 1:
+        telescopes = [_pp_conf.instrument_identifiers[instrument] for instrument in instruments]
+        # check if there is only one unique telescope
+        if len(set(telescopes)) > 1:
+            print('ERROR: multiple telescopes used in dataset: %s' %
+                  str(set(instruments)))
+            logging.error('multiple telescopes used in dataset: %s' %
+                          str(set(instruments)))
+            for i in range(len(filenames)):
+                logging.error('%s %s' % (filenames[i], instruments[i]))
+            sys.exit()
 
     telescope = _pp_conf.instrument_identifiers[instruments[0]]
     obsparam = _pp_conf.telescope_parameters[telescope]
@@ -219,6 +223,8 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
     change_header = {}
     if man_targetname is not None:
         change_header['OBJECT'] = man_targetname
+    if man_filtername is not None:
+        change_header['man_filter'] = man_filtername
 
     print('\n-----preparing images (pp_prepare.prepare)')
     # prepare fits files for photometry pipeline
@@ -415,6 +421,11 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
     # add information to summary website, if requested
     if _pp_conf.use_diagnostics_summary:
         diag.insert_into_summary(summary_message)
+
+    # create atlas file for photometric results
+    logging.info('create atlas file for photometric results')
+    # change cwd to dir path
+    subprocess.call(['/bin/sh', '-i', '-c', 'pp_atlas'])
 
     print('\nDone!\n')
     logging.info('----- successfully done with this process ----')

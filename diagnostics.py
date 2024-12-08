@@ -326,7 +326,7 @@ class Prepare_Diagnostics(Diagnostics_Html):
                                            '.diagnostics',
                                            '{:s}.html'.format(filename))))
 
-    def add_index(self, filenames, datadirectory, obsparam):
+    def add_index(self, filenames, datadirectory, obsparam, header_update=None):
         """
         create index.html
         diagnostic root website
@@ -340,12 +340,17 @@ class Prepare_Diagnostics(Diagnostics_Html):
                                   os.path.join(self.conf.diagnostics_path,
                                                '.diagnostics')) else None
 
+
+
         # create header information
         refheader = fits.open(filenames[0],
                               ignore_missing_end=True)[0].header
         raw_filtername = refheader[obsparam['filter']]
-        translated_filtername = obsparam['filter_translations'][
-            refheader[obsparam['filter']]]
+        if header_update is not None:
+            translated_filtername = header_update.get('man_filter', None)
+        else:
+            translated_filtername = obsparam['filter_translations'][
+                refheader[obsparam['filter']]]
 
         html = ("{:s}\n<H1>Photometry Pipeline Diagnostic Output</H1>\n"
                 "<TABLE CLASS=\"gridtable\">\n"
