@@ -14,6 +14,7 @@ from astroquery.jplhorizons import Horizons
 from astroquery.jplsbdb import SBDB
 import pandas as pd
 import numpy as np
+import math
 
 
 
@@ -89,6 +90,19 @@ def init_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_script
     for obs_site in obs_file:
         code, site = obs_site.strip('\n').split(maxsplit=1)
         obs_dict.update({code: site})
+    return obs_dict
+
+def init_mpc_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories_mpc.dat') -> dict:
+    """read the data with mpc observatories locations and their codes"""
+    obs_dict = {}
+    obs_file = pd.read_fwf(dict_path, colspecs=[(0, 4), (4, 14), (14, 23), (23, 33), (33, 200)])
+    obs_file['Lat'] = obs_file.apply(lambda x: math.degrees(math.atan2(float(x['sin']), float(x['cos']))), axis=1)
+    for obs_site in obs_file.iloc:
+        code, long, lat, site_name = obs_site[['Code', 'Long.', 'Lat', 'Name']]
+        long_letter = 'E' if float(long) > 0 else 'W'
+        lat_sign = "+" if lat > 0 else ""
+        full_name = f"{long_letter} {long:.2f} {lat_sign}{lat:.2f} {site_name}"
+        obs_dict.update({code: full_name})
     return obs_dict
 
 
@@ -195,6 +209,7 @@ def form_atlas(filename_header, filename_photometry):
     header = get_fits_header(filename_header)
     obsparam = get_obsparam(header) # inst_sigma (reduced sigma) * 2**0.5- cal_sigma - zeropoint_sigma
     obs_dict = init_obs_dict()
+    obs_dict_mpc = init_mpc_obs_dict()
     # get photometry data
     photometry_data = pd.read_csv(filename_photometry)
     # zero time of observations (int of julian date - 0.5)
@@ -217,6 +232,16 @@ def form_atlas(filename_header, filename_photometry):
     # get the photo filter in which the images were processed (not the one in fits header)
     reduc_filter = photometry_data['band'].iloc[0]
 
+    # try to get the name of the observatory by the observatory code
+    try:
+        observatory = obs_dict[obsparam.get('observatory_code')]
+    except KeyError:
+        try:
+            observatory = obs_dict_mpc[obsparam.get('observatory_code')]
+        except KeyError:
+            print(f"Observatory code {obsparam.get('observatory_code')} not found in the database")
+            observatory = obsparam.get('observatory_code')
+
 
 
 
@@ -233,7 +258,7 @@ def form_atlas(filename_header, filename_photometry):
                                            obsparam.get('observatory_code')),
         "info_correction": 'Corrected to midtime',
         "info_reduc": 'reduced to midtime of the night',
-        'observing_site': obs_dict[obsparam.get('observatory_code')] + f", code {obsparam.get('observatory_code')}",
+        'observing_site': observatory + f", code {obsparam.get('observatory_code')}",
         "telescope": obsparam.get('telescope_keyword') + f", {header.get(obsparam.get('telescope_diameter', 'diameter'), '')}",
         "detector": 'CCD',  # header.get(obsparam['detector']),
         "columns": f"#{reduc_filter}-.", # new #R-.
