@@ -66,6 +66,22 @@ class Diagnostics_Html():
 
     from pp_setup import confdiagnostics as conf
 
+    @staticmethod
+    def get_system_type():
+        """
+        check if system is true Linux or WSL
+        """
+        # read /proc/version
+        with open('/proc/version', 'r') as f:
+            for line in f:
+                if 'microsoft' in line.lower():
+                    if os.getenv('PHOTPIPEDIR_WSL') is None:
+                        logging.warning('Please set environment variable PHOTPIPEDIR_WSL ' +
+                                        'to the path to Photometry Pipeline scripts')
+                    return os.getenv('PHOTPIPEDIR_WSL')
+
+        return os.getenv('PHOTPIPEDIR')
+
     def create_website(self, filename, content=''):
         """
         create empty website for diagnostics output
@@ -90,7 +106,7 @@ class Diagnostics_Html():
                 "</script>\n\n"
                 "{:s}\n"
                 "</BODY>\n"
-                "</HTML>\n").format(os.getenv('PHOTPIPEDIR'), content)
+                "</HTML>\n").format(self.get_system_type(), content)
 
         outf = open(filename, 'w')
         outf.writelines(html)
@@ -211,7 +227,7 @@ class Prepare_Diagnostics(Diagnostics_Html):
                      "</TR>\n").format(
                          idx+1, framename,
                          Time(header["MIDTIMJD"], format='jd').to_value(
-                             'iso', subfmt='date_hm'),
+                             'iso', subfmt='date_hms'),
                          str(objectname),
                          float(header[obsparam['airmass']]),
                          float(header[obsparam['exptime']]),
