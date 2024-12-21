@@ -778,8 +778,8 @@ rozhen_600 = {
     'swarp-config-file': rootpath + '/setup/rozhen600PL09000.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
 rozhen_2000 = {
@@ -1076,10 +1076,11 @@ Prompt7_param = {
 
     # source extractor settings
     'source_minarea': 12,  # default sextractor source minimum N_pixels
-    'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    # 'source_maxarea': 30,  # default sextractor source minimum N_pixels
     'source_snr': 7,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
-    'aprad_range': [5, 10],  # [minimum, maximum] aperture radius (px)
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+
     'sex-config-file': rootpath + '/setup/Prompt7.sex',
     'mask_file': {},
     #                        mask files as a function of x,y binning
@@ -1100,8 +1101,74 @@ Prompt7_param = {
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'GAIA', 'SDSS-R9', 'APASS9', '2MASS']
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
+
+TianShan_param = {
+    'telescope_instrument': 'FLI',  # telescope/instrument name
+    'telescope_keyword': 'TShAO-1m',  # telescope/instrument keyword
+    'observatory_code': 'N42',  # MPC observatory code
+    'secpix': (0.376, 0.376),  # pixel size (arcsec) before binning
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    #'date_keyword': 'DATE|TIME-OBS',  # obs date/time
+   'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'JD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Lum': 'R',
+                            'Lum     ': 'R'},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    # 'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+
+    'sex-config-file': rootpath + '/setup/Prompt7.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/Prompt7.scamp',
+    'reg_max_mag': 20.0,
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'low',
+
+    # swarp settings
+    # 'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+    #                 'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+    #                'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    #    'swarp-config-file': rootpath+'/setup/vatt4k.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
 
 vatt4k_param = {
     'telescope_instrument': 'VATT/VATT4k',  # telescope/instrument name
@@ -5302,6 +5369,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
 
                           'FLI PL09000': 'Rozhen600',
                           'Zeiss-600': 'Rozhen600',
+                          'Rozhen Zeiss-600/PL09000': 'Rozhen600',
 
 
                           'RC-36': 'RC-36/PL-09000',
@@ -5309,7 +5377,9 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'BART 254/1600 mm': 'BART254',
                           'Prompt6': 'Prompt6',
                           'Prompt7': 'Prompt7',
-                          'FLI': 'Prompt7',
+                          # 'FLI': 'Prompt7',
+
+                          'FLI': 'TShAO-1m',
                           'LMI': 'DCTLMI',
                           'lmi': 'DCTLMI',
                           'arctic': 'ARC35ARCTIC',
@@ -5412,6 +5482,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'BART254': BART254_param,
                         'Prompt6': Prompt6_param,
                         'Prompt7': Prompt7_param,
+                        'TShAO-1m': TianShan_param,
                         'DCTLMI': dctlmi_param,
                         'ARC35ARCTIC': arc35arctic_param,
                         'ARC35AGILE': arc35agile_param,
