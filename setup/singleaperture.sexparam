@@ -34,7 +34,7 @@ MAGERR_PETRO           RMS error for PETROsian magnitude                        
 #MAGERR_SOMFIT          Magnitude error derived from SOM fit                       [mag]
 #ERROR_SOMFIT           Reduced Chi-square error of the SOM fit                   
 #VECTOR_SOMFIT          Position vector of the winning SOM node                   
-#KRON_RADIUS            Kron apertures in units of A or B                         
+KRON_RADIUS            Kron apertures in units of A or B
 #PETRO_RADIUS           Petrosian apertures in units of A or B                    
 #BACKGROUND             Background at centroid position                            [count]
 #THRESHOLD              Detection threshold above background                       [count]

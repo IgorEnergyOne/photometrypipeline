@@ -1314,7 +1314,6 @@ class Distill_Diagnostics(Diagnostics_Html):
         data['thumbnailoverlays'] = {}
 
         for target in data['targetnames']:
-
             data['thumbnailplots'][target] = []
             data['thumbnailoverlays'][target] = []
 
@@ -1472,6 +1471,19 @@ class Distill_Diagnostics(Diagnostics_Html):
                          self.conf.image_size_thumb_px/2),
                         aprad, ec='red', fc='none',
                         linewidth=self.conf.thumb_linewidth)
+                elif _pp_conf.photmode == 'AUTO':
+                    # Create the ellipse
+                    targetpos = matplotlib.patches.Ellipse(
+                        (self.conf.image_size_thumb_px / 2,
+                         self.conf.image_size_thumb_px / 2),  # Center of the ellipse
+                        width=dat[-3] * 6,  # Full width (major axis)
+                        height=dat[-2] * 6,  # Full height (minor axis)
+                        angle=dat[-1],  # Rotation angle in degrees
+                        edgecolor='red',  # Edge color
+                        facecolor='none',  # Transparent fill
+                        linewidth=self.conf.thumb_linewidth  # Line thickness
+                    )
+
                 else:
                     targetpos = plt.Rectangle(
                         (self.conf.image_size_thumb_px/2-7,

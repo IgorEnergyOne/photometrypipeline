@@ -598,6 +598,8 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
 
         # identify magnitudes
         mag_keys = ['MAG_APER', 'MAGERR_APER']
+        # aperture parameter keys
+        aper_param_keys = [ 'A_IMAGE', 'B_IMAGE', 'THETA_IMAGE']
         if filtername is not None:
             for key in cat.fields:
                 if filtername+'mag' in key:
@@ -626,9 +628,8 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
             match_keys_this_catalog=('ra_deg', 'dec_deg'),
             match_keys_other_catalog=match_keys_other_catalog,
             extract_this_catalog=['ra_deg', 'dec_deg', 'ident'],
-            extract_other_catalog=extract_other_catalog+mag_keys,
+            extract_other_catalog=extract_other_catalog+mag_keys+aper_param_keys,
             tolerance=None)
-
         for i in range(len(match[0][0])):
             # derive calibrated magnitudes, if available
             try:
@@ -646,11 +647,13 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                          cal_mag, cal_magerr,
                          cat.obstime, cat.catalogname,
                          match[1][2][i], match[1][3][i],
-                         cat.origin, match[1][4][i], match[1][5][i]])
+                         cat.origin, match[1][4][i], match[1][5][i],
+                         match[1][10][i],  match[1][11][i], match[1][12][i]])
             # format: ident, RA_exp, Dec_exp, RA_img, Dec_img,
             #         mag_inst, sigmag_instr, mag_cal, sigmag_cal
             #         obstime, filename, img_x, img_y, origin, flags
-            #         fwhm
+            #         fwhm,
+            #         a, b, theta - ellipsoid aperture parameters
             targetnames[match[0][2][i]] = 1
 
     # list of targets
