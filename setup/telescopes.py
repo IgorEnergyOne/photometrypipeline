@@ -1134,7 +1134,8 @@ TianShan_param = {
     'filter_translations': {'V': 'V', 'R': 'R',
                             'I': 'I', 'B': 'B',
                             'Lum': 'R',
-                            'Lum     ': 'R'},
+                            'Lum     ': 'R',
+                            'R_johnson': 'R'},
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
