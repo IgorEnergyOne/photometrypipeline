@@ -343,14 +343,19 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
         maxstars = 300
         manualcatalog = man_photo_catalog
         maxflag = 3
+        use_all_stars = False
+        radius_coeff = calib_fov
     # taking pp_calibrate parameters from configfile
     else:
         minstars = cal_minstars
         maxstars = cal_maxstars
         manualcatalog = cal_catalog
         maxflag = cal_maxflag
+        use_all_stars = cal_use_all_stars
+        radius_coeff = cal_radius_coeff
 
     print('\n----- run photometric calibration (pp_calibrate.calibrate)\n')
+    print('this one is invoked')
 
     while True:
         calibration = pp_calibrate.calibrate(filenames=filenames,
@@ -362,7 +367,9 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                              maxflag=maxflag,
                                              solar=solar,
                                              display=True,
-                                             diagnostics=True)
+                                             diagnostics=True,
+                                             use_all_stars=use_all_stars,
+                                             radius_coeff=radius_coeff)
 
         try:
             zps = [frame['zp'] for frame in calibration['zeropoints']]
@@ -496,6 +503,9 @@ if __name__ == '__main__':
     parser.add_argument('-rewrite_radec',
                         help='rewrites RA/Dec in header of fits files with queried data',
                         action='store_true', default=False)
+    parser.add_argument('-calib_fov',
+                        help='fraction (0-1) of the FOV from the center to use for the photometric calibration',
+                        default=0.5)
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
 
@@ -521,6 +531,7 @@ if __name__ == '__main__':
         rejectionfilter = args.reject
         keep_wcs = args.keep_wcs
         rewrite_radec = args.rewrite_radec
+        calib_fov = float(args.calib_fov)
         filenames = sorted(args.images)
     # if path to config is provided - use it instead of default config
     else:
@@ -575,6 +586,8 @@ if __name__ == '__main__':
         cal_maxstars = config['pp_calibrate'].get('maxstars')
         cal_catalog = config['pp_calibrate'].get('catalog')
         cal_maxflag = config['pp_calibrate'].get('maxflag')
+        cal_use_all_stars = config['pp_calibrate'].get('use_all_stars')
+        cal_radius_coeff = config['pp_calibrate'].get('radius_coeff')
     # if filenames = ['all'], walk through directories and run pipeline
     # each dataset
     _masterroot_directory = os.getcwd()

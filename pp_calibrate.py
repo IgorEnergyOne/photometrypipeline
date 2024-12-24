@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from astropy.coordinates import SkyCoord
 
 from diagnostics import calibration as diag
 from toolbox import *
@@ -223,7 +224,7 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
 
 def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars_external,
                       use_all_stars=False,
-                      display=False, diagnostics=False):
+                      display=False, diagnostics=False, radius_coeff=0.5):
     """derive zeropoint for a number of catalogs based on a reference catalog"""
 
     output = {'filtername': filtername, 'minstars': minstars_external,
@@ -238,6 +239,7 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
                      (" | ".join([cat.catalogname, cat.origin, cat.history]),
                       " | ".join([ref_cat.catalogname, ref_cat.origin,
                                   ref_cat.history])))
+
 
         if display:
             print('zeropoint for %s:' % cat.catalogname, end=' ')
@@ -265,6 +267,36 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
             cat.data['MAG_'+_pp_conf.photmode]))
         cat.reject_sources_with(np.isnan(cat.data['MAGERR_' +
                                                   _pp_conf.photmode]))
+
+        # min_star_mag = -7
+        # max_star_mag = -11
+        # cat.reject_sources_with(cat.data['MAG_'+_pp_conf.photmode] <= max_star_mag)
+        # cat.reject_sources_with(cat.data['MAG_'+_pp_conf.photmode] >= min_star_mag)
+
+
+        if not use_all_stars:
+            # derive the center and the radius of the image (catalog)
+            ra_center, dec_center, rad_deg = skycenter(cat, display=False)
+            logging.info(f'Derived center of the image: RA={ra_center:.3f} deg, '
+                         f'DEC={dec_center:.3f} deg, radius={rad_deg:.2f} deg')
+            len_before = len(cat.data)
+
+            logging.info(f'Length before rejection: {len(cat.data)} ({cat.catalogname})')
+
+            # Convert RA and Dec into SkyCoord objects
+            center_coord = SkyCoord(ra=ra_center * u.deg, dec=dec_center * u.deg)
+            object_coords = SkyCoord(ra=cat.data['ra_deg'] * u.deg, dec=cat.data['dec_deg'] * u.deg)
+            # Calculate angular separations
+            separations = center_coord.separation(object_coords)
+            # Add separations to the table (optional, for inspection)
+            cat.data['center_separation'] = separations
+
+            # Filter rows where separation is within the radius
+            cat.reject_sources_with(cat.data['center_separation'] > radius_coeff * rad_deg)
+
+            # Print the filtered table
+            logging.info(f'Length after/before rejection in {rad_deg:.2f} deg radius: {len(cat.data)}/{len_before} ({cat.catalogname})')
+            print(f'Length after/before rejection in {rad_deg:.2f} deg radius: {len(cat.data)}/{len_before}')
 
         # add idx columns to both catalogs
         if 'idx' not in ref_cat.fields:
@@ -502,12 +534,12 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
               obsparam, maxflag=3,
               magzp=None, solar=False,
               use_all_stars=False,
-              display=False, diagnostics=False):
+              display=False, diagnostics=False, radius_coeff=0.5):
     """
     Photometric calibration of each input frame in one specific filter
     Instrumental magnitudes provided by pp_photometry() are matched with photometric catalogs
     in order to derive the magnitude zeropoint of each input image. Photometric catalogs are a
-    ccessed through CDS Vizier, as specified in the respective Telescope Setup setting, or as
+    processed through CDS Vizier, as specified in the respective Telescope Setup setting, or as
     specified by the -catalog option. If -catalog is not used, a number of catalogs are tried;
     if it is used, only one catalog is tried. If no sources are available from either catalog,
     the function finishes using instrumental magnitudes. The calibration process requires a
@@ -680,7 +712,8 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
                                 minstars, maxstars,
                                 use_all_stars=use_all_stars,
                                 display=display,
-                                diagnostics=diagnostics)
+                                diagnostics=diagnostics,
+                                radius_coeff=radius_coeff)
 
     # zp_data content
     #

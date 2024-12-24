@@ -195,7 +195,7 @@ def get_binning(header, obsparam):
     return (binning_x, binning_y)
 
 
-def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg'):
+def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg', display=True):
     """derive center position and radius from catalogs"""
     from astropy.coordinates import SkyCoord
     from astropy import units as u
@@ -216,16 +216,17 @@ def skycenter(catalogs, ra_key='ra_deg', dec_key='dec_deg'):
                                    np.exp(1j*np.deg2rad(max_ra)))),
                np.rad2deg(np.angle(np.exp(1j*np.deg2rad(min_dec)) +
                                    np.exp(1j*np.deg2rad(max_dec)))))
-
-    # print data to the console
-    print('\n#####################################################')
-    print("Derive center position and radius from catalogs(toolbox.skycenter):")
-    print('Outliers percentile value: {} %'.format(percent))
     lower_left = SkyCoord(ra=min_ra, dec=min_dec, frame='icrs', unit='deg')
     upper_right = SkyCoord(ra=max_ra, dec=max_dec, frame='icrs', unit='deg')
-    print('Derived lower left and upper right coordinates:')
-    print(f'lower_left = {lower_left},\nupper_right = {upper_right}')
-    print('#####################################################\n')
+
+    if display:
+        # print data to the console
+        print('\n#####################################################')
+        print("Derive center position and radius from catalogs(toolbox.skycenter):")
+        print('Outliers percentile value: {} %'.format(percent))
+        print('Derived lower left and upper right coordinates:')
+        print(f'lower_left = {lower_left},\nupper_right = {upper_right}')
+        print('#####################################################\n')
 
     rad = lower_left.separation(upper_right).deg / 2
 
