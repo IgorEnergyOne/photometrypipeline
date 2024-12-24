@@ -292,11 +292,12 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
             cat.data['center_separation'] = separations
 
             # Filter rows where separation is within the radius
-            cat.reject_sources_with(cat.data['center_separation'] > radius_coeff * rad_deg)
+            search_rad = radius_coeff * rad_deg
+            cat.reject_sources_with(cat.data['center_separation'] > search_rad)
 
             # Print the filtered table
-            logging.info(f'Length after/before rejection in {rad_deg:.2f} deg radius: {len(cat.data)}/{len_before} ({cat.catalogname})')
-            print(f'Length after/before rejection in {rad_deg:.2f} deg radius: {len(cat.data)}/{len_before}')
+            logging.info(f'Length after/before rejection in {search_rad:.2f} deg radius: {len(cat.data)}/{len_before} ({cat.catalogname})')
+            print(f'Length after/before rejection in {search_rad:.2f} deg radius: {len(cat.data)}/{len_before}')
 
         # add idx columns to both catalogs
         if 'idx' not in ref_cat.fields:
