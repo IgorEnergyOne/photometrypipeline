@@ -217,16 +217,15 @@ def form_atlas(filename_header, filename_photometry):
     # (observing time) - mean time of observation
     observing_time = (photometry_data['julian_date'].iloc[0]
                       + photometry_data['julian_date'].iloc[-1]) / 2
+    # get rejected flag
+    photometry_data.replace(to_replace=[True, False], value=['!', ''], inplace=True, regex=True)
     # reducing time
     photometry_data['reduc_time'] = photometry_data['julian_date'].values - zero_time
-    data_formatted = photometry_data[['reduc_time', 'mag', 'sig']].to_string(header=False, index=False, formatters={
-        'reduc_time': '   {:.7f}'.format, 'mag': '{:.4f}'.format, 'sig': '{:.4f}'.format})
-    data_formatted = photometry_data[['reduc_time', 'mag', 'inst_sig', 'sig']].to_string(header=False, index=False, formatters={
-        'reduc_time': '   {:.7f}'.format, 'mag': '{:.4f}'.format, 'inst_sig': '{:.4f}'.format, 'sig': '{:.4f}'.format})
+    data_formatted = photometry_data[['rejected', 'reduc_time', 'mag', 'inst_sig', 'sig']].to_string(header=False, index=False, formatters={
+        'rejected': '{:s}'.format, 'reduc_time': '  {:.7f}'.format, 'mag': '{:.4f}'.format, 'inst_sig': '{:.4f}'.format, 'sig': '{:.4f}'.format})
     # calculate the median value of sig (error for the object's magnitude and percentiles)
     sig_median = np.median(photometry_data['sig'])
     sig_percentiles = np.percentile(photometry_data['sig'], [16, 84]) - sig_median
-    #sig_percentiles = f'[{sig_percentiles[0]:.4f}, {sig_percentiles[1]:.4f}]'
     # get the method of photometry analysis that was conducted
     photometry_method = photometry_data['photo_method'].iloc[0]
     # get the photo filter in which the images were processed (not the one in fits header)
