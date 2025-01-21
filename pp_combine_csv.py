@@ -32,7 +32,8 @@ def lister(path: Path, name_pattern: str, return_type='name', object_type="file"
 def combine_csv_files(path_core_dir: str,
                       dir_name_pattern: str,
                       file_name_pattern: str,
-                      out_file_path: str):
+                      out_file_path: str,
+                      append=False):
     """
     Combines all csv files in the given directory with the given name pattern
     """
@@ -58,7 +59,10 @@ def combine_csv_files(path_core_dir: str,
     combined_data = target_data.join(control_data[["mag_control", "sig_control", "control_ra", "control_dec",
                                                    "control_mag_inst", "control_sig_inst"]],
                                      how='left', rsuffix='_control')
-    combined_data.to_csv(out_file_path, index=False)
+    if append:
+        combined_data.to_csv(out_file_path, mode='a', header=False, index=False)
+    else:
+        combined_data.to_csv(out_file_path, index=False)
 
 
 if __name__ == '__main__':
@@ -75,13 +79,23 @@ if __name__ == '__main__':
     parser.add_argument('-out_path',
                         help='path where to output the combined results',
                         default=None)
+    parser.add_argument('-append',
+                        help='append data to the existing csv file',
+                        action='store_true',
+                        default=False)
     args = parser.parse_args()
     core_path = str(args.path_core_dir) if args.path_core_dir is not None else os.getcwd()
     dir_name_pattern = str(args.dirs_pattern)
     file_name_pattern = str(args.files_pattern)
     out_path = args.out_path
+    append = args.append
     if out_path is None:
         out_path = os.path.join(core_path, 'combined_results.csv')
-    combine_csv_files(core_path, dir_name_pattern, file_name_pattern, out_path)
-    print('Done! Results are saved in {}'.format(out_path))
+
+    if append:
+        print('Appending data to {}'.format(out_path))
+        combine_csv_files(core_path, dir_name_pattern, file_name_pattern, out_path, append=True)
+    else:
+        combine_csv_files(core_path, dir_name_pattern, file_name_pattern, out_path)
+        print('Done! Results are saved in {}'.format(out_path))
 
