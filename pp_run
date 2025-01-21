@@ -505,7 +505,7 @@ if __name__ == '__main__':
                         action='store_true', default=False)
     parser.add_argument('-calib_fov',
                         help='fraction (0-1) of the FOV from the center to use for the photometric calibration',
-                        default=0.5)
+                        default=0.9)
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
 
