@@ -355,7 +355,6 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
         radius_coeff = cal_radius_coeff
 
     print('\n----- run photometric calibration (pp_calibrate.calibrate)\n')
-    print('this one is invoked')
 
     while True:
         calibration = pp_calibrate.calibrate(filenames=filenames,

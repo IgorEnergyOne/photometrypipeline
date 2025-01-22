@@ -648,12 +648,13 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                          cat.obstime, cat.catalogname,
                          match[1][2][i], match[1][3][i],
                          cat.origin, match[1][4][i], match[1][5][i],
-                         match[1][10][i],  match[1][11][i], match[1][12][i]])
+                         match[1][10][i],  match[1][11][i], match[1][12][i], cat.airmass])
             # format: ident, RA_exp, Dec_exp, RA_img, Dec_img,
             #         mag_inst, sigmag_instr, mag_cal, sigmag_cal
             #         obstime, filename, img_x, img_y, origin, flags
             #         fwhm,
             #         a, b, theta - ellipsoid aperture parameters
+            #         airmass
             targetnames[match[0][2][i]] = 1
 
     # list of targets
@@ -692,8 +693,9 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
 
         # column names for Series row and dataframe
         colnames = ["rejected", "filename", "julian_date", "mag", "sig", "source_ra", "source_dec", "ra_offset",
-                    "dec_offset", "man_ra_offset", "man_dec_offset", "exptime", "zeropoint", "zeropoint_sig",
-                    "inst_mag", "inst_sig", "catalog", "band", "sextractor_flags", "telescope", "photo_method", "FWHM"]
+                    "dec_offset", "man_ra_offset", "man_dec_offset", "exptime", "airmass", "zeropoint", "zeropoint_sig",
+                    "inst_mag", "inst_sig", "catalog", "band", "sextractor_flags", "telescope", "photo_method", "FWHM",
+                  ]
         datalist = []
 
         for dat in data:
@@ -739,14 +741,14 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                 # colnames = ["rejected", "filename", "julian_date", "mag", "sig", "source_ra", "source_dec", "ra_offset",
                 #             "dec_offset", "man_ra_offset", "man_dec_offset", "exptime", "zeropoint", "zeropoint_sig",
                 #             "inst_mag", "inst_sig", "catalog", "band", "sextractor_flags", "telescope", "photo_method",
-                #             "FWHM"]
+                #             "FWHM", "airmass"]
                 # mag, sig - calibrated values for magnitude
                 # source_ra, source_dec - measured coordinates from the image
                 # ra_offset, dec_offset - offset of measured coordinates from the expected ones (catalogue)
                 # create pandas series from a row of data
                 data_row = pd.Series([reject_this_target, dat[10].replace(' ', '_'), dat[9][0], dat[7], dat[8],
                                       dat[3], dat[4], (dat[1] - dat[3]) * 3600., (dat[2] - dat[4]) * 3600., offset[0],
-                                      offset[1], dat[9][1], (dat[7] - dat[5]), np.sqrt(dat[8] ** 2 - dat[6] ** 2),
+                                      offset[1], dat[9][1], dat[19], (dat[7] - dat[5]), np.sqrt(dat[8] ** 2 - dat[6] ** 2),
                                       dat[5], dat[6], catalogname, filtername, dat[14], dat[13].split(';')[0],
                                       _pp_conf.photmode, dat[15] * 3600],
                                      index=colnames)

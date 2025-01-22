@@ -581,13 +581,15 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
             print(cat.read_ldac(ldac_filename, filename, maxflag=maxflag,
                                 object_keyword=obsparam['object'],
                                 exptime_keyword=obsparam['exptime'],
-                                time_keyword='MIDTIMJD'),
+                                time_keyword='MIDTIMJD',
+                                airmass_keyword=obsparam['airmass']),
                   '(sources, columns) read from', filename)
         else:
             cat.read_ldac(ldac_filename, filename, maxflag=maxflag,
                           object_keyword=obsparam['object'],
                           exptime_keyword=obsparam['exptime'],
-                          time_keyword='MIDTIMJD')
+                          time_keyword='MIDTIMJD',
+                          airmass_keyword=obsparam['airmass'])
 
         if cat.shape[0] > 0:
             catalogs.append(cat)

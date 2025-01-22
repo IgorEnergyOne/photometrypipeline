@@ -129,6 +129,7 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
                               frame['fits_filename'],
                               object_keyword=obsparam['object'],
                               exptime_keyword=obsparam['exptime'],
+                              airmass_keyword=obsparam['airmass'],
                               maxflag=0)
                 ldac_catalogs.append(cat)
 
