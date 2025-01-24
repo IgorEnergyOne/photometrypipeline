@@ -59,6 +59,7 @@ def combine_csv_files(path_core_dir: str,
     combined_data = target_data.join(control_data[["mag_control", "sig_control", "control_ra", "control_dec",
                                                    "control_mag_inst", "control_sig_inst"]],
                                      how='left', rsuffix='_control')
+    combined_data['red_julian_date'] = combined_data['julian_date'] - combined_data.iloc[0]['julian_date']
     if append:
         combined_data.to_csv(out_file_path, mode='a', header=False, index=False)
     else:
