@@ -784,7 +784,8 @@ class catalog(object):
 
     def read_ldac(self, filename, fits_filename=None, maxflag=None,
                   time_keyword='MIDTIMJD', exptime_keyword='EXPTIME',
-                  object_keyword='OBJECT', telescope_keyword='TEL_KEYW'):
+                  object_keyword='OBJECT', telescope_keyword='TEL_KEYW',
+                  airmass_keyword='AIRMASS'):
         """
         read in FITS_LDAC file
         input: LDAC filename
@@ -830,6 +831,7 @@ class catalog(object):
             self.obstime[0] = float(fitsheader[time_keyword])
             self.obstime[1] = float(fitsheader[exptime_keyword])
             self.obj = fitsheader[object_keyword]
+            self.airmass = float(fitsheader[airmass_keyword])
 
         # rename columns
         if 'XWIN_WORLD' in self.fields:
@@ -978,10 +980,10 @@ class catalog(object):
         # create header and write to database
         header = Table([[self.catalogname], [self.origin], [self.history],
                         [self.magsys], [self.obstime[0]], [self.obstime[1]],
-                        [self.obj], [self.filtername]],
+                        [self.obj], [self.filtername], [self.airmass]],
                        names=['name', 'origin', 'description',
                               'magsys', 'obstime', 'exptime', 'obj',
-                              'filtername'])
+                              'filtername', 'airmass'])
         header.to_pandas().to_sql('header', db_conn, index=False)
 
         # write data to database
@@ -1031,11 +1033,10 @@ class catalog(object):
         self.obstime[1] = header['exptime'][0]
         self.obj = header['obj'][0]
         self.filtername = header['filtername'][0]
-
         # read in data table
         self.data = Table.from_pandas(read_sql('SELECT * FROM data',
                                                db_conn))
-
+        print('db header', header)
         # rename Johnson filternames
         for filtername in ['B', 'V', 'R', 'I']:
             if '_' + filtername + 'Johnsonmag' in list(self.data.columns):
