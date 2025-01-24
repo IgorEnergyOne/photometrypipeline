@@ -101,8 +101,8 @@ if rootpath is None:
 
 # potential FITS header keywords for looking up the instrument
 # any unique header keyword works as a potential identifier
-instrument_keys = ['PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME', 'INSTRUME',
-                   'TELESCOP']
+instrument_keys = ['TELESCOP', 'INSTRUME', 'PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME',
+                   ]
 
 execfile(rootpath+'/setup/telescopes.py')
 
@@ -194,5 +194,5 @@ solcol = 0.2
 
 
 # photometry flavor ['APER', 'ISOCOR', 'AUTO', 'PETRO']
-photmode = 'APER'
+photmode = 'AUTO'
 # don't change this unless you understand what you are doing
