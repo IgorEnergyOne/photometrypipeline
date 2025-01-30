@@ -148,7 +148,6 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                 print('ERROR: cannot open file %s' % filename)
                 filenames.pop(idx)
                 continue
-
             header = hdulist[0].header
             if man_filtername == header.get(obsparam['filter'], None):
                 filters.append(header[obsparam['filter']])
@@ -158,7 +157,6 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                 header[obsparam['filter']] = man_filtername
                 filters.append(man_filtername)
                 filenames_filter.append(filename)
-
     # if to select specific filter from series with multiple filters
     elif select_filter:
         for idx, filename in enumerate(filenames):
@@ -171,7 +169,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                 continue
 
             header = hdulist[0].header
-            if man_filtername == header[obsparam['filter']]:
+            if select_filter == header[obsparam['filter']]:
                 filters.append(header[obsparam['filter']])
                 filenames_filter.append(filename)
 
@@ -201,7 +199,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
             logging.error('%s %s' % (filenames[i], filters[i]))
         sys.exit()
 
-    if man_filtername is None:
+    if man_filtername is None and select_filter is None:
         try:
             filtername = obsparam['filter_translations'][filters[0]]
         except KeyError:
@@ -212,9 +210,15 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                            'keyword "filter_translations" for %s in ' +
                            'setup/telescopes.py') % (filters[0], telescope))
             return None
+
     else:
-        filtername = man_filtername
-        filenames = filenames_filter
+        if man_filtername:
+            filtername = man_filtername
+            filenames = filenames_filter
+        elif select_filter:
+            filtername = select_filter
+            filenames = filenames_filter
+
     logging.info('%d %s frames identified' % (len(filenames), filtername))
 
     print('run photometry pipeline on %d %s %s frames' %
