@@ -1322,7 +1322,6 @@ class Distill_Diagnostics(Diagnostics_Html):
 
             data['thumbnailplots'][target] = []
             for dat in data[target]:
-                print(dat)
                 for fitsfilename in ['.fits', '.fit']:
                     fitsfilename = (dat[10][:dat[10].find('.ldac')] +
                                     fitsfilename)
