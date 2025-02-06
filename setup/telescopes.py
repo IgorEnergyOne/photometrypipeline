@@ -1100,7 +1100,7 @@ Prompt7_param = {
     #    'swarp-config-file': rootpath+'/setup/vatt4k.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA3', 'GAIA'],
+    'astrometry_catalogs': ['GAIA3'],
     'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
