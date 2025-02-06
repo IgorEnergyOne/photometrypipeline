@@ -1322,6 +1322,7 @@ class Distill_Diagnostics(Diagnostics_Html):
 
             data['thumbnailplots'][target] = []
             for dat in data[target]:
+                print(dat)
                 for fitsfilename in ['.fits', '.fit']:
                     fitsfilename = (dat[10][:dat[10].find('.ldac')] +
                                     fitsfilename)
@@ -1476,9 +1477,9 @@ class Distill_Diagnostics(Diagnostics_Html):
                     targetpos = matplotlib.patches.Ellipse(
                         (self.conf.image_size_thumb_px / 2,
                          self.conf.image_size_thumb_px / 2),  # Center of the ellipse
-                        width=dat[-3] * 6,  # Full width (major axis)
-                        height=dat[-2] * 6,  # Full height (minor axis)
-                        angle=dat[-1],  # Rotation angle in degrees
+                        width=dat[16] * 6,  # Full width (major axis)
+                        height=dat[17] * 6,  # Full height (minor axis)
+                        angle=dat[18],  # Rotation angle in degrees
                         edgecolor='red',  # Edge color
                         facecolor='none',  # Transparent fill
                         linewidth=self.conf.thumb_linewidth  # Line thickness
