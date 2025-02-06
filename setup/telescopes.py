@@ -82,7 +82,7 @@ AC32_param = {
     'swarp-config-file': rootpath + '/setup/AC32.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
+    'astrometry_catalogs': ['GAIA3'],
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS'],
 
     # additional parameters for atlas files
@@ -159,7 +159,7 @@ AC32_oldcam_param = {
 code052_param = {
     'telescope_instrument': 'Newton 0.61-m f/4.3',  # telescope/instrument name
     'telescope_keyword': 'agent_052',  # telescope/instrument keyword
-    'observatory_code': '052',  # MPC observatory code
+    'observatory_code': '056',  # MPC observatory code
     'secpix': (1.069, 1.069),  # pixel size (arcsec) before binning
 
     # image orientation preferences
@@ -202,7 +202,7 @@ code052_param = {
     # scamp settings
     'scamp-config-file': rootpath + '/setup/code_052.scamp',
     'reg_max_mag': 18.5,
-    'reg_search_radius': 2.0,  # deg
+    'reg_search_radius': 1.0,  # deg
     'source_tolerance': 'high',
 
     # swarp settings
@@ -211,11 +211,11 @@ code052_param = {
                       'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
     #                          keywords to be copied in image
     #                        combination using swarp
-    'swarp-config-file': rootpath + '/setup/bart254-canaries.swarp',
+    'swarp-config-file': rootpath + '/setup/AC32.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
 # Simeiz Zeis 1000 with PL1001E (1024 px, 24 mkm)
@@ -5415,9 +5415,6 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'KMTS': 'KMTNETS',
                           'SI 600-277': 'FROST',
                           'Mexman': 'MEXMAN',
-                          'mosaic_1_1': 'KPNO4MOS1',
-                          'mosaic_1': 'KPNO4MOS1',
-                          'KMTS': 'KMTNETS',
                           'newfirm': 'KPNO4NEWF',
                           'Mosaic3': 'KPNO4MOS3',
                           'WFCAM': 'UKIRTWFCAM',
@@ -5508,9 +5505,6 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'KMTNETS': kmtnets_param,
                         'FROST': frost_param,
                         'MEXMAN': mexman_param,
-                        'KPNO4MOS1': kpno4mos1_param,
-                        'KMTNETS': kmtnets_param,
-                        'FROST': frost_param,
                         'KPNO4MOS3': kpno4mos3_param,
                         'KPNO4NEWF': kpno4newf_param,
                         'UKIRTWFCAM': ukirtwfcam_param,

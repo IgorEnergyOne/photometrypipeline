@@ -135,8 +135,8 @@ def get_fits_header(filename: str) -> dict:
 
 def get_obsparam(header: dict) -> dict:
     """gets the correct telescope parameters from the pipeline database"""
-    instrument_keys = ['PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME', 'INSTRUME',
-                   'TELESCOP']
+    instrument_keys = ['TELESCOP', 'INSTRUME', 'PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME' ,
+                   ]
     instruments = []
     for key in instrument_keys:
         if key in header:
