@@ -234,7 +234,6 @@ def form_atlas(filename_header, filename_photometry):
     photometry_method = photometry_data['photo_method'].iloc[0]
     # get the photometric catalog used, drop the '_transformed' from the catalog name
     catalog = photometry_data['catalog'].iloc[0].replace('_transformed', '')
-    print(catalog)
 
     orig_filter = header.get(obsparam.get('filter'))
     # get the photo filter in which the images were processed (not the one in fits header)

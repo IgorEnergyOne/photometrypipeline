@@ -135,8 +135,8 @@ def get_fits_header(filename: str) -> dict:
 
 def get_obsparam(header: dict) -> dict:
     """gets the correct telescope parameters from the pipeline database"""
-    instrument_keys = ['PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME', 'INSTRUME',
-                   'TELESCOP']
+    instrument_keys = ['TELESCOP', 'INSTRUME', 'PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME' ,
+                   ]
     instruments = []
     for key in instrument_keys:
         if key in header:
@@ -221,13 +221,21 @@ def form_atlas(filename_header, filename_photometry):
     photometry_data.replace(to_replace=[True, False], value=['!', ''], inplace=True, regex=True)
     # reducing time
     photometry_data['reduc_time'] = photometry_data['julian_date'].values - zero_time
-    data_formatted = photometry_data[['rejected', 'reduc_time', 'mag', 'inst_sig', 'sig']].to_string(header=False, index=False, formatters={
-        'rejected': '{:s}'.format, 'reduc_time': '  {:.7f}'.format, 'mag': '{:.4f}'.format, 'inst_sig': '{:.4f}'.format, 'sig': '{:.4f}'.format})
+    data_formatted = photometry_data[['rejected', 'reduc_time', 'mag', 'inst_sig', 'sig']].to_string(header=False,
+                                                                                                     index=False,
+                                                                                                     formatters={
+                                    'rejected': '{:s}'.format, 'reduc_time': '  {:.7f}'.format,
+                                    'mag': '{:.4f}'.format, 'inst_sig': '{:.4f}'.format, 'sig': '{:.4f}'.format
+                                                                                                     })
     # calculate the median value of sig (error for the object's magnitude and percentiles)
     sig_median = np.median(photometry_data['sig'])
     sig_percentiles = np.percentile(photometry_data['sig'], [16, 84]) - sig_median
     # get the method of photometry analysis that was conducted
     photometry_method = photometry_data['photo_method'].iloc[0]
+    # get the photometric catalog used, drop the '_transformed' from the catalog name
+    catalog = photometry_data['catalog'].iloc[0].replace('_transformed', '')
+
+    orig_filter = header.get(obsparam.get('filter'))
     # get the photo filter in which the images were processed (not the one in fits header)
     reduc_filter = photometry_data['band'].iloc[0]
 
@@ -251,7 +259,7 @@ def form_atlas(filename_header, filename_photometry):
         "info_observer": 'Observer(s): ' + header.get(obsparam.get('observer', 'observer'), 'no data'),
         "info_reducer": 'Reducer(s): Yu. Krugly, pipeline',
         "info_aspect": f"aspect data on observing midtime {julian_to_ymd(observing_time)}",
-        "info_add": f"filter: {reduc_filter}, method: {photometry_method}",
+        "info_add": f"filter: {orig_filter}, band: {reduc_filter}, method: {photometry_method}",
         'aspect_data': midtime_aspect_data(observing_time,
                                            header.get(obsparam.get('object')),
                                            obsparam.get('observatory_code')),
@@ -270,7 +278,7 @@ def form_atlas(filename_header, filename_photometry):
         'lt_corrected': 'F',
         'obs_time': f'{observing_time:.1f} ({julian_to_ymd(observing_time)})',
         'zero_time': f'{zero_time:.1f} ({julian_to_ymd(zero_time)})',
-        'zero_mag': f'{0.0} sigma = {sig_median:.4f} {sig_percentiles[0]:.4f} +{sig_percentiles[1]:.4f}',
+        'zero_mag': f'{0.0} sigma = {sig_median:.4f} {sig_percentiles[0]:.4f} +{sig_percentiles[1]:.4f}, catalog: {catalog}',
         'time_unit': '1 day'
     }
 
