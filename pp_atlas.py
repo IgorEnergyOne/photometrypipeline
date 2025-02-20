@@ -140,7 +140,10 @@ def get_obsparam(header: dict) -> dict:
     instruments = []
     for key in instrument_keys:
         if key in header:
-            instruments.append(header[key])
+            # check the header entry is not empty
+            if header[key].strip():
+                instruments.append(header[key])
+                break
     telescope = instrument_identifiers[instruments[0]]
     obsparam = telescope_parameters[telescope]
     return obsparam
