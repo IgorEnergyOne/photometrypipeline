@@ -103,8 +103,12 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
         header = hdulist[0].header
         for key in _pp_conf.instrument_keys:
             if key in header:
-                instruments.append(header[key])
-                break
+                # check the header entry is not empty
+                if header[key].strip():
+                    instruments.append(header[key])
+                    break
+                else:
+                    logging.debug(f'Image {filename}: The header entry by key={key} is empty. Trying to use the next available.')
 
     if len(filenames) == 0:
         raise IOError('cannot find any data...')
@@ -127,6 +131,12 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
             sys.exit()
 
     telescope = _pp_conf.instrument_identifiers[instruments[0]]
+    # check how many telescopes are using this identifier
+    telescope_usage = [key for key, value in _pp_conf.instrument_identifiers.items()]
+    print(telescope_usage)
+    if len(telescope_usage) > 1:
+        logging.warning('telescope identifier %s is used by multiple telescopes: %s' % (instruments[0], str(telescope_usage)))
+
     obsparam = _pp_conf.telescope_parameters[telescope]
     logging.info('%d %s frames identified' % (len(filenames), telescope))
 
