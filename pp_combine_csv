@@ -59,7 +59,11 @@ def combine_csv_files(path_core_dir: str,
     combined_data = target_data.join(control_data[["mag_control", "sig_control", "control_ra", "control_dec",
                                                    "control_mag_inst", "control_sig_inst"]],
                                      how='left', rsuffix='_control')
-    combined_data['red_julian_date'] = combined_data['julian_date'] - combined_data.iloc[0]['julian_date']
+    combined_data['reduc_julian_date'] = combined_data['julian_date'] - combined_data.iloc[0]['julian_date']
+    # calculate relative instrumental magnitude (source - control star)
+    combined_data['rel_mag'] = combined_data['inst_mag'] - combined_data['control_mag_inst']
+    # calculate instrumental magnitude error
+    combined_data['rel_sig'] = (combined_data['inst_sig']**2 + combined_data['control_sig_inst']**2)**0.5
     if append:
         combined_data.to_csv(out_file_path, mode='a', header=False, index=False)
     else:
