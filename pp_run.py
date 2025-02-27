@@ -28,6 +28,9 @@ import gc
 import sys
 import yaml
 import subprocess
+
+from numpy.matlib import empty
+
 try:
     import numpy as np
 except ImportError:
@@ -66,7 +69,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                      fixed_aprad, source_tolerance, solar,
-                     rerun_registration, asteroids, keep_wcs, rewrite_radec):
+                     rerun_registration, asteroids, keep_wcs, rewrite_radec, nodeblending):
     """
     wrapper to run the photometry pipeline
     """
@@ -108,7 +111,8 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                     instruments.append(header[key])
                     break
                 else:
-                    logging.debug(f'Image {filename}: The header entry by key={key} is empty. Trying to use the next available.')
+                    logging.info(f'Image {filename}: The header entry by key={key} is empty. '
+                                  f'Trying to use the next available.')
 
     if len(filenames) == 0:
         raise IOError('cannot find any data...')
@@ -132,8 +136,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
 
     telescope = _pp_conf.instrument_identifiers[instruments[0]]
     # check how many telescopes are using this identifier
-    telescope_usage = [key for key, value in _pp_conf.instrument_identifiers.items()]
-    print(telescope_usage)
+    telescope_usage = [key for key, value in _pp_conf.instrument_identifiers.items() if value == telescope]
     if len(telescope_usage) > 1:
         logging.warning('telescope identifier %s is used by multiple telescopes: %s' % (instruments[0], str(telescope_usage)))
 
@@ -276,7 +279,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                                 mancat=mancat,
                                                 obsparam=obsparam,
                                                 source_tolerance=src_tol,
-                                                nodeblending=True,
+                                                nodeblending=nodeblending,
                                                 max_rad=max_rad,
                                                 display=True,
                                                 diagnostics=True)
@@ -330,6 +333,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                     man_targetname, background_only,
                                     target_only,
                                     telescope, obsparam, display=True,
+                                    nodeblending=nodeblending,
                                     diagnostics=True)
 
     # data went through curve-of-growth analysis
@@ -519,6 +523,9 @@ if __name__ == '__main__':
     parser.add_argument('-calib_fov',
                         help='fraction (0-1) of the FOV from the center to use for the photometric calibration',
                         default=0.9)
+    parser.add_argument('-nodeblending',
+                        help='deactivate deblending in source extraction',
+                        action="store_true", default=False)
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
 
@@ -545,6 +552,7 @@ if __name__ == '__main__':
         keep_wcs = args.keep_wcs
         rewrite_radec = args.rewrite_radec
         calib_fov = float(args.calib_fov)
+        nodeblending = args.nodeblending
         filenames = sorted(args.images)
     # if path to config is provided - use it instead of default config
     else:
@@ -633,7 +641,7 @@ if __name__ == '__main__':
 
                 run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                  fixed_aprad, source_tolerance, solar,
-                                 rerun_registration, asteroids, keep_wcs, rewrite_radec)
+                                 rerun_registration, asteroids, keep_wcs, rewrite_radec, nodeblending)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
@@ -642,5 +650,5 @@ if __name__ == '__main__':
         # call run_the_pipeline only on filenames
         run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                          fixed_aprad, source_tolerance, solar,
-                         rerun_registration, asteroids, keep_wcs, rewrite_radec)
+                         rerun_registration, asteroids, keep_wcs, rewrite_radec, nodeblending)
         pass

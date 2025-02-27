@@ -128,8 +128,11 @@ def extract_singleframe(data):
         if param['ignore_saturation']:
             optionstring += ' -SATUR_LEVEL 1000000'
             optionstring += ' -SATUR_KEY NOPE'
+        else:
+            optionstring += ' -SATUR_LEVEL 20000' # level (in ADUs) at which arises saturation
+            optionstring += ' -SATUR_KEY SATURATE'
 
-    if 'nodeblending' in param and param['nodeblending']:
+    if param.get('nodeblending', False) == True:
         optionstring += ' -DEBLEND_MINCONT 1 '
 
     commandline = '%s -c %s %s %s' % \
