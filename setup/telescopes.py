@@ -971,7 +971,7 @@ BART254_param = {
     #    'swarp-config-file': rootpath+'/setup/AC32.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
+    'astrometry_catalogs': ['GAIA3'],
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
@@ -1075,8 +1075,8 @@ Prompt7_param = {
     'airmass': 'AIRMASS',  # airmass keyword
 
     # source extractor settings
-    'source_minarea': 12,  # default sextractor source minimum N_pixels
-    # 'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    'source_minarea': 5,  # default sextractor source minimum N_pixels
+    'source_maxarea': 30,  # default sextractor source minimum N_pixels
     'source_snr': 7,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
     'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
@@ -1087,7 +1087,7 @@ Prompt7_param = {
 
     # scamp settings
     'scamp-config-file': rootpath + '/setup/Prompt7.scamp',
-    'reg_max_mag': 20.0, 
+    'reg_max_mag': 19.0,
     'reg_search_radius': 1.0,  # deg
     'source_tolerance': 'low',
 
@@ -1169,7 +1169,6 @@ TianShan_param = {
     'astrometry_catalogs': ['GAIA3'],
     'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
-
 
 vatt4k_param = {
     'telescope_instrument': 'VATT/VATT4k',  # telescope/instrument name
@@ -2599,7 +2598,8 @@ ohp120_param = {
     # pp_prepare
     'object': 'OBJECT',  # object name keyword
     'filter': 'FILTER',  # filter keyword
-    'filter_translations': {'R_Cousins': 'R', 'V_Cousins': 'V',
+    'filter_translations': {'B': 'B', 'V': 'V', 'I': 'I', 'R': 'R',
+                            'R_Cousins': 'R', 'V_Cousins': 'V',
                             'B_Cousins': 'B', 'H-alpha': None,
                             'i_Gunn': 'i'},
     # filtername translation dictionary
@@ -2623,8 +2623,8 @@ ohp120_param = {
     'source_tolerance': 'high',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['SDSS-R9', 'APASS9', 'PANSTARRS', '2MASS']
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3','SDSS-R9', 'APASS9', 'PANSTARRS', '2MASS']
 }
 
 # Telescopio Nazionale Galileo, DOLORES
@@ -5409,6 +5409,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'SHA': 'SL40IN',
                           'Goodman Spectrograph': 'SOARGOODMANOLD',
                           'Andor Tech': 'OHP120',
+                          'OHP T120': 'OHP120',
                           'LRS': 'TNGDOLORES',
                           'mosaic_1_1': 'KPNO4MOS1',
                           'mosaic_1': 'KPNO4MOS1',
