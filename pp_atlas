@@ -4,6 +4,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
+import re
 import argparse
 from pathlib import Path
 
@@ -167,6 +168,22 @@ def julian_to_ymd(julian_date):
 
     return formatted_date
 
+def check_object_name(name):
+    """check body name for unwanted symbols"""
+    # check name
+    has_whitespace = bool(re.search(r'\s+', name))
+    only_letters = name.isalpha()
+    has_numbers = any(c.isdigit() for c in name)
+    has_letters = re.search(r"[a-zA-Z]", name)
+    # check if it is provisional designation with no whitespace
+    if has_letters and has_numbers and not has_whitespace:
+        name = name[:4] + ' ' + name[4:]
+    # check if there is more than one whitespace
+    elif has_whitespace:
+        name = re.sub(r'\s+', ' ', name)
+    return name
+
+
 
 def jpl_query_eph(body, epochs, location):
     """query JPL Horizon system for the data"""
@@ -174,6 +191,7 @@ def jpl_query_eph(body, epochs, location):
     step = 50
     # ===============================================
     end = len(epochs)
+    body = check_object_name(body)
     full_ephemerides = []
     for i in range(0, end, step):
         obj = Horizons(id="{}".format(body), location=location, epochs=epochs[i:i + step])
@@ -380,4 +398,3 @@ if __name__ == "__main__":
             filename_atlas = "combined_atlas.ATL"
         combine_atlas(args.combine, filename_atlas)
         print(f'combine ATLAS file created: {filename_atlas}')
-
