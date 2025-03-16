@@ -390,7 +390,7 @@ if __name__ == "__main__":
         text_atlas = form_atlas(filename_header, filename_photo)
         # transform text from UNIX to DOS format
         text_atlas = text_atlas.replace('\n', '\r\n')
-        print(text_atlas)
+        print('\n#-----------------------\nresulting ATLAS file:\n\n' + text_atlas)
         write_atlas(filename_atlas, text_atlas)
         print(f'ATLAS file created: {filename_atlas}')
     else:
