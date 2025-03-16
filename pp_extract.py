@@ -103,7 +103,7 @@ def extract_singleframe(data):
     os.remove(ldacname) if os.path.exists(ldacname) else None
 
     optionstring = ''
-    if _pp_conf.photmode == 'APER':
+    if param['photmode'] == 'APER':
         optionstring += ' -PHOT_APERTURES %s ' % \
             param['aperture_diam']
     if ('global_background' in param and
@@ -251,7 +251,7 @@ def extract_multiframe(filenames, parameters):
         return {}
 
     # set aperture photometry DIAMETER as string
-    if _pp_conf.photmode == 'APER':
+    if parameters['photmode'] == 'APER':
         if ((type(parameters['aprad']) == float and
              parameters['aprad'] == 0)
             or (type(parameters['aprad']) == list
@@ -309,8 +309,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='source detection and' +
                                      'photometry using Source Extractor')
     parser.add_argument("-snr", help='sextractor SNR threshold', default=1.5)
-    parser.add_argument("-minarea", help='sextractor source area threshold',
+    parser.add_argument("-minarea", help='sextractor min source area threshold',
                         default=3)
+    parser.add_argument("-maxarea", help='sextractor max source area threshold',
+                        default=0)
     parser.add_argument("-paramfile",
                         help='alternative sextractor parameter file',
                         default=None)
@@ -324,6 +326,10 @@ if __name__ == '__main__':
     parser.add_argument('-nodeblending',
                         help='deactivate deblending in source extraction',
                         action="store_true")
+    parser.add_argument('-photmode',
+                        help='choose photometry mode to use for sextractor',
+                        choices=['APER', 'ISOCOR', 'AUTO', 'PETRO'],
+                        default='APER')
     parser.add_argument('-quiet', help='no logging',
                         action="store_true")
     parser.add_argument('images', help='images to process', nargs='+')
@@ -331,11 +337,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
     sex_snr = float(args.snr)
     source_minarea = float(args.minarea)
+    source_maxarea = float(args.maxarea)
     paramfile = args.paramfile
     aprad = args.aprad
     telescope = args.telescope
     ignore_saturation = args.ignore_saturation
     nodeblending = args.nodeblending
+    phot_mode = args.photmode
     quiet = args.quiet
     filenames = args.images
 
@@ -344,7 +352,7 @@ if __name__ == '__main__':
                   'source_maxarea': source_maxarea,
                   'aprad': aprad, 'telescope': telescope,
                   'ignore_saturation': ignore_saturation,
-                  'nodeblending': nodeblending, 'quiet': quiet}
+                  'nodeblending': nodeblending, 'photmode': phot_mode, 'quiet': quiet}
 
     if paramfile is not None:
         parameters['paramfile'] = paramfile

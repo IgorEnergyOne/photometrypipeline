@@ -753,11 +753,11 @@ class Photometry_Diagnostics(Diagnostics_Html):
                  "<TD>{:.1f}</TD></TR>\n"
                  "<TR><TH>Source Extractor Detection Threshold (&sigma;)"
                  "</TH><TD>{:.1f}</TD></TR>\n").format(
-                     {'APER': 'Aperture Photometry'}[_pp_conf.photmode],
+                     {'APER': 'Aperture Photometry'}[extraction[0]['parameters']['photmode']],
                      extraction[0]['parameters']['source_minarea'],
                      extraction[0]['parameters']['sex_snr'])
 
-        if _pp_conf.photmode == 'APER':
+        if extraction[0]['parameters']['photmode'] == 'APER':
 
             if data['n_target'] > 0 and data['n_bkg'] > 0:
                 apsrc = ("{:d} target detections and {:d} "
@@ -1464,14 +1464,14 @@ class Distill_Diagnostics(Diagnostics_Html):
                 # add compass?
 
                 # place aperture
-                if _pp_conf.photmode == 'APER':
+                if data['photmode'] == 'APER':
                     aprad = float(hdulist[0].header['APRAD'])
                     targetpos = plt.Circle(
                         (self.conf.image_size_thumb_px/2,
                          self.conf.image_size_thumb_px/2),
                         aprad, ec='red', fc='none',
                         linewidth=self.conf.thumb_linewidth)
-                elif _pp_conf.photmode == 'AUTO':
+                elif data['photmode'] == 'AUTO':
                     # Create the ellipse
                     targetpos = matplotlib.patches.Ellipse(
                         (self.conf.image_size_thumb_px / 2,
@@ -1538,7 +1538,7 @@ class Distill_Diagnostics(Diagnostics_Html):
                                   '.diagnostics'))
             try:
                 convert = subprocess.Popen(
-                    ['convert', '-delay', '50',
+                    ['magick', '-delay', '50',
                      ('{:s}*thumb.{:s}'.format(target.translate(
                          _pp_conf.target2filename),
                          self.conf.image_file_format)),

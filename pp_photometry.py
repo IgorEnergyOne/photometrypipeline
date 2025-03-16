@@ -53,7 +53,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 
 def curve_of_growth_analysis(filenames, parameters,
-                             nodeblending=False, display=False,
+                             nodeblending=False, phot_mode='APER', display=False,
                              diagnostics=False):
 
     output = {}
@@ -82,6 +82,7 @@ def curve_of_growth_analysis(filenames, parameters,
                          + '/setup/twentyapertures.sexparam',
                          'aprad': aprads, 'telescope': parameters['telescope'],
                          'nodeblending': nodeblending,
+                         'photmode': phot_mode,
                          'quiet': False}
 
     extraction = pp_extract.extract_multiframe(filenames, extractparameters)
@@ -173,14 +174,14 @@ def curve_of_growth_analysis(filenames, parameters,
                                 (filename, targetname,
                                  residuals[numpy.argmin(residuals)]*3600.))
             else:
-                target_flux.append(data[target_idx]['FLUX_'+_pp_conf.photmode] /
+                target_flux.append(data[target_idx]['FLUX_'+ parameters['photmode']] /
                                    max(data[target_idx][
-                                       'FLUX_'+_pp_conf.photmode]))
+                                       'FLUX_'+ parameters['photmode']]))
                 target_snr.append(
-                    data[target_idx]['FLUX_'+_pp_conf.photmode] /
-                    data[target_idx]['FLUXERR_'+_pp_conf.photmode] /
-                    max(data[target_idx]['FLUX_'+_pp_conf.photmode] /
-                        data[target_idx]['FLUXERR_'+_pp_conf.photmode]))
+                    data[target_idx]['FLUX_'+ parameters['photmode']] /
+                    data[target_idx]['FLUXERR_'+ parameters['photmode']] /
+                    max(data[target_idx]['FLUX_'+ parameters['photmode']] /
+                        data[target_idx]['FLUXERR_'+ parameters['photmode']]))
                 n_target_identified += 1
 
         # extract background source fluxes and snrs
@@ -189,18 +190,18 @@ def curve_of_growth_analysis(filenames, parameters,
             # n_src = data.shape[0] # use all sources
             n_src = 50  # use only 50 sources
             for idx, src in enumerate(data.data[:n_src]):
-                if (numpy.any(numpy.isnan(src['FLUX_'+_pp_conf.photmode])) or
-                    numpy.any(numpy.isnan(src['FLUXERR_'+_pp_conf.photmode]))
+                if (numpy.any(numpy.isnan(src['FLUX_'+ parameters['photmode']])) or
+                    numpy.any(numpy.isnan(src['FLUXERR_'+ parameters['photmode']]))
                         or src['FLAGS'] > 3):
                     continue
 
                 # create growth curve
-                background_flux.append(src['FLUX_'+_pp_conf.photmode] /
-                                       max(src['FLUX_'+_pp_conf.photmode]))
-                background_snr.append(src['FLUX_'+_pp_conf.photmode] /
-                                      src['FLUXERR_'+_pp_conf.photmode] /
-                                      max(src['FLUX_'+_pp_conf.photmode] /
-                                          src['FLUXERR_'+_pp_conf.photmode]))
+                background_flux.append(src['FLUX_'+ parameters['photmode']] /
+                                       max(src['FLUX_'+ parameters['photmode']]))
+                background_snr.append(src['FLUX_'+ parameters['photmode']] /
+                                      src['FLUXERR_'+ parameters['photmode']] /
+                                      max(src['FLUX_'+ parameters['photmode']] /
+                                          src['FLUXERR_'+ parameters['photmode']]))
 
     # investigate curve-of-growth
 
@@ -333,7 +334,7 @@ def curve_of_growth_analysis(filenames, parameters,
     # display results
     if display:
         print('\n#################################### PHOTOMETRY SUMMARY:\n###')
-        print('### best-fit aperture radius %5.2f (px) [%s mode]' % (optimum_aprad, _pp_conf.photmode))
+        print('### best-fit aperture radius %5.2f (px)' % (optimum_aprad))
         print('###\n#####################################################\n')
 
     logging.info('==> best-fit aperture radius: %3.1f (px)' % (optimum_aprad))
@@ -343,7 +344,7 @@ def curve_of_growth_analysis(filenames, parameters,
 
 def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
                manobjectname, background_only, target_only,
-               telescope, obsparam, nodeblending=False,
+               telescope, obsparam, nodeblending=False, phot_mode='APER',
                display=False,
                diagnostics=False):
     """
@@ -366,12 +367,14 @@ def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
     for filename in filenames:
         hdu = fits.open(filename, mode='update',
                         ignore_missing_end=True)
-        hdu[0].header['PHOTMODE'] = (_pp_conf.photmode,
+        hdu[0].header['PHOTMODE'] = (phot_mode,
                                      'PP photometry mode')
         hdu.flush()
         hdu.close()
 
-    if _pp_conf.photmode == 'APER':
+    photpar['photmode'] = phot_mode
+
+    if phot_mode == 'APER':
         if aprad is None:
             # aperture radius list
             aprads = numpy.linspace(obsparam['aprad_range'][0],
@@ -380,6 +383,7 @@ def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
             photpar['aprad'] = aprads
             cog = curve_of_growth_analysis(filenames, photpar,
                                            nodeblending=nodeblending,
+                                           phot_mode=phot_mode,
                                            display=display,
                                            diagnostics=diagnostics)
             aprad = cog['optimum_aprad']
@@ -409,15 +413,14 @@ def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
         photpar['paramfile'] = (_pp_conf.rootpath +
                                 '/setup/singleaperture.sexparam')
 
-        logging.info('extract sources using ' + _pp_conf.photmode +
+        logging.info('extract sources using ' + phot_mode +
                      ' photometry')
 
         if display:
             print(('* extract sources from %d images using '
-                   + _pp_conf.photmode + ' photometry') %
+                   + phot_mode + ' photometry') %
                   len(filenames))
 
-    photpar['photmode'] = _pp_conf.photmode
 
     pp_extract.extract_multiframe(filenames, photpar)
 
@@ -449,10 +452,16 @@ if __name__ == '__main__':
                         action="store_true")
     parser.add_argument('-target_only', help='find aperture for target only',
                         action="store_true")
-    parser.add_argument('images', help='images to process', nargs='+')
     parser.add_argument('-nodeblending',
                         help='deactivate deblending in source extraction',
                         action="store_true")
+    parser.add_argument('-photmode',
+                        help='choose photometry mode to use for sextractor',
+                        choices=['APER', 'ISOCOR', 'AUTO', 'PETRO'],
+                        default='APER')
+    parser.add_argument('images', help='images to process', nargs='+')
+
+
 
     args = parser.parse_args()
     sex_snr = float(args.snr)
@@ -462,6 +471,7 @@ if __name__ == '__main__':
     background_only = args.background_only
     target_only = args.target_only
     nodeblending = args.nodeblending
+    phot_mode = args.photmode
     filenames = args.images
 
     # check if input filenames is actually a list
@@ -491,5 +501,4 @@ if __name__ == '__main__':
                       manobjectname, background_only, target_only,
                       telescope, obsparam,
                       nodeblending=nodeblending, display=True,
-                      diagnostics=True)
-
+                      diagnostics=True, phot_mode=phot_mode)

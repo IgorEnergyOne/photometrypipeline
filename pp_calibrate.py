@@ -224,7 +224,7 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
 
 def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars_external,
                       use_all_stars=False,
-                      display=False, diagnostics=False, radius_coeff=0.5):
+                      display=False, diagnostics=False, radius_coeff=0.5, phot_mode='APER'):
     """derive zeropoint for a number of catalogs based on a reference catalog"""
 
     output = {'filtername': filtername, 'minstars': minstars_external,
@@ -260,18 +260,18 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
         # currently it seems like pp_photometry (maybe callhorizons)
         # has not finished properly
 
-        cat.reject_sources_other_than(cat.data['MAG_'+_pp_conf.photmode] != 99)
+        cat.reject_sources_other_than(cat.data['MAG_'+ phot_mode] != 99)
         cat.reject_sources_other_than(cat.data['MAGERR_'
-                                               + _pp_conf.photmode] != 99)
+                                               + phot_mode] != 99)
         cat.reject_sources_with(np.isnan(
-            cat.data['MAG_'+_pp_conf.photmode]))
+            cat.data['MAG_'+ phot_mode]))
         cat.reject_sources_with(np.isnan(cat.data['MAGERR_' +
-                                                  _pp_conf.photmode]))
+                                                  phot_mode]))
 
         # min_star_mag = -7
         # max_star_mag = -11
-        # cat.reject_sources_with(cat.data['MAG_'+_pp_conf.photmode] <= max_star_mag)
-        # cat.reject_sources_with(cat.data['MAG_'+_pp_conf.photmode] >= min_star_mag)
+        # cat.reject_sources_with(cat.data['MAG_'+ phot_mode] <= max_star_mag)
+        # cat.reject_sources_with(cat.data['MAG_'+ phot_mode] >= min_star_mag)
 
 
         if not use_all_stars:
@@ -320,9 +320,8 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
                                   'ra_deg',
                                   'dec_deg',
                                   'idx'],
-            extract_other_catalog=['MAG_'+_pp_conf.photmode,
-                                   'MAGERR_' +
-                                   _pp_conf.photmode,
+            extract_other_catalog=['MAG_'+ phot_mode,
+                                   'MAGERR_' + phot_mode,
                                    'idx'],
             tolerance=_pp_conf.pos_epsilon/3600.)
 
@@ -456,9 +455,9 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
             matched_ref_cat.remove_column('idx')
             # add instrumental magnitudes
             matched_ref_cat.add_column(
-                cat['MAG_'+_pp_conf.photmode][match[1][2]])
+                cat['MAG_' + phot_mode][match[1][2]])
             matched_ref_cat.add_column(
-                cat['MAGERR_'+_pp_conf.photmode][match[1][2]])
+                cat['MAGERR_' + phot_mode][match[1][2]])
 
             if conf.save_caldata_usedonly:
                 matched_ref_cat = matched_ref_cat[used_in_fit == 1]
@@ -494,9 +493,9 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
             cat.data.remove_column(efilterkey)
 
         cat.add_fields([filterkey, efilterkey],
-                       [cat['MAG_'+_pp_conf.photmode] +
+                       [cat['MAG_' + phot_mode] +
                         clipping_steps[idx][0],
-                        np.sqrt(cat['MAGERR_'+_pp_conf.photmode]**2 +
+                        np.sqrt(cat['MAGERR_' + phot_mode]**2 +
                                 clipping_steps[idx][1]**2)],
                        ['F', 'F'])
 
@@ -535,7 +534,7 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
               obsparam, maxflag=3,
               magzp=None, solar=False,
               use_all_stars=False,
-              display=False, diagnostics=False, radius_coeff=0.5):
+              display=False, diagnostics=False, radius_coeff=0.5, phot_mode='APER', instrumental=False):
     """
     Photometric calibration of each input frame in one specific filter
     Instrumental magnitudes provided by pp_photometry() are matched with photometric catalogs
@@ -606,7 +605,7 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
 
     # obtain photometric catalog(s) of the field based on settings in
     # setup/telescope.py and the image filter
-    if manfilter is not False:
+    if manfilter is not False and manfilter is not None:
         filtername = manfilter
     else:
         if len(filternames) == 1:
@@ -628,7 +627,8 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
         preferred_catalogs = obsparam['photometry_catalogs']
 
     ref_cat = None
-    if filtername is not None and magzp is None:
+    manfilter = None if manfilter == 'None' else manfilter
+    if (filtername is not None) and (manfilter is not None) and not instrumental: # magzp is None:
         ref_cat = create_photometrycatalog(ra_deg, dec_deg, rad_deg,
                                            filtername, preferred_catalogs,
                                            max_sources=2e4, solar=solar,
@@ -650,8 +650,8 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
             efilterkey = 'e_' + filtername + 'mag'
             for cat in catalogs:
                 cat.add_fields([filterkey, efilterkey],
-                               [cat['MAG_'+_pp_conf.photmode] + magzp[0],
-                                np.sqrt(cat['MAGERR_'+_pp_conf.photmode]**2 +
+                               [cat['MAG_'+ phot_mode] + magzp[0],
+                                np.sqrt(cat['MAGERR_'+ phot_mode]**2 +
                                         magzp[1]**2)],
                                ['F', 'F'])
                 cat.origin = (cat.origin.strip() +

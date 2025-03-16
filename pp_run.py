@@ -69,7 +69,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                      fixed_aprad, source_tolerance, solar,
-                     rerun_registration, asteroids, keep_wcs, rewrite_radec, nodeblending):
+                     rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental):
     """
     wrapper to run the photometry pipeline
     """
@@ -280,6 +280,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                                 obsparam=obsparam,
                                                 source_tolerance=src_tol,
                                                 nodeblending=nodeblending,
+                                                phot_mode=phot_mode,
                                                 max_rad=max_rad,
                                                 display=True,
                                                 diagnostics=True)
@@ -334,6 +335,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                     target_only,
                                     telescope, obsparam, display=True,
                                     nodeblending=nodeblending,
+                                    phot_mode=phot_mode,
                                     diagnostics=True)
 
     # data went through curve-of-growth analysis
@@ -348,7 +350,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                "only </FONT>; "
     # a fixed aperture radius has been used
     else:
-        if _pp_conf.photmode == 'APER':
+        if phot_mode == 'APER':
             summary_message += "using a fixed aperture radius of %.1f px;" % aprad
 
     # add information to summary website, if requested
@@ -385,6 +387,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                              solar=solar,
                                              display=True,
                                              diagnostics=True,
+                                             instrumental=report_instrumental,
                                              use_all_stars=use_all_stars,
                                              radius_coeff=radius_coeff)
 
@@ -430,6 +433,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                     posfile=None,
                                     rejectionfilter=rejectionfilter,
                                     asteroids=asteroids,
+                                    phot_mode=phot_mode,
                                     display=True, diagnostics=True)
 
     targets = np.array(list(distillate['targetnames'].keys()))
@@ -517,6 +521,10 @@ if __name__ == '__main__':
     parser.add_argument('-keep_wcs',
                         help='keep wcs information and skip registration',
                         action="store_true", default=False)
+    parser.add_argument('-photmode',
+                        help='choose photometry mode to use for sextractor',
+                        choices=['APER', 'ISOCOR', 'AUTO', 'PETRO'],
+                        default='APER')
     parser.add_argument('-rewrite_radec',
                         help='rewrites RA/Dec in header of fits files with queried data',
                         action='store_true', default=False)
@@ -525,6 +533,9 @@ if __name__ == '__main__':
                         default=0.9)
     parser.add_argument('-nodeblending',
                         help='deactivate deblending in source extraction',
+                        action="store_true", default=False)
+    parser.add_argument('-instrumental',
+                        help='report instrumental magnitudes',
                         action="store_true", default=False)
     parser.add_argument('images', help='images to process or \'all\'',
                         nargs='+')
@@ -550,9 +561,11 @@ if __name__ == '__main__':
         asteroids = args.asteroids
         rejectionfilter = args.reject
         keep_wcs = args.keep_wcs
+        phot_mode = args.photmode
         rewrite_radec = args.rewrite_radec
         calib_fov = float(args.calib_fov)
         nodeblending = args.nodeblending
+        report_instrumental = args.instrumental
         filenames = sorted(args.images)
     # if path to config is provided - use it instead of default config
     else:
@@ -601,7 +614,10 @@ if __name__ == '__main__':
         photo_maxarea = config['pp_photometry'].get('maxarea')
         photo_background = config['pp_photometry'].get('background_only')
         photo_target = config['pp_photometry'].get('target_only')
-        photomode = config['pp_photometry'].get('photmode')
+        phot_mode = config['pp_photometry'].get('photmode')
+        photo_fov = config['pp_photometry'].get('fov')
+        nodeblending = config['pp_photometry'].get('deblending')
+        report_instrumental = config['pp_photometry'].get('instrumental')
         # ========= pp_calibrate ===============================
         cal_minstars = config['pp_calibrate'].get('minstars')
         cal_maxstars = config['pp_calibrate'].get('maxstars')
@@ -609,6 +625,7 @@ if __name__ == '__main__':
         cal_maxflag = config['pp_calibrate'].get('maxflag')
         cal_use_all_stars = config['pp_calibrate'].get('use_all_stars')
         cal_radius_coeff = config['pp_calibrate'].get('radius_coeff')
+
     # if filenames = ['all'], walk through directories and run pipeline
     # each dataset
     _masterroot_directory = os.getcwd()
@@ -641,7 +658,7 @@ if __name__ == '__main__':
 
                 run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                  fixed_aprad, source_tolerance, solar,
-                                 rerun_registration, asteroids, keep_wcs, rewrite_radec, nodeblending)
+                                 rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
@@ -650,5 +667,5 @@ if __name__ == '__main__':
         # call run_the_pipeline only on filenames
         run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                          fixed_aprad, source_tolerance, solar,
-                         rerun_registration, asteroids, keep_wcs, rewrite_radec, nodeblending)
+                         rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental)
         pass

@@ -476,7 +476,7 @@ def read_catalogs(catalogs):
 
 
 def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
-            rejectionfilter='pos', display=False, diagnostics=False,
+            rejectionfilter='pos', phot_mode='APER', display=False, diagnostics=False,
             variable_stars=False, asteroids=False):
     """
     Extraction of calibrated photometry for targets
@@ -494,6 +494,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                              var, val in list(locals().items())])))
 
     output = {}
+    output['photmode'] = phot_mode
 
     # read in database files (if necessary)
     if isinstance(catalogs[0], str):
@@ -750,7 +751,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                                       dat[3], dat[4], (dat[1] - dat[3]) * 3600., (dat[2] - dat[4]) * 3600., offset[0],
                                       offset[1], dat[9][1], dat[19], (dat[7] - dat[5]), np.sqrt(dat[8] ** 2 - dat[6] ** 2),
                                       dat[5], dat[6], catalogname, filtername, dat[14], dat[13].split(';')[0],
-                                      _pp_conf.photmode, dat[15] * 3600],
+                                      phot_mode, dat[15] * 3600],
                                      index=colnames)
                 datalist.append(data_row)
                 # create dict with resulting data
@@ -773,7 +774,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                            ('%s ' % filtername) +
                            ('%3d ' % dat[14]) +
                            ('%s' % dat[13].split(';')[0]) +
-                           ('%10s ' % _pp_conf.photmode) +
+                           ('%10s ' % phot_mode) +
                            ('%4.2f\n' % (dat[15] * 3600)))
                 output['targetframes'][target].append(dat[10][:-4] + 'fits')
 
