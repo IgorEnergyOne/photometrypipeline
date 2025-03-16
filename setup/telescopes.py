@@ -1076,7 +1076,7 @@ Prompt7_param = {
 
     # source extractor settings
     'source_minarea': 5,  # default sextractor source minimum N_pixels
-    'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    # 'source_maxarea': 30,  # default sextractor source minimum N_pixels
     'source_snr': 7,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
     'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
@@ -2608,23 +2608,23 @@ ohp120_param = {
     'airmass': 'AIRMASS',  # airmass keyword
 
     # source extractor settings
-    'source_minarea': 15,  # default sextractor source minimum N_pixels
-    'source_snr': 3,  # default sextractor source snr for registration
+    'source_minarea': 10,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
     'aprad_default': 8,  # default aperture radius in px
     'aprad_range': [2, 15],  # [minimum, maximum] aperture radius (px)
     'sex-config-file': rootpath + '/setup/ohp120.sex',
     'mask_file': {},
     #                        mask files as a function of x,y binning
-
+    # astrometry
     # registration settings (Scamp)
     'scamp-config-file': rootpath + '/setup/ohp120.scamp',
     'reg_max_mag': 19,
     'reg_search_radius': 0.5,  # deg
-    'source_tolerance': 'high',
+    'source_tolerance': 'low',
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA3'],
-    'photometry_catalogs': ['GAIA3','SDSS-R9', 'APASS9', 'PANSTARRS', '2MASS']
+    'photometry_catalogs': ['PANSTARRS', 'GAIA3','SDSS-R9', 'APASS9', '2MASS']
 }
 
 # Telescopio Nazionale Galileo, DOLORES
@@ -2640,7 +2640,7 @@ tngdolores_param = {
     'rotate': 0,
 
     # instrument-specific FITS header keywords
-    'binning': ('CRDELT1', 'CRDELT2'),  # binning in x/y
+    'binning':  (1, 1),  # binning in x/y
     'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
     'ra': 'RA',  # telescope pointing, RA
     'dec': 'DEC',  # telescope pointing, Dec
@@ -2655,8 +2655,12 @@ tngdolores_param = {
     # pp_prepare
     'object': 'OBJCAT',  # object name keyword
     'filter': 'FLT_ID',  # filter keyword
-    'filter_translations': {'B_JOHN_10': 'B', 'V_JOHN_11': 'V',
-                            'R_JOHN_12': 'R', 'I_JOHN_13': 'I'},
+    'filter_translations': {'B': 'B', 'V': 'V', 'I': 'I', 'R': 'R',
+                            'B_JOHN_10': 'B', 'V_JOHN_11': 'V',
+                            'R_JOHN_12': 'R', 'I_JOHN_13': 'I',
+                            'B_John_10': 'B', 'V_John_11': 'V',
+                            'R_John_12': 'R', 'I_John_13': 'I',
+                            },
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
@@ -2672,13 +2676,13 @@ tngdolores_param = {
 
     # registration settings (Scamp)
     'scamp-config-file': rootpath + '/setup/tngdolores.scamp',
-    'reg_max_mag': 17,
+    'reg_max_mag': 18,
     'reg_search_radius': 0.5,  # deg
     'source_tolerance': 'high',
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['SDSS-R9', 'APASS9', 'PANSTARRS', '2MASS']
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', 'PANSTARRS', '2MASS']
 }
 
 # KPNO 4m Mayall, MOSAIC-1, 1.1 and 3
@@ -5352,14 +5356,14 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'FLI ML47-10': 'AZT-8',
                           'ML47-10': 'AZT-8',
                           'AZT-8': 'AZT-8',
-                          
+
                           '70-cm reflector AZT-8/FLI ML47-10': 'AZT-8',
 
                           'PL47-10 FLI': 'AZT-8_lisnyky',
                           'AZT-22/Andor CCD/EMCCD (SDK2)': 'AZT-22',
                           'AZT-22': 'AZT-22',
                           '1.5m' : 'AZT-22_unfilled',
-                            
+
                           'NT-60': 'NT-60',
                           'NT-60/Andor CCD/EMCCD (SDK2)': 'NT-60',
                           'Andor CCD/EMCCD (SDK2)': 'NT-60',
@@ -5411,6 +5415,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'Andor Tech': 'OHP120',
                           'OHP T120': 'OHP120',
                           'LRS': 'TNGDOLORES',
+                          'TNG': 'TNGDOLORES',
                           'mosaic_1_1': 'KPNO4MOS1',
                           'mosaic_1': 'KPNO4MOS1',
                           'KMTS': 'KMTNETS',
