@@ -434,6 +434,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                     rejectionfilter=rejectionfilter,
                                     asteroids=asteroids,
                                     phot_mode=phot_mode,
+                                    instrumental=report_instrumental,
                                     display=True, diagnostics=True)
 
     targets = np.array(list(distillate['targetnames'].keys()))
