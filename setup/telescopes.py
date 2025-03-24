@@ -786,11 +786,11 @@ rozhen_2000 = {
     'telescope_instrument': 'Rozhen Zeiss-2000/Andor',  # telescope/instrument name
     'telescope_keyword': 'Rozhen Zeiss-2000/Andor',  # telescope/instrument keyword
     'observatory_code': '071',  # MPC observatory code
-    'secpix': (0.344, 0.344),  # pixel size (arcsec) before binning
+    'secpix': (0.497, 0.497),  # pixel size (arcsec) before binning
 
     # image orientation preferences
     'flipx': True,
-    'flipy': False,
+    'flipy': True,
     'rotate': 0,
 
     # instrument-specific FITS header keywords
@@ -817,8 +817,8 @@ rozhen_2000 = {
     'airmass': 'AIRMASS',  # airmass keyword
 
     # source extractor settings
-    'source_minarea': 7,  # default sextractor source minimum N_pixels
-    'source_snr': 3,  # default sextractor source snr for registration
+    'source_minarea': 15,  # default sextractor source minimum N_pixels
+    'source_snr': 5,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
     'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
     'sex-config-file': rootpath + '/setup/rozhen2000.sex',
@@ -827,7 +827,7 @@ rozhen_2000 = {
 
     # scamp settings
     'scamp-config-file': rootpath + '/setup/rozhen2000.scamp',
-    'reg_max_mag': 20.0,  # 19
+    'reg_max_mag': 18.0,  # 19
     'reg_search_radius': 1.0,  # deg
     'source_tolerance': 'high',
 
@@ -840,7 +840,7 @@ rozhen_2000 = {
     'swarp-config-file': rootpath + '/setup/rozhen2000.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA3'],
+    'astrometry_catalogs': ['SDSS-R9'],
     'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
@@ -5376,7 +5376,9 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'Zeiss-600': 'Rozhen600',
                           'Rozhen Zeiss-600/PL09000': 'Rozhen600',
                           '2-m RCC': 'rozhen2000', 
-                          'Rozhen Zeiss-2000': 'rozhen2000',                       
+                          'Rozhen Zeiss-2000': 'rozhen2000',
+                          'Rozhen Zeiss-2000/Andor':  'rozhen2000',
+
                     
 
                           'RC-36': 'RC-36/PL-09000',
