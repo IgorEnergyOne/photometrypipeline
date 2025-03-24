@@ -766,7 +766,7 @@ rozhen_600 = {
     # scamp settings
     'scamp-config-file': rootpath + '/setup/rozhen600PL09000.scamp',
     'reg_max_mag': 18.5,  # 19
-    'reg_search_radius': 1.0,  # deg
+    'reg_search_radius': .5,  # deg
     'source_tolerance': 'high',
 
     # swarp settings
@@ -811,23 +811,23 @@ rozhen_2000 = {
     'filter': 'FILTER',  # filter keyword
     'filter_translations': {'V': 'V', 'R': 'R',
                             'I': 'I', 'B': 'B',
-                            'Clear': None},
+                            'Clear': 'R'},
     # filtername translation dictionary
     'exptime': 'EXPTIME',  # exposure time keyword (s)
     'airmass': 'AIRMASS',  # airmass keyword
 
     # source extractor settings
-    'source_minarea': 5,  # default sextractor source minimum N_pixels
-    'source_snr': 7,  # default sextractor source snr for registration
+    'source_minarea': 7,  # default sextractor source minimum N_pixels
+    'source_snr': 3,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
     'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
-    'sex-config-file': rootpath + '/setup/AC32.sex',
+    'sex-config-file': rootpath + '/setup/rozhen2000.sex',
     'mask_file': {},
     #                        mask files as a function of x,y binning
 
     # scamp settings
-    'scamp-config-file': rootpath + '/setup/AC32.scamp',
-    'reg_max_mag': 18.5,  # 19
+    'scamp-config-file': rootpath + '/setup/rozhen2000.scamp',
+    'reg_max_mag': 20.0,  # 19
     'reg_search_radius': 1.0,  # deg
     'source_tolerance': 'high',
 
@@ -837,11 +837,11 @@ rozhen_2000 = {
                       'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
     #                         keywords to be copied in image
     #                         combination using swarp
-    'swarp-config-file': rootpath + '/setup/AC32.swarp',
+    'swarp-config-file': rootpath + '/setup/rozhen2000.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['GAIA'],
-    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
 # Kitab Boris Satovsky
@@ -1075,8 +1075,8 @@ Prompt7_param = {
     'airmass': 'AIRMASS',  # airmass keyword
 
     # source extractor settings
-    'source_minarea': 5,  # default sextractor source minimum N_pixels
-    # 'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    'source_minarea': 10,  # default sextractor source minimum N_pixels
+#    'source_maxarea': 30,  # default sextractor source minimum N_pixels
     'source_snr': 7,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
     'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
@@ -1088,8 +1088,8 @@ Prompt7_param = {
     # scamp settings
     'scamp-config-file': rootpath + '/setup/Prompt7.scamp',
     'reg_max_mag': 19.0,
-    'reg_search_radius': 1.0,  # deg
-    'source_tolerance': 'low',
+    'reg_search_radius': 0.5,  # deg
+    'source_tolerance': 'high',
 
     # swarp settings
     # 'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
@@ -1101,7 +1101,7 @@ Prompt7_param = {
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA3'],
-    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+    'photometry_catalogs': ['GAIA3','PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
 TianShan_param = {
@@ -1155,7 +1155,7 @@ TianShan_param = {
     'scamp-config-file': rootpath + '/setup/Prompt7.scamp',
     'reg_max_mag': 20.0,
     'reg_search_radius': 1.0,  # deg
-    'source_tolerance': 'low',
+    'source_tolerance': 'high',
 
     # swarp settings
     # 'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
@@ -2655,9 +2655,9 @@ tngdolores_param = {
     # pp_prepare
     'object': 'OBJCAT',  # object name keyword
     'filter': 'FLT_ID',  # filter keyword
-    'filter_translations': {'B': 'B', 'V': 'V', 'I': 'I', 'R': 'R',
+    'filter_translations': {'B': 'B', 'V': 'V', 'I': 'I', 'R': 'R', 
                             'B_JOHN_10': 'B', 'V_JOHN_11': 'V',
-                            'R_JOHN_12': 'R', 'I_JOHN_13': 'I',
+                            'R_JOHN_12': 'R', 'I_JOHN_13': 'I', 
                             'B_John_10': 'B', 'V_John_11': 'V',
                             'R_John_12': 'R', 'I_John_13': 'I',
                             },
@@ -2674,7 +2674,7 @@ tngdolores_param = {
     'mask_file': {},
     #                        mask files as a function of x,y binning
 
-    # registration settings (Scamp)
+    # registration settings (Scamp)а
     'scamp-config-file': rootpath + '/setup/tngdolores.scamp',
     'reg_max_mag': 18,
     'reg_search_radius': 0.5,  # deg
@@ -5356,14 +5356,14 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'FLI ML47-10': 'AZT-8',
                           'ML47-10': 'AZT-8',
                           'AZT-8': 'AZT-8',
-
+                          
                           '70-cm reflector AZT-8/FLI ML47-10': 'AZT-8',
 
                           'PL47-10 FLI': 'AZT-8_lisnyky',
                           'AZT-22/Andor CCD/EMCCD (SDK2)': 'AZT-22',
                           'AZT-22': 'AZT-22',
                           '1.5m' : 'AZT-22_unfilled',
-
+                            
                           'NT-60': 'NT-60',
                           'NT-60/Andor CCD/EMCCD (SDK2)': 'NT-60',
                           'Andor CCD/EMCCD (SDK2)': 'NT-60',
@@ -5375,7 +5375,9 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'FLI PL09000': 'Rozhen600',
                           'Zeiss-600': 'Rozhen600',
                           'Rozhen Zeiss-600/PL09000': 'Rozhen600',
-
+                          '2-m RCC': 'rozhen2000', 
+                          'Rozhen Zeiss-2000': 'rozhen2000',                       
+                    
 
                           'RC-36': 'RC-36/PL-09000',
 
@@ -5481,6 +5483,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'AZT-22_unfilled': AZT22_unfilled_param,
                         'NT-60': NT60_param,
                         'Rozhen600': rozhen_600,
+                        'rozhen2000': rozhen_2000, 
                         'RC-36/PL-09000': Kitab_param,
                         'BART 254/1600 mm': BART254_param,
                         'BART254': BART254_param,

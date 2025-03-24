@@ -101,7 +101,7 @@ def calculate_airmass(header: dict, parameters: dict, location: EarthLocation) -
                       unit=(u.hourangle, u.deg), frame='icrs')
     # get observation time from the header
     date = get_obs_time(header, parameters)
-    logging.info("observation time: " + str(date.to_datetime()))
+    # logging.info("observation time: " + str(date.to_datetime()))
     # Define the AltAz frame object at the observation time and location
     altaz = AltAz(obstime=date, location=location)
     # Transform the target coordinates to the AltAz frame
