@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -202,7 +204,8 @@ class LightCurveGUI:
         self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, update_legend=True)
 
     def open_csv(self):
-        file = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
+        print(os.getcwd())
+        file = filedialog.askopenfilename(initialdir=os.getcwd(), filetypes=[("CSV Files", "*.csv")])
         if file:
             self.data.load(file)
             self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected)
