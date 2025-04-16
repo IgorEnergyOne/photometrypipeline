@@ -193,6 +193,3 @@ minstars = 0.5
 solcol = 0.2
 
 
-# photometry flavor ['APER', 'ISOCOR', 'AUTO', 'PETRO']
-photmode = 'AUTO'
-# don't change this unless you understand what you are doing

@@ -79,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument('-file_path', help='which file to use for photometry data',
                         default=None)
     parser.add_argument('-plot_flagged', help='select if to plot data flagged by sextractor',
-                        default=False, action='store_true')
+                        default=True, action='store_true')
     parser.add_argument('-target_name', help='name of the object to use as a header',
                         default=None)
     parser.add_argument('-save_name', help='name to use for the resulting file',
