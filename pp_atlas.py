@@ -242,7 +242,7 @@ def form_atlas(filename_header, filename_photometry):
     photometry_data.replace(to_replace=[True, False], value=['!', ''], inplace=True, regex=True)
     # reducing time
     photometry_data['reduc_time'] = photometry_data['julian_date'].values - zero_time
-    data_formatted = photometry_data[['rejected', 'reduc_time', 'mag', 'inst_sig', 'sig']].to_string(header=False,
+    data_formatted = photometry_data[['rejected', 'reduc_time', 'mag', 'inst_sig', 'sig', 'sextractor_flags']].to_string(header=False,
                                                                                                      index=False,
                                                                                                      formatters={
                                     'rejected': '{:s}'.format, 'reduc_time': '  {:.7f}'.format,
@@ -289,7 +289,7 @@ def form_atlas(filename_header, filename_photometry):
         'observing_site': observatory + f", code {obsparam.get('observatory_code')}",
         "telescope": obsparam.get('telescope_keyword') + f", {header.get(obsparam.get('telescope_diameter', 'diameter'), '')}",
         "detector": 'CCD',  # header.get(obsparam['detector']),
-        "columns": f"#{reduc_filter}-.", # new #R-.
+        "columns": f"#{reduc_filter}-.f", # new #R-.
         "exptime": obsparam.get('exptime'),
         "airmass": obsparam.get('airmass'),
         "filter": reduc_filter,
