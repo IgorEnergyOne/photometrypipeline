@@ -268,13 +268,13 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
                 epoch = get_obs_time(header, obsparam).jd
                 epochs.append(epoch) # Time(header[obsparam['date_keyword']], format='isot', scale='utc').jd)
                 # check if manual target name is present
-                target_man = header_update.get(obsparam['object'])
+                target_man = header_update.get("OBJECT")
                 # check if target name is present in fits header
                 target = header.get(obsparam['object'])
                 if target_man is not None:
                     target = target_man
                 elif target is not None:
-                    target = target
+                    continue
                 else:
                     logging.warning('target name not in header. Cannot calculate RA/DEC')
                     raise ValueError('target name is not in header and not manually provided. Cannot calculate RA/DEC')
