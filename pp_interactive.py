@@ -13,6 +13,19 @@ from astropy.time import Time
 
 DEFAULT_COLORS = ["blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
 
+def next_version(path: str) -> str:
+    """
+    Return path like originalname_1.ext, originalname_2.ext …,
+    choosing the first number that is not on disk.
+    """
+    base, ext = os.path.splitext(path)
+    i = 1
+    while os.path.exists(f"{base}_{i}{ext}"):
+        i += 1
+    return f"{base}_{i}{ext}"
+
+
+
 class LightCurveData:
     def __init__(self):
         self.df = None
@@ -204,21 +217,53 @@ class LightCurveGUI:
         self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, update_legend=True)
 
     def open_csv(self):
-        print(os.getcwd())
-        file = filedialog.askopenfilename(initialdir=os.getcwd(), filetypes=[("CSV Files", "*.csv")])
+        file = filedialog.askopenfilename(initialdir=os.getcwd(),
+                                          filetypes=[("CSV Files", "*.csv")])
         if file:
             self.data.load(file)
-            self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected)
+            #  ⬇️  put filename in the title bar
+            self.root.title(f"Lightcurve Viewer – {os.path.basename(file)}")
+            self.plot.update(self.data.df, self.mode, self.time_mode,
+                             self.show_rejected)
 
     def save_csv(self):
+        if self.data.df is None or self.data.filename is None:
+            messagebox.showerror("Nothing to save", "Load a CSV first.")
+            return
+
+        # ask the user; empty string means they pressed “Cancel”
+        file = filedialog.asksaveasfilename(
+            initialdir=os.path.dirname(self.data.filename),
+            initialfile=os.path.basename(self.data.filename),
+            defaultextension=".csv",
+            filetypes=[("CSV Files", "*.csv")]
+        )
+
+        if not file:  # <- user hit Cancel
+            file = next_version(self.data.filename)
+
+        self.data.filename = file
         self.data.save()
+        messagebox.showinfo("Saved", f"CSV saved as {file}")
 
     def save_plot(self):
-        if self.data.df is not None:
-            filename = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG Files", "*.png")])
-            if filename:
-                self.plot.fig.savefig(filename, dpi=300, bbox_inches='tight')
-                messagebox.showinfo("Saved", f"Plot saved as {filename}")
+        if self.data.df is None:
+            return
+
+        default_png = os.path.splitext(self.data.filename or "plot")[0] + ".png"
+
+        file = filedialog.asksaveasfilename(
+            initialdir=os.path.dirname(default_png),
+            initialfile=os.path.basename(default_png),
+            defaultextension=".png",
+            filetypes=[("PNG Files", "*.png")]
+        )
+
+        if not file:
+            file = next_version(default_png)
+
+        self.plot.fig.savefig(file, dpi=300, bbox_inches="tight")
+        messagebox.showinfo("Saved", f"Plot saved as {file}")
 
     def set_mode(self, _=None):
         self.mode = self.mode_var.get()
