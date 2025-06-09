@@ -38,6 +38,13 @@ DISPLAY_COLS = [
 # Map label → lambda for fast lookup
 _GETVAL = dict(DISPLAY_COLS)
 
+
+def _as_plain(values):
+    """Return a plain ndarray, replacing masked entries with NaN."""
+    if hasattr(values, "filled"):      # MaskedArray or MaskedColumn
+        return values.filled(np.nan)
+    return values
+
 def sources_with(data, condition):
     """
     reject sources based on condition
@@ -141,21 +148,21 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
     z_sdss = (z + 0.013 - 0.039 * (g - r) - 0.012 * (g - r) ** 2)
     zerr_sdss = np.sqrt(e_z ** 2 + 0.01 ** 2)
 
-    data.add_column(Column(data=g_sdss, name='_gmag',
+    data.add_column(Column(data=_as_plain(g_sdss), name='_gmag',
                            unit=u.mag))
-    data.add_column(Column(data=gerr_sdss, name='_e_gmag',
+    data.add_column(Column(data=_as_plain(gerr_sdss), name='_e_gmag',
                            unit=u.mag))
-    data.add_column(Column(data=r_sdss, name='_rmag',
+    data.add_column(Column(data=_as_plain(r_sdss), name='_rmag',
                            unit=u.mag))
-    data.add_column(Column(data=rerr_sdss, name='_e_rmag',
+    data.add_column(Column(data=_as_plain(rerr_sdss), name='_e_rmag',
                            unit=u.mag))
-    data.add_column(Column(data=i_sdss, name='_imag',
+    data.add_column(Column(data=_as_plain(i_sdss), name='_imag',
                            unit=u.mag))
-    data.add_column(Column(data=ierr_sdss, name='_e_imag',
+    data.add_column(Column(data=_as_plain(ierr_sdss), name='_e_imag',
                            unit=u.mag))
-    data.add_column(Column(data=z_sdss, name='_zmag',
+    data.add_column(Column(data=_as_plain(z_sdss), name='_zmag',
                            unit=u.mag))
-    data.add_column(Column(data=zerr_sdss, name='_e_zmag',
+    data.add_column(Column(data=_as_plain(zerr_sdss), name='_e_zmag',
                            unit=u.mag))
     return data.to_pandas()
 
@@ -224,21 +231,20 @@ def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
     z_sdss = g - (-0.4619 + 0.8992 * (bp - rp) - 0.08271 * (bp - rp) ** 2 + 0.005029 * (bp - rp) ** 3)
     e_z_sdss = np.sqrt(e_g ** 2 + 0.041161 ** 2)
 
-    data.add_column(Column(data=g_sdss, name='_gmag',
+    data.add_column(Column(data=_as_plain(g_sdss), name='_gmag', unit=u.mag))
+    data.add_column(Column(data=_as_plain(e_g_sdss), name='_e_gmag',
                            unit=u.mag))
-    data.add_column(Column(data=e_g_sdss, name='_e_gmag',
+    data.add_column(Column(data=_as_plain(r_sdss), name='_rmag',
                            unit=u.mag))
-    data.add_column(Column(data=r_sdss, name='_rmag',
+    data.add_column(Column(data=_as_plain(e_r_sdss), name='_e_rmag',
                            unit=u.mag))
-    data.add_column(Column(data=e_r_sdss, name='_e_rmag',
+    data.add_column(Column(data=_as_plain(i_sdss), name='_imag',
                            unit=u.mag))
-    data.add_column(Column(data=i_sdss, name='_imag',
+    data.add_column(Column(data=_as_plain(e_i_sdss), name='_e_imag',
                            unit=u.mag))
-    data.add_column(Column(data=e_i_sdss, name='_e_imag',
+    data.add_column(Column(data=_as_plain(z_sdss), name='_zmag',
                            unit=u.mag))
-    data.add_column(Column(data=z_sdss, name='_zmag',
-                           unit=u.mag))
-    data.add_column(Column(data=e_z_sdss, name='_e_zmag',
+    data.add_column(Column(data=_as_plain(e_z_sdss), name='_e_zmag',
                            unit=u.mag))
     return data.to_pandas()
 
