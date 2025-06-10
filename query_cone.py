@@ -12,7 +12,9 @@ from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astroquery.vizier import Vizier
 from astropy.table import Table, Column
+from astropy.coordinates import Angle
 from scipy import spatial
+import re
 
 MAX_SOURCES = 50_000
 
@@ -45,6 +47,96 @@ def _as_plain(values):
         return values.filled(np.nan)
     return values
 
+_DMS_RE = re.compile(
+    r"""^\s*           # optional leading spaces
+        (?P<sgn>[+-])? # optional sign
+        (?P<d>\d+)(?:[d°\s:]|\s+|$)     # degrees
+        (?:(?P<m>\d+)(?:[m'\s:]|\s+|$))?# minutes
+        (?:(?P<s>\d+(?:\.\d*)?)
+            (?:[s"]|\s*)                # seconds
+        )?                              # seconds optional
+        \s*$""",
+    re.VERBOSE)
+
+def _parse_angle(text: str, type='ra') -> float:
+    """
+    Accepts any of:
+      • decimal degrees   →  187.12345
+      • DMS               →  187d07m24.4s   or  187 07 24.4
+      • HMS (RA)          →   12h27m33.1s   or   12 27 33.1
+    Returns the value in **degrees**.
+    """
+    text = text.strip()
+    # plain decimal?  (fast path)
+    try:
+        return float(text)
+    except ValueError:
+        pass
+
+    # give astropy a shot – it understands most astronomical notations
+    try:
+        return Angle(text).degree
+    except Exception:
+        # try “12 27 33.1” → “12d27m33.1s”   or “…h…”
+        parts = text.replace(':', ' ').split()
+        if len(parts) == 3 and all(p.replace('.', '', 1).isdigit()
+                                   or (p[0] in '+-' and p[1:].replace('.', '', 1).isdigit())
+                                   for p in parts):
+            # assume dms unless explicitly > 24 → treat as degrees
+            first = float(parts[0])
+            if type == 'ra':
+                if abs(first) <= 24:                       # could be RA in hours
+                    guess = f"{parts[0]}h{parts[1]}m{parts[2]}s"
+                else:                                      # definitely degrees
+                    guess = f"{parts[0]}d{parts[1]}m{parts[2]}s"
+                try:
+                    return Angle(guess).degree
+                except Exception:
+                    pass
+            elif type == 'dec':
+                guess = f"{parts[0]}d{parts[1]}m{parts[2]}s"
+                try:
+                    return Angle(guess).degree
+                except Exception:
+                    pass
+        raise ValueError(f"Bad angle format: “{text}”")
+
+
+def _parse_center(text: str):
+    """
+    Split a free-form “RA Dec” string into two parts and convert each to degrees.
+    Works for:
+      • decimal  → 187.12 +2.34
+      • DMS      → 187 07 12.0  +02 20 24
+      • HMS/DMS  → 12 27 33.1  -03:22:10.1
+      • comma-separated, etc.
+    """
+    tokens = text.replace(',', ' ').split()
+    if len(tokens) < 2:
+        raise ValueError("Enter both RA and Dec (separated by space or comma).")
+
+    # try every possible split: tokens[:i] = RA , tokens[i:] = Dec
+    for i in range(1, len(tokens)):
+        ra_str  = ' '.join(tokens[:i])
+        dec_str = ' '.join(tokens[i:])
+        try:
+            ra  = _parse_angle(ra_str, type='ra')
+            dec = _parse_angle(dec_str, type='dec')
+            return ra, dec
+        except ValueError:
+            continue
+
+    raise ValueError(f"Cannot interpret RA/Dec in “{text}”.")
+
+
+def _is_number(txt: str):
+    try:
+        float(txt)
+        return True
+    except ValueError:
+        return False
+
+
 def sources_with(data, condition):
     """
     reject sources based on condition
@@ -57,7 +149,7 @@ def sources_with(data, condition):
 
 # ------------------------------------------------------------
 def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
-                  mag_max: 21, min_mag: 0) -> pd.DataFrame:
+                  mag_max: 21, min_mag: 0, band: 'Rmag') -> pd.DataFrame:
     """Generic Vizier cone search returning a pandas.DataFrame."""
     field  = SkyCoord(ra=ra_deg, dec=dec_deg, unit=(u.deg, u.deg),
                        frame='icrs')
@@ -71,7 +163,7 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
                              'zmag', 'e_zmag',
                              'ymag', 'e_ymag'],
                     column_filters={"rmag":
-                                        (">={:f} AND <={:f}".format(min_mag, mag_max))
+                                        (">={:f} AND <={:f}".format(-5, 30))
                                     },
                     row_limit=MAX_SOURCES,
                     timeout=300)
@@ -138,6 +230,7 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
     data.add_column(Column(data=Ierr, name='e_Imag',
                            unit=u.mag))
 
+
     # transform to SDSS to select solar-like stars
     g_sdss = (g + 0.013 + 0.145 * (g - r) + 0.019 * (g - r) ** 2)
     gerr_sdss = np.sqrt(e_g ** 2 + 0.008 ** 2)
@@ -164,10 +257,14 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
                            unit=u.mag))
     data.add_column(Column(data=_as_plain(zerr_sdss), name='_e_zmag',
                            unit=u.mag))
-    return data.to_pandas()
+
+    data = data.to_pandas()
+    # filter catalogue to get stars of magnitude in given range
+    data = data[data[f'{band}'].between(min_mag, mag_max)]
+    return data
 
 def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
-                  mag_max: 21, min_mag: 0) -> pd.DataFrame:
+                  mag_max: 21, min_mag: 0, band: 'Rmag') -> pd.DataFrame:
     """Generic Vizier cone search returning a pandas.DataFrame."""
     field  = SkyCoord(ra=ra_deg, dec=dec_deg, unit=(u.deg, u.deg),
                        frame='icrs')
@@ -180,7 +277,7 @@ def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
                              'BPmag', 'e_BPmag',
                              'RPmag', 'eRPmag', 'VarFlag'],
                     column_filters={"phot_g_mean_mag":
-                                        (">={:f} AND <={:f}".format(min_mag, mag_max)),
+                                        (">={:f} AND <={:f}".format(-5, 30)),
                                     "VarFlag": "!=VARIABLE"},
                     row_limit=MAX_SOURCES,
                     timeout=300)
@@ -199,6 +296,13 @@ def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
     data.rename_column('Source', 'id_gaia')
     data.rename_column('RA_ICRS', 'ra_deg')
     data.rename_column('DE_ICRS', 'dec_deg')
+    # add angles in hms and dms
+    data.add_column(Column(data=Angle(data["ra_deg"]).to_string(
+        unit=u.hourangle, sep=':', pad=True, precision=2),
+                           name="RA_hms"))
+    data.add_column(Column(data=Angle(data["dec_deg"]).to_string(
+        unit=u.deg, sep=':', pad=True, precision=2, alwayssign=True),
+                           name="Dec_dms"))
     g = data['Gmag']
     e_g = data['e_Gmag']
     bp = data['BPmag']
@@ -246,7 +350,10 @@ def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
                            unit=u.mag))
     data.add_column(Column(data=_as_plain(e_z_sdss), name='_e_zmag',
                            unit=u.mag))
-    return data.to_pandas()
+    data = data.to_pandas()
+    # filter catalogue to get stars of magnitude in given range
+    data = data[data[f'{band}'].between(min_mag, mag_max)]
+    return data
 
 def solar_mask(df: pd.DataFrame, solar_coef: float = 0.2) -> pd.DataFrame:
     """select solar-like stars based on their colors in sdss and likeness coefficient"""
@@ -285,112 +392,192 @@ def calculate_cat_diffs(cat_matched: pd.DataFrame) -> pd.DataFrame:
 
 
 class ConeGUI(tk.Tk):
-    # ------------------------------------------------------------
     def __init__(self):
         super().__init__()
         self.title("Stars cone-search viewer")
-        self.geometry("1200x600")
+        self.geometry("1200x650")
 
-        self.current_df = None          # full DataFrame currently displayed
-        self.cache      = {}            # catalogue-specific cache
-
+        self.current_df   = None     # full DataFrame behind the grid
+        self.filtered_df = None  # view after filter
+        self._sort_state  = {}       # column → bool   (True = descending)
         self._build_widgets()
 
     # ------------------------------------------------------------
     def _build_widgets(self):
-        # ── first row: query controls ────────────────────────────
-        frm = ttk.Frame(self); frm.pack(anchor="w", pady=4)
+        # top-row  –  query controls
+        frm = ttk.Frame(self);
+        frm.pack(anchor='w', pady=4)
 
-        self.cat = tk.StringVar(value="PANSTARRS")
-        ttk.Label(frm, text="Catalog").pack(side="left", padx=(0,4))
-        self.ent_ra     = self._labeled_entry(frm, "RA °")
-        self.ent_dec    = self._labeled_entry(frm, "Dec °")
-        self.ent_rad    = self._labeled_entry(frm, 'Radius"')
+        self.ent_center = self._labeled_entry(frm, "RA, Dec")
+        self.ent_center.config(width=25)  # ← after it’s created
+        self.ent_rad = self._labeled_entry(frm, 'Radius"')
+
+
+        # magnitude filter selector  (default = R)
         self.ent_magmin = self._labeled_entry(frm, "mag min")
         self.ent_magmax = self._labeled_entry(frm, "mag max")
-
-        self.var_solar = tk.BooleanVar()
-        ttk.Checkbutton(frm, text="Solar-like", variable=self.var_solar)\
-            .pack(side="left", padx=6)
-
-        self.ent_solar_coef = self._labeled_entry(frm, "Solar coeff.")
-        self.ent_solar_coef.insert(0, "0.2")
+        ttk.Label(frm, text="band").pack(side='left', padx=(4, 0))
+        self.cmb_magband = ttk.Combobox(frm, state='readonly', width=3,
+                                        values = ('B', 'V', 'R', 'I'))
+        self.cmb_magband.current(2)  # index 2 → 'R'
+        self.cmb_magband.pack(side='left', padx=(0, 4))
+        self.ent_solar = self._labeled_entry(frm, "Solar coeff.")
+        self.ent_solar.insert(0, "0.2")
         self.ent_magmin.insert(0, "0")
         self.ent_magmax.insert(0, "21")
         self.ent_rad.insert(0, "60.0")
 
-        ttk.Button(frm, text="Query", command=self.query)\
-            .pack(side="left", padx=10)
-        ttk.Button(frm, text="Save",  command=self._save_csv)\
-            .pack(side="left", padx=5)
+        # ── universal shortcuts for all Entry widgets ─────────────
+        self.bind_class("Entry", "<Control-a>",
+                        lambda e: (e.widget.select_range(0, "end"),
+                                   e.widget.icursor("end"), "break"))
+        self.bind_class("Entry", "<Control-A>",
+                        lambda e: (e.widget.select_range(0, "end"),
+                                   e.widget.icursor("end"), "break"))
+        self.bind_class("Entry", "<Command-a>",  # macOS
+                        lambda e: (e.widget.select_range(0, "end"),
+                                   e.widget.icursor("end"), "break"))
 
-        # ── second row: check-boxes to choose columns ────────────
-        self.col_vars = {}                         # label → tk.BooleanVar
-        cb_frame = ttk.Frame(self); cb_frame.pack(anchor="w", padx=4, pady=(0,4))
+        self.bind_class("Entry", "<Control-z>",
+                        lambda e: e.widget.event_generate("<<Undo>>"))
+        self.bind_class("Entry", "<Control-y>",
+                        lambda e: e.widget.event_generate("<<Redo>>"))
+        self.bind_class("Entry", "<Command-z>",
+                        lambda e: e.widget.event_generate("<<Undo>>"))
+        self.bind_class("Entry", "<Command-y>",
+                        lambda e: e.widget.event_generate("<<Redo>>"))
 
+        self.var_solar = tk.BooleanVar()
+        ttk.Checkbutton(frm, text="Solar-like", variable=self.var_solar) \
+            .pack(side='left', padx=6)
+
+        ttk.Button(frm, text="Query", command=self.query) \
+            .pack(side='left', padx=10)
+        ttk.Button(frm, text="Save", command=self._save_csv) \
+            .pack(side='left')
+
+        # second row – free-text filter
+        f2 = ttk.Frame(self);
+        f2.pack(anchor='w', pady=(0, 4))
+        ttk.Label(f2, text="Filter ").pack(side='left', padx=(4, 0))
+        self.ent_filter = ttk.Entry(f2, width=25)
+        self.ent_filter.pack(side='left', padx=2)
+        self.ent_filter.bind("<Return>", self._apply_filter)
+        ttk.Button(f2, text="Apply", command=self._apply_filter) \
+            .pack(side='left', padx=10)
+
+        # ─── NEW: RA/Dec format switch ─────────────────────────────
+        self.var_hms = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            f2, text="RA°->h / Dec°->dms", variable=self.var_hms,
+            command=self._refresh_format
+        ).pack(side='left', padx=8)
+
+        # third row – check-boxes for columns
+        cb_frame = ttk.Frame(self);
+        cb_frame.pack(anchor='w', padx=4, pady=(0, 4))
+        self.col_vars = {}
         for name, _ in DISPLAY_COLS:
-            var = tk.BooleanVar(value=True)        # start with everything shown
+            var = tk.BooleanVar(value=True)
             self.col_vars[name] = var
-            ttk.Checkbutton(
-                cb_frame, text=name, variable=var,
-                command=self._update_columns
-            ).pack(side="left", padx=2)
+            ttk.Checkbutton(cb_frame, text=name, variable=var,
+                            command=self._update_columns) \
+                .pack(side='left', padx=2)
 
-        # ── data table ───────────────────────────────────────────
-        self._build_treeview()                     # creates initial Treeview
+        # table itself
+        self._build_treeview()
 
     # ------------------------------------------------------------
     # helpers + UI utilities
     # ------------------------------------------------------------
-    def _labeled_entry(self, parent, text) -> ttk.Entry:
-        fr = ttk.Frame(parent); fr.pack(side="left", padx=4)
-        ttk.Label(fr, text=text).pack(side="left")
-        e = ttk.Entry(fr, width=7); e.pack(side="left")
-        return e
 
+    def _labeled_entry(self, parent, text) -> ttk.Entry:
+        fr = ttk.Frame(parent);
+        fr.pack(side='left', padx=4)
+        ttk.Label(fr, text=text).pack(side='left')
+        e = tk.Entry(fr, width=8)
+        e.pack(side='left')
+        return e
     # ------------------------------------------------------------------
     # Treeview rebuild helpers
     # ------------------------------------------------------------------
     def _selected_columns(self):
-        """Return list of column labels currently ticked."""
-        return [name for name, var in self.col_vars.items() if var.get()]
+        return [n for n, v in self.col_vars.items() if v.get()]
 
     def _build_treeview(self):
-        """Create (or recreate) the Treeview according to current column choice."""
-        # If a tree already exists (after a toggle), destroy it
-        if hasattr(self, "tree"):
+        if hasattr(self, 'tree'):
             self.tree.destroy()
 
         cols = self._selected_columns()
-        self.tree = ttk.Treeview(self, columns=cols,
-                                 show="headings", selectmode="extended")
-
+        self.tree = ttk.Treeview(self, columns=cols, show='headings',
+                                 selectmode='extended')
         for c in cols:
-            self.tree.heading(c, text=c)
-            self.tree.column(c,
-                             width=110 if "ID" in c else 90,
-                             anchor="center")
+            self.tree.heading(c, text=c,
+                              command=lambda _c=c: self._sort_by(_c))
+            self.tree.column(c, width=110 if "ID" in c else 90,
+                             anchor='center')
+        self.tree.pack(fill='both', expand=True, padx=4, pady=4)
 
-        self.tree.pack(fill="both", expand=True, padx=4, pady=4)
-
-        # scrollbar
-        vsb = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
+        vsb = ttk.Scrollbar(self, orient='vertical', command=self.tree.yview)
         self.tree.configure(yscroll=vsb.set)
-        vsb.place(relx=1.0, rely=0, relheight=1.0, anchor="ne")
+        vsb.place(relx=1.0, rely=0, relheight=1.0, anchor='ne')
 
-        # context menu for copy
+        # context menu (unchanged)
         self.menu = tk.Menu(self, tearoff=0)
         self.menu.add_command(label="Copy Cell", command=self._copy_cell)
-        self.menu.add_command(label="Copy Row",  command=self._copy_row)
+        self.menu.add_command(label="Copy Row", command=self._copy_row)
         self.tree.bind('<Button-3>', self._show_context_menu)
         self.tree.bind('<Control-c>', self._copy_selection)
         self.tree.bind('<Control-C>', self._copy_selection)
 
+    def _sort_by(self, col):
+        """Sort displayed rows by the clicked column."""
+        data = []
+        for iid in self.tree.get_children(''):
+            val = self.tree.set(iid, col)
+            key = float(val) if _is_number(val) else val
+            data.append((key, iid))
+
+        descending = self._sort_state.get(col, False)
+        data.sort(reverse=not descending)
+        for pos, (_, iid) in enumerate(data):
+            self.tree.move(iid, '', pos)
+        self._sort_state[col] = not descending
+
     def _update_columns(self):
-        """Called whenever any check-box is toggled."""
         self._build_treeview()
-        if self.current_df is not None and not self.current_df.empty:
+        if self.filtered_df is not None:
+            self._populate(self.filtered_df)
+        elif self.current_df is not None:
             self._populate(self.current_df)
+
+    # ──────────────────────────────────────────────────────────────────────
+    #  FILTERING
+    # ──────────────────────────────────────────────────────────────────────
+    def _apply_filter(self, _event=None):
+        """
+        Update self.filtered_df and redraw the table.
+
+        • If the filter box is empty, self.filtered_df == self.current_df
+        • Otherwise keep only the rows that contain the pattern (case-insensitive)
+          anywhere in their string representation.
+        """
+        if self.current_df is None:
+            return
+
+        pattern = self.ent_filter.get().strip()
+        if not pattern:
+            self.filtered_df = self.current_df
+        else:
+            pat = re.escape(pattern)
+            self.filtered_df = self.current_df[
+                self.current_df.apply(
+                    lambda row: row.astype(str)
+                    .str.contains(pat, case=False, na=False)
+                    .any(),
+                    axis=1)
+            ]
+        self._populate(self.filtered_df)
 
     # ------------------------------------------------------------------
     # context-menu / clipboard helpers (unchanged)
@@ -452,17 +639,15 @@ class ConeGUI(tk.Tk):
     # ------------------------------------------------------------------
     def _read_inputs(self):
         try:
-            ra   = float(self.ent_ra.get())
-            dec  = float(self.ent_dec.get())
-            rad  = float(self.ent_rad.get())
+            ra, dec = _parse_center(self.ent_center.get())  # CHANGED
+            rad = float(self.ent_rad.get())
             mmin = float(self.ent_magmin.get())
             mmax = float(self.ent_magmax.get())
-            solar_coef = float(self.ent_solar_coef.get())
-        except ValueError:
-            raise ValueError("Invalid numeric entry.")
+            solar_coef = float(self.ent_solar.get())
+        except ValueError as exc:
+            raise ValueError(f"Invalid entry: {exc}")
         if mmin > mmax:
             mmin, mmax = mmax, mmin
-
         return dict(ra=ra, dec=dec, radius=rad,
                     magmin=mmin, magmax=mmax,
                     solar=self.var_solar.get(),
@@ -475,41 +660,75 @@ class ConeGUI(tk.Tk):
             messagebox.showerror("Input error", str(e))
             return
 
-        centre = SkyCoord(p["ra"], p["dec"], unit="deg")
-
-        self.config(cursor="watch"); self.update()
+        self.config(cursor='watch')
+        self.update()
+        # get the color band for star filtering
+        band_col = {'B': 'Bmag', 'V': 'Vmag', 'R': 'Rmag', 'I': 'Imag'} \
+            [self.cmb_magband.get()]
         try:
-            df_gaia = fetch_catalog_gaia(p["ra"], p["dec"],
-                                         p["radius"], p["magmax"], p["magmin"])
-            df_ps1  = fetch_catalog_ps1 (p["ra"], p["dec"],
-                                         p["radius"], p["magmax"], p["magmin"])
-            df      = calculate_cat_diffs(
-                          skycoord_match(df_gaia, df_ps1)
-                      )
+            df_gaia = fetch_catalog_gaia(p['ra'], p['dec'],
+                                         p['radius'], p['magmax'], p['magmin'], band=band_col)
+            df_ps1 = fetch_catalog_ps1(p['ra'], p['dec'],
+                                       p['radius'], p['magmax'], p['magmin'], band=band_col)
+            df = calculate_cat_diffs(
+                skycoord_match(df_gaia, df_ps1))
         except Exception as exc:
             messagebox.showerror("Query failed", str(exc))
-            self.config(cursor=""); return
+            self.config(cursor='')
+            return
 
-        if p["solar"]:
-            df = solar_mask(df, solar_coef=p["solar_coef"])
+        if p['solar']:
+            df = solar_mask(df, solar_coef=p['solar_coef'])
 
-        self.current_df = df                 # store full DF
-        self.cache["last"] = (centre, p["radius"], df)
-
-        self.config(cursor="")
+        # after the optional solar-masking
+        self.current_df = df  # full table
+        self.filtered_df = df  # currently shown view
+        self.config(cursor='')
         self._populate(df)
 
+
     # ------------------------------------------------------------
+    # ------------------------------------------------------------------
     def _populate(self, df: pd.DataFrame):
-        """Insert rows according to currently visible column set."""
         cols = self._selected_columns()
         self.tree.delete(*self.tree.get_children())
 
+        show_hms = self.var_hms.get()  # ← switch state
+
         for _, r in df.iterrows():
-            self.tree.insert(
-                "", "end",
-                values=[_GETVAL[c](r) for c in cols]
-            )
+            row = []
+            for c in cols:
+                if c.startswith("RA"):
+                    row.append(
+                        Angle(r['ra_deg'], unit=u.deg)
+                        .to_string(unit=u.hourangle if show_hms else u.deg,
+                                   sep=':', pad=True, precision=2)
+                        if show_hms else f"{r['ra_deg']:.6f}"
+                    )
+                elif c.startswith("DEC"):
+                    row.append(
+                        Angle(r['dec_deg'], unit=u.deg)
+                        .to_string(unit=u.deg, sep=':', pad=True,
+                                   precision=2, alwayssign=True)
+                        if show_hms else f"{r['dec_deg']:.6f}"
+                    )
+                else:
+                    row.append(_GETVAL[c](r))
+            self.tree.insert("", "end", values=row)
+
+    def _refresh_format(self):
+        """Called when the RA/Dec format checkbox is toggled."""
+        # update headings
+        if 'RA [deg]' in self.tree["columns"]:
+            self.tree.heading('RA [deg]',
+                              text='RA [hms]' if self.var_hms.get() else 'RA [deg]')
+        if 'DEC [deg]' in self.tree["columns"]:
+            self.tree.heading('DEC [deg]',
+                              text='DEC [dms]' if self.var_hms.get() else 'DEC [deg]')
+
+        # repaint the rows that are *currently visible*
+        # → simply re-apply the active filter (if any)
+        self._apply_filter()
 
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
