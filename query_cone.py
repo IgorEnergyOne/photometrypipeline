@@ -11,9 +11,8 @@ import pandas as pd
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astroquery.vizier import Vizier
-from astropy.table import Table, Column
+from astropy.table import Column
 from astropy.coordinates import Angle
-from scipy import spatial
 import re
 
 MAX_SOURCES = 50_000
@@ -149,7 +148,7 @@ def sources_with(data, condition):
 
 # ------------------------------------------------------------
 def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
-                  mag_max: 21, min_mag: 0, band: 'Rmag') -> pd.DataFrame:
+                  mag_max: 21, min_mag: 0, band="Rmag") -> pd.DataFrame:
     """Generic Vizier cone search returning a pandas.DataFrame."""
     field  = SkyCoord(ra=ra_deg, dec=dec_deg, unit=(u.deg, u.deg),
                        frame='icrs')
@@ -167,10 +166,13 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
                                     },
                     row_limit=MAX_SOURCES,
                     timeout=300)
-    data = vquery.query_region(field,
-                               radius=radius_deg * u.deg,
-                               catalog="II/349/ps1",
-                               cache=False)[0]
+    try:
+        data = vquery.query_region(field,
+                                   radius=radius_deg * u.deg,
+                                   catalog="II/349/ps1",
+                                   cache=False)[0]
+    except IndexError:
+        raise IndexError("No sources found in PANSTARRS catalog. Try a larger radius or/and larger magnitude range.")
 
     # calculate distance from query point (in arcseconds)
     data['dist'] = np.sqrt((data['RAJ2000'] - ra_deg)**2
@@ -179,7 +181,7 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
     data.sort('dist')
 
     # rename column names using PP conventions
-    data.rename_column('objID', 'id_panstarrs')
+    data.rename_column('objID', 'id')
     data.rename_column('RAJ2000', 'ra_deg')
     data.rename_column('DEJ2000', 'dec_deg')
     data.rename_column('e_RAJ2000', 'e_ra_deg')
@@ -264,7 +266,7 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
     return data
 
 def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
-                  mag_max: 21, min_mag: 0, band: 'Rmag') -> pd.DataFrame:
+                  mag_max: 21, min_mag: 0, band='Rmag') -> pd.DataFrame:
     """Generic Vizier cone search returning a pandas.DataFrame."""
     field  = SkyCoord(ra=ra_deg, dec=dec_deg, unit=(u.deg, u.deg),
                        frame='icrs')
@@ -281,10 +283,13 @@ def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
                                     "VarFlag": "!=VARIABLE"},
                     row_limit=MAX_SOURCES,
                     timeout=300)
-    data = vquery.query_region(field,
-                               radius=radius_deg * u.deg,
-                               catalog="I/355/gaiadr3",
-                               cache=False)[0]
+    try:
+        data = vquery.query_region(field,
+                                   radius=radius_deg * u.deg,
+                                   catalog="I/355/gaiadr3",
+                                   cache=False)[0]
+    except IndexError:
+        raise IndexError("No sources found in GAIA catalog. Try a larger radius or/and larger magnitude range.")
 
     # calculate distance from query point (in arcseconds)
     data['dist'] = np.sqrt((data['RA_ICRS'] - ra_deg)**2
@@ -355,6 +360,100 @@ def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
     data = data[data[f'{band}'].between(min_mag, mag_max)]
     return data
 
+
+def fetch_catalog_apass(ra_deg: float, dec_deg: float, radius: float,
+                       mag_max: 21, min_mag: 0, band="Rmag") -> pd.DataFrame:
+    """Generic Vizier cone search returning a pandas.DataFrame."""
+    field  = SkyCoord(ra=ra_deg, dec=dec_deg, unit=(u.deg, u.deg),
+                       frame='icrs')
+    radius_deg = radius / 3600.0
+    # photometric catalog
+    vquery = Vizier(columns=['RAJ2000', 'DEJ2000',
+                             'e_RAJ2000',
+                             'e_DEJ2000', 'Vmag', 'e_Vmag',
+                             'Bmag', 'e_Bmag', "g'mag", "e_g'mag",
+                             "r'mag", "e_r'mag", "i'mag", "e_i'mag"],
+                    column_filters={"Vmag":
+                                        ("<{:f}".format(30))},
+                    row_limit=MAX_SOURCES)
+    try:
+        data = vquery.query_region(field,
+                                   radius=radius_deg * u.deg,
+                                   catalog="II/336/apass9",
+                                   cache=False)[0]
+    except IndexError:
+        raise IndexError("No sources found in APASS catalog. Try a larger radius or/and larger magnitude range.")
+
+    data.rename_column('RAJ2000', 'ra_deg')
+    data.rename_column('DEJ2000', 'dec_deg')
+    data.rename_column('e_RAJ2000', 'e_ra_deg')
+    data.rename_column('e_DEJ2000', 'e_dec_deg')
+    data.rename_column("g'mag", 'gmag')
+    data.rename_column("e_g'mag", 'e_gmag')
+    data.rename_column("r'mag", 'rmag')
+    data.rename_column("e_r'mag", 'e_rmag')
+    data.rename_column("i'mag", 'imag')
+    data.rename_column("e_i'mag", 'e_imag')
+
+    # transformations based on Chonis & Gaskell 2008, AJ, 135
+    mags = np.array([data['rmag'].data,
+                     data['imag'].data,
+                     data['e_rmag'].data,
+                     data['e_imag'].data])
+
+    # # sort out sources that do not meet the C&G requirements
+    # keep_idc = (mags[0] - mags[1] > 0.08) & (mags[0] - mags[1] < 0.5)
+    #
+    # # transformed magnitudes; uncertainties through Gaussian and C&G2008
+    # nmags = np.array([np.empty(len(mags[0])),
+    #                   np.empty(len(mags[0])),
+    #                   np.empty(len(mags[0])),
+    #                   np.empty(len(mags[0]))])
+    #
+    # nmags[0] = mags[0] - 0.272 * (mags[0] - mags[1]) - 0.159
+    # nmags[1] = np.sqrt(((1 - 0.272) * mags[2]) ** 2
+    #                    + (0.272 * mags[3]) ** 2
+    #                    + ((mags[0] - mags[1]) * 0.092) ** 2
+    #                    + 0.022 ** 2)
+    # nmags[2] = mags[1] - 0.337 * (mags[0] - mags[1]) - 0.370
+    # nmags[3] = np.sqrt(((1 + 0.337) * mags[3]) ** 2
+    #                    + (0.337 * mags[2]) ** 2
+    #                    + ((mags[0] - mags[1]) * 0.191) ** 2
+    #                    + 0.041 ** 2)
+    #
+    # # add new filter and according uncertainty to catalog
+    # data.add_column(Column(data=_as_plain(nmags[0]), name='Rmag', unit=u.mag))
+    # data.add_column(Column(data=_as_plain(nmags[1]), name='e_Rmag',
+    #                        unit=u.mag))
+    # data.add_column(Column(data=_as_plain(nmags[2]), name='Imag', unit=u.mag))
+    # data.add_column(Column(data=_as_plain(nmags[3]), name='e_Imag',
+    #                        unit=u.mag))
+    # # get rid of sources that have not been transformed
+    # data = data[keep_idc]
+
+    # transformation formulas from Jester2005
+
+    R_mag = data['Vmag'].data - 1.09 * (data['rmag'].data - data['imag'].data) - 0.22
+    e_R_mag = np.sqrt(data['e_Vmag'].data ** 2 + 1.09 **2 * data['e_rmag'].data ** 2 + data['e_imag'].data ** 2)
+    I_mag = R_mag - (data['rmag'].data - data['imag'].data) - 0.21
+    #I_mag2 = data['rmag'].data - 1.2444 * (data['rmag'].data - data['imag'].data) - 0.382
+    e_I_mag = np.sqrt(e_R_mag ** 2 + (data['e_rmag'].data + data['e_imag'].data) ** 2)
+
+
+    data.add_column(Column(data=_as_plain(R_mag), name='Rmag', unit=u.mag))
+    data.add_column(Column(data=_as_plain(e_R_mag), name='e_Rmag',
+                           unit=u.mag))
+    data.add_column(Column(data=_as_plain(I_mag), name='Imag', unit=u.mag))
+    data.add_column(Column(data=_as_plain(e_I_mag), name='e_Imag',
+                           unit=u.mag))
+
+    data = data.to_pandas()
+    # filter catalogue to get stars of magnitude in given range
+    data = data[data[f'{band}'].between(min_mag, mag_max)]
+    return data
+
+
+
 def solar_mask(df: pd.DataFrame, solar_coef: float = 0.2) -> pd.DataFrame:
     """select solar-like stars based on their colors in sdss and likeness coefficient"""
     sol_gr, sol_ri = 0.44, 0.11
@@ -363,36 +462,63 @@ def solar_mask(df: pd.DataFrame, solar_coef: float = 0.2) -> pd.DataFrame:
     return df[mask]
 
 
-def skycoord_match(gaia_cat: pd.DataFrame, ps1_cat: pd.DataFrame) -> pd.DataFrame:
-    gaia_coord = SkyCoord(gaia_cat['ra_deg'].values * u.deg, gaia_cat['dec_deg'].values * u.deg)
-    ps1_coord = SkyCoord(ps1_cat['ra_deg'].values * u.deg, ps1_cat['dec_deg'].values * u.deg)
+def skycoord_match(gaia_cat: pd.DataFrame, sec_cat: pd.DataFrame, tag, tolerance=1.0) -> pd.DataFrame:
+    gaia_coord = SkyCoord(gaia_cat['ra_deg'].values * u.deg,
+                          gaia_cat['dec_deg'].values * u.deg)
+    sec_coord = SkyCoord(sec_cat['ra_deg'].values * u.deg,
+                         sec_cat['dec_deg'].values * u.deg)
 
-    idx, sep, _ = gaia_coord.match_to_catalog_sky(ps1_coord)
-    mask = sep < 1.0 * u.arcsec  # keep only good pairs
+    idx, sep, _ = gaia_coord.match_to_catalog_sky(sec_coord)
+    mask = sep < tolerance * u.arcsec  # keep only good pairs
 
     gaia_matched = gaia_cat[mask].reset_index(drop=True)
-    ps1_matched = ps1_cat.iloc[idx[mask]].reset_index(drop=True)
+    sec_matched = sec_cat.iloc[idx[mask]].reset_index(drop=True)
 
     # Merge the two DataFrames side-by-side
-    both = pd.concat([gaia_matched, ps1_matched.add_suffix('_PS1')], axis=1)
+    both = pd.concat([gaia_matched, sec_matched.add_suffix(f'_{tag}')], axis=1)
     return both
 
 
-def calculate_cat_diffs(cat_matched: pd.DataFrame) -> pd.DataFrame:
+def calculate_cat_diffs(df: pd.DataFrame, tag: str) -> pd.DataFrame:
     """calculated differences between color filters and between catalogs"""
-    cat_matched['B_GAIA-B_PS1'] = cat_matched['Bmag'] - cat_matched['Bmag_PS1']
-    cat_matched['V_GAIA-V_PS1'] = cat_matched['Vmag'] - cat_matched['Vmag_PS1']
-    cat_matched['R_GAIA-R_PS1'] = cat_matched['Rmag'] - cat_matched['Rmag_PS1']
-    cat_matched['I_GAIA-I_PS1'] = cat_matched['Imag'] - cat_matched['Imag_PS1']
-    cat_matched['B-V'] = cat_matched['Bmag'] - cat_matched['Vmag']
-    cat_matched['V-R'] = cat_matched['Vmag'] - cat_matched['Rmag']
-    cat_matched['R-I'] = cat_matched['Rmag'] - cat_matched['Imag']
-    return cat_matched
+    df[f'B_GAIA-B_{tag}'] = df['Bmag'] - df[f'Bmag_{tag}']
+    df[f'V_GAIA-V_{tag}'] = df['Vmag'] - df[f'Vmag_{tag}']
+    df[f'R_GAIA-R_{tag}'] = df['Rmag'] - df[f'Rmag_{tag}']
+    df[f'I_GAIA-I_{tag}'] = df['Imag'] - df[f'Imag_{tag}']
+    df['B-V'] = df['Bmag'] - df['Vmag']
+    df['V-R'] = df['Vmag'] - df['Rmag']
+    df['R-I'] = df['Rmag'] - df['Imag']
+    return df
+
+
+
+def build_display_cols(tag: str):
+    """Return DISPLAY_COLS list for a given catalogue tag, e.g. 'PS1' or 'AP'."""
+    tag = tag.upper()
+    return [
+        ("ID GAIA",          lambda r, t=tag: int(r.get("id_gaia", 0))),
+        (f"ID_{tag}",        lambda r, t=tag: int(r.get(f"id_{t}", 0))),
+        ("RA [deg]",         lambda r: f"{r['ra_deg']:.6f}"),
+        ("DEC [deg]",        lambda r: f"{r['dec_deg']:.6f}"),
+        ("offset [arcsec]",  lambda r: f"{r['dist']:.3f}"),
+        ("B [mag]",          lambda r: f"{r['Bmag']:.3f}"),
+        ("V [mag]",          lambda r: f"{r['Vmag']:.3f}"),
+        ("R [mag]",          lambda r: f"{r['Rmag']:.3f}"),
+        ("I [mag]",          lambda r: f"{r['Imag']:.3f}"),
+        ("B-V",              lambda r: f"{r['B-V']:.3f}"),
+        ("V-R",              lambda r: f"{r['V-R']:.3f}"),
+        ("R-I",              lambda r: f"{r['R-I']:.3f}"),
+        (f"B(GAIA)-B({tag})", lambda r, t=tag: f"{r[f'B_GAIA-B_{t}']:.3f}"),
+        (f"V(GAIA)-V({tag})", lambda r, t=tag: f"{r[f'V_GAIA-V_{t}']:.3f}"),
+        (f"R(GAIA)-R({tag})", lambda r, t=tag: f"{r[f'R_GAIA-R_{t}']:.3f}"),
+        (f"I(GAIA)-I({tag})", lambda r, t=tag: f"{r[f'I_GAIA-I_{t}']:.3f}"),
+    ]
 
 
 
 class ConeGUI(tk.Tk):
     def __init__(self):
+
         super().__init__()
         self.title("Stars cone-search viewer")
         self.geometry("1200x650")
@@ -400,11 +526,21 @@ class ConeGUI(tk.Tk):
         self.current_df   = None     # full DataFrame behind the grid
         self.filtered_df = None  # view after filter
         self._sort_state  = {}       # column → bool   (True = descending)
+
+        # default = PANSTARRS / PS1; will be updated in query()
+        self.sec_tag = "PS1"
+        self.fetch_sec = fetch_catalog_ps1
+
+        # initial column template
+        self.DISPLAY_COLS = build_display_cols(self.sec_tag)
+        self._GETVAL = dict(self.DISPLAY_COLS)
+
         self._build_widgets()
+        self._rebuild_column_checkboxes()
 
     # ------------------------------------------------------------
     def _build_widgets(self):
-        # top-row  –  query controls
+        # ── Top menu row: catalogue + band dropdowns ────────────
         frm = ttk.Frame(self);
         frm.pack(anchor='w', pady=4)
 
@@ -412,22 +548,14 @@ class ConeGUI(tk.Tk):
         self.ent_center.config(width=25)  # ← after it’s created
         self.ent_rad = self._labeled_entry(frm, 'Radius"')
 
-
-        # magnitude filter selector  (default = R)
-        self.ent_magmin = self._labeled_entry(frm, "mag min")
-        self.ent_magmax = self._labeled_entry(frm, "mag max")
-        ttk.Label(frm, text="band").pack(side='left', padx=(4, 0))
-        self.cmb_magband = ttk.Combobox(frm, state='readonly', width=3,
-                                        values = ('B', 'V', 'R', 'I'))
-        self.cmb_magband.current(2)  # index 2 → 'R'
-        self.cmb_magband.pack(side='left', padx=(0, 4))
         self.ent_solar = self._labeled_entry(frm, "Solar coeff.")
         self.ent_solar.insert(0, "0.2")
-        self.ent_magmin.insert(0, "0")
-        self.ent_magmax.insert(0, "21")
         self.ent_rad.insert(0, "60.0")
+    # ―― match-tolerance entry  (arcseconds) ――――――――――――
+        self.ent_tol = self._labeled_entry(frm, 'match tolerance "')
+        self.ent_tol.insert(0, "1.0")  # default 1″
 
-        # ── universal shortcuts for all Entry widgets ─────────────
+    # ── universal shortcuts for all Entry widgets ─────────────
         self.bind_class("Entry", "<Control-a>",
                         lambda e: (e.widget.select_range(0, "end"),
                                    e.widget.icursor("end"), "break"))
@@ -450,14 +578,13 @@ class ConeGUI(tk.Tk):
         self.var_solar = tk.BooleanVar()
         ttk.Checkbutton(frm, text="Solar-like", variable=self.var_solar) \
             .pack(side='left', padx=6)
-
         ttk.Button(frm, text="Query", command=self.query) \
             .pack(side='left', padx=10)
         ttk.Button(frm, text="Save", command=self._save_csv) \
             .pack(side='left')
 
-        # second row – free-text filter
-        f2 = ttk.Frame(self);
+        # ── Second menu row: filter ────────────
+        f2 = ttk.Frame(self)
         f2.pack(anchor='w', pady=(0, 4))
         ttk.Label(f2, text="Filter ").pack(side='left', padx=(4, 0))
         self.ent_filter = ttk.Entry(f2, width=25)
@@ -466,6 +593,26 @@ class ConeGUI(tk.Tk):
         ttk.Button(f2, text="Apply", command=self._apply_filter) \
             .pack(side='left', padx=10)
 
+        # ── Second menu row: catalogue + band dropdowns ────────────
+        f2cat = ttk.Frame(f2)
+        f2cat.pack(side='left', padx=(2, 8))  # keep them tight together
+
+        ttk.Label(f2cat, text="catalog").pack(side='left', padx=(0, 2))
+        self.cmb_catalog = ttk.Combobox(
+                    f2cat, state='readonly', width=10,
+                    values = ('PANSTARRS', 'APASS'))
+        self.cmb_catalog.current(0)
+        self.cmb_catalog.bind("<<ComboboxSelected>>", self._catalog_changed)
+        self.cmb_catalog.pack(side='left')
+        ttk.Label(f2cat, text="band").pack(side='left', padx=(6, 2))
+        self.cmb_magband = ttk.Combobox(f2cat, state='readonly', width=3, values = ('B', 'V', 'R', 'I'))
+        self.cmb_magband.current(2)  # 'R' by default
+        self.cmb_magband.pack(side='left')
+        self.ent_magmin = self._labeled_entry(f2cat, "mag min")
+        self.ent_magmax = self._labeled_entry(f2cat, "mag max")
+        self.ent_magmin.insert(0, "0")
+        self.ent_magmax.insert(0, "21")
+
         # ─── NEW: RA/Dec format switch ─────────────────────────────
         self.var_hms = tk.BooleanVar(value=True)
         ttk.Checkbutton(
@@ -473,19 +620,29 @@ class ConeGUI(tk.Tk):
             command=self._refresh_format
         ).pack(side='left', padx=8)
 
-        # third row – check-boxes for columns
-        cb_frame = ttk.Frame(self);
-        cb_frame.pack(anchor='w', padx=4, pady=(0, 4))
-        self.col_vars = {}
-        for name, _ in DISPLAY_COLS:
-            var = tk.BooleanVar(value=True)
-            self.col_vars[name] = var
-            ttk.Checkbutton(cb_frame, text=name, variable=var,
-                            command=self._update_columns) \
-                .pack(side='left', padx=2)
+        # --- columns check-box row (built via helper) -------------
+        self.cb_frame = None  # handle set by helper
+        self._rebuild_column_checkboxes()
 
-        # table itself
+        # table itself (needs self.col_vars already filled)
         self._build_treeview()
+
+        # ── status / statistics bar ─────────────────────────────
+        self.bar = ttk.Frame(self)
+        self.bar.pack(side='bottom', fill='x', padx=6, pady=(2, 4))   # ← side="bottom"
+
+        self.stat_gaia = tk.StringVar(value="GAIA: 0")
+        self.stat_sec = tk.StringVar(value="PS1: 0")  # will rename
+        self.stat_match = tk.StringVar(value="matched: 0")
+        self.stat_sec.set(f"{self.sec_tag}: 0")
+
+        ttk.Label(self.bar, textvariable=self.stat_gaia).pack(side='left', padx=4)
+        ttk.Label(self.bar, text="|").pack(side='left')
+        ttk.Label(self.bar, textvariable=self.stat_sec).pack(side='left', padx=4)
+        ttk.Label(self.bar, text="|").pack(side='left')
+        ttk.Label(self.bar, textvariable=self.stat_match).pack(side='left', padx=4)
+
+
 
     # ------------------------------------------------------------
     # helpers + UI utilities
@@ -643,6 +800,7 @@ class ConeGUI(tk.Tk):
             rad = float(self.ent_rad.get())
             mmin = float(self.ent_magmin.get())
             mmax = float(self.ent_magmax.get())
+            tol = float(self.ent_tol.get())
             solar_coef = float(self.ent_solar.get())
         except ValueError as exc:
             raise ValueError(f"Invalid entry: {exc}")
@@ -650,8 +808,39 @@ class ConeGUI(tk.Tk):
             mmin, mmax = mmax, mmin
         return dict(ra=ra, dec=dec, radius=rad,
                     magmin=mmin, magmax=mmax,
+                    tolerance=tol,
                     solar=self.var_solar.get(),
                     solar_coef=solar_coef)
+
+    def _catalog_changed(self, _event=None):
+        """
+        User picked a different second catalogue in the combobox.
+        We only rebuild the GUI scaffolding here; the real data are fetched
+        later when they press Query.
+        """
+        cat_long = self.cmb_catalog.get()  # current text in the widget
+        if cat_long == "PANSTARRS":
+            self.sec_tag = "PS1"
+            self.fetch_sec = fetch_catalog_ps1
+        elif cat_long == "APASS":
+            self.sec_tag = "AP"
+            self.fetch_sec = fetch_catalog_apass
+        else:
+            messagebox.showerror("Unknown catalogue", cat_long)
+            return
+
+        # 1) refresh column template & lookup dictionary
+        self.DISPLAY_COLS = build_display_cols(self.sec_tag)
+        self._GETVAL = dict(self.DISPLAY_COLS)
+
+        # 2) rebuild check-box row and empty table headings
+        self._rebuild_column_checkboxes()
+        self._build_treeview()
+
+        # 3) (optional) clear any previous data so old columns don’t dangle
+        self.tree.delete(*self.tree.get_children())
+        self.current_df = None
+        self.filtered_df = None
 
     def query(self):
         try:
@@ -662,16 +851,39 @@ class ConeGUI(tk.Tk):
 
         self.config(cursor='watch')
         self.update()
+        # --- which 2nd catalogue? ---------------------------------
+        cat_long = self.cmb_catalog.get()  # 'PANSTARRS' or 'APASS'
+        if cat_long == 'PANSTARRS':
+            new_tag = "PS1"
+            fetch_sec = fetch_catalog_ps1
+        elif cat_long == 'APASS':
+            new_tag = "AP"
+            fetch_sec = fetch_catalog_apass
+        else:
+            messagebox.showerror("Unknown catalogue", cat_long)
+            return
+
+        # if the user switched catalogues, rebuild columns & check-boxes
+
+        if new_tag != self.sec_tag:
+            self.sec_tag = new_tag
+            self.fetch_sec = fetch_sec
+            self.DISPLAY_COLS = build_display_cols(self.sec_tag)
+            self._GETVAL = dict(self.DISPLAY_COLS)
+            self._rebuild_column_checkboxes()
+
+        # colour band for magnitude filter
         # get the color band for star filtering
         band_col = {'B': 'Bmag', 'V': 'Vmag', 'R': 'Rmag', 'I': 'Imag'} \
             [self.cmb_magband.get()]
         try:
             df_gaia = fetch_catalog_gaia(p['ra'], p['dec'],
                                          p['radius'], p['magmax'], p['magmin'], band=band_col)
-            df_ps1 = fetch_catalog_ps1(p['ra'], p['dec'],
-                                       p['radius'], p['magmax'], p['magmin'], band=band_col)
+            df_sec = self.fetch_sec(p['ra'], p['dec'],
+                               p['radius'], p['magmax'], p['magmin'],
+                               band=band_col)
             df = calculate_cat_diffs(
-                skycoord_match(df_gaia, df_ps1))
+                skycoord_match(df_gaia, df_sec, tag=self.sec_tag, tolerance=p['tolerance']), tag=self.sec_tag)
         except Exception as exc:
             messagebox.showerror("Query failed", str(exc))
             self.config(cursor='')
@@ -684,6 +896,12 @@ class ConeGUI(tk.Tk):
         self.current_df = df  # full table
         self.filtered_df = df  # currently shown view
         self.config(cursor='')
+
+        # ---- update statistics bar ----------------------------------
+        self.stat_gaia.set(f"GAIA: {len(df_gaia)}")
+        self.stat_sec.set(f"{self.sec_tag}: {len(df_sec)}")
+        self.stat_match.set(f"matched: {len(df)}")
+
         self._populate(df)
 
 
@@ -713,7 +931,7 @@ class ConeGUI(tk.Tk):
                         if show_hms else f"{r['dec_deg']:.6f}"
                     )
                 else:
-                    row.append(_GETVAL[c](r))
+                    row.append(self._GETVAL[c](r))
             self.tree.insert("", "end", values=row)
 
     def _refresh_format(self):
@@ -729,6 +947,27 @@ class ConeGUI(tk.Tk):
         # repaint the rows that are *currently visible*
         # → simply re-apply the active filter (if any)
         self._apply_filter()
+
+    def _rebuild_column_checkboxes(self):
+        """(Re)create the single row of column check-boxes."""
+
+        # 1. delete previous row, if any
+        if getattr(self, "cb_frame", None) is not None:
+                    self.cb_frame.destroy()
+
+        # 2. create fresh row
+        self.cb_frame = ttk.Frame(self)
+        #self.cb_frame.pack(anchor='w', padx=4, pady=(0, 4))
+        self.cb_frame.pack(side='bottom', fill='x', padx=6, pady=(2, 4))  # ← side="bottom"
+
+        self.col_vars = {}
+
+        for name, _ in self.DISPLAY_COLS:
+                    var = tk.BooleanVar(value=True)
+                    self.col_vars[name] = var
+                    ttk.Checkbutton(
+                        self.cb_frame, text=name, variable=var,
+                        command = self._update_columns).pack(side="left", padx=2)
 
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
