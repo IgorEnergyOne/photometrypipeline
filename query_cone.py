@@ -22,7 +22,7 @@ DISPLAY_COLS = [
     ("ID_PS1",         lambda r: int(r.get("id_panstarrs_PS1", 0))),
     ("RA [deg]",       lambda r: f"{r['ra_deg']:.6f}"),
     ("DEC [deg]",      lambda r: f"{r['dec_deg']:.6f}"),
-    ("offset [arcsec]",lambda r: f"{r['dist']:.3f}"),
+    ("offset [arcsec]",lambda r: f"{r['dist_arcsec']:.3f}"),
     ("B [mag]",        lambda r: f"{r['Bmag']:.3f}"),
     ("V [mag]",        lambda r: f"{r['Vmag']:.3f}"),
     ("R [mag]",        lambda r: f"{r['Rmag']:.3f}"),
@@ -175,10 +175,10 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
         raise IndexError("No sources found in PANSTARRS catalog. Try a larger radius or/and larger magnitude range.")
 
     # calculate distance from query point (in arcseconds)
-    data['dist'] = np.sqrt((data['RAJ2000'] - ra_deg)**2
+    data['dist_arcsec'] = np.sqrt((data['RAJ2000'] - ra_deg)**2
                            + (data['DEJ2000'] - dec_deg)**2) * 3600
-    # sort by distance fro the query poin
-    data.sort('dist')
+    # sort by distance from the query point
+    data.sort('dist_arcsec')
 
     # rename column names using PP conventions
     data.rename_column('objID', 'id')
@@ -198,7 +198,6 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
     data.rename_column('e_zmag', 'e_zp1mag')
     data.rename_column('ymag', 'yp1mag')
     data.rename_column('e_ymag', 'e_yp1mag')
-    data['mag'] = data['rp1mag']  # use rmag for astrometry
 
     g = data['gp1mag'].data
     e_g = data['e_gp1mag'].data
@@ -263,6 +262,12 @@ def fetch_catalog_ps1(ra_deg: float, dec_deg: float, radius: float,
     data = data.to_pandas()
     # filter catalogue to get stars of magnitude in given range
     data = data[data[f'{band}'].between(min_mag, mag_max)]
+    # set the order of columns
+    data = data[['id', 'ra_deg', 'dec_deg', 'e_ra_deg', 'e_dec_deg', 'Bmag', 'e_Bmag',
+               'Vmag', 'e_Vmag', 'Rmag', 'e_Rmag', 'Imag', 'e_Imag', '_gmag',
+               '_e_gmag', '_rmag', '_e_rmag', '_imag', '_e_imag', '_zmag', '_e_zmag', 'gp1mag',
+               'e_gp1mag', 'rp1mag', 'e_rp1mag', 'ip1mag', 'e_ip1mag', 'zp1mag',
+               'e_zp1mag', 'yp1mag', 'e_yp1mag']]
     return data
 
 def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
@@ -292,10 +297,10 @@ def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
         raise IndexError("No sources found in GAIA catalog. Try a larger radius or/and larger magnitude range.")
 
     # calculate distance from query point (in arcseconds)
-    data['dist'] = np.sqrt((data['RA_ICRS'] - ra_deg)**2
+    data['dist_arcsec'] = np.sqrt((data['RA_ICRS'] - ra_deg)**2
                            + (data['DE_ICRS'] - dec_deg)**2) * 3600
     # sort by distance for the query point
-    data.sort('dist')
+    data.sort('dist_arcsec')
 
     # rename column names using PP conventions
     data.rename_column('Source', 'id_gaia')
@@ -358,6 +363,11 @@ def fetch_catalog_gaia(ra_deg: float, dec_deg: float, radius: float,
     data = data.to_pandas()
     # filter catalogue to get stars of magnitude in given range
     data = data[data[f'{band}'].between(min_mag, mag_max)]
+    # set columns order
+    data = data[['id_gaia', 'ra_deg', 'dec_deg', 'e_RA_ICRS', 'e_DE_ICRS', 'RA_hms', 'Dec_dms',  'dist_arcsec',
+                 'Bmag', 'e_Bmag', 'Vmag', 'e_Vmag', 'Rmag', 'e_Rmag', 'Imag', 'e_Imag', 'B-V', 'V-R', 'R-I',
+                 'Gmag', 'e_Gmag', 'BPmag', 'e_BPmag', 'RPmag', 'VarFlag',
+                 '_gmag','_e_gmag', '_rmag', '_e_rmag', '_imag', '_e_imag', '_zmag', '_e_zmag']]
     return data
 
 
@@ -396,10 +406,10 @@ def fetch_catalog_apass(ra_deg: float, dec_deg: float, radius: float,
     data.rename_column("e_i'mag", 'e_imag')
 
     # transformations based on Chonis & Gaskell 2008, AJ, 135
-    mags = np.array([data['rmag'].data,
-                     data['imag'].data,
-                     data['e_rmag'].data,
-                     data['e_imag'].data])
+    # mags = np.array([data['rmag'].data,
+    #                  data['imag'].data,
+    #                  data['e_rmag'].data,
+    #                  data['e_imag'].data])
 
     # # sort out sources that do not meet the C&G requirements
     # keep_idc = (mags[0] - mags[1] > 0.08) & (mags[0] - mags[1] < 0.5)
@@ -450,6 +460,11 @@ def fetch_catalog_apass(ra_deg: float, dec_deg: float, radius: float,
     data = data.to_pandas()
     # filter catalogue to get stars of magnitude in given range
     data = data[data[f'{band}'].between(min_mag, mag_max)]
+    # set the order of the columns
+    data = data[['ra_deg', 'dec_deg', 'e_ra_deg', 'e_dec_deg',
+                 'Bmag', 'e_Bmag', 'Vmag', 'e_Vmag', 'Rmag', 'e_Rmag', 'Imag', 'e_Imag',
+                 'gmag', 'e_gmag', 'rmag', 'e_rmag', 'imag', 'e_imag']]
+
     return data
 
 
@@ -500,7 +515,7 @@ def build_display_cols(tag: str):
         (f"ID_{tag}",        lambda r, t=tag: int(r.get(f"id_{t}", 0))),
         ("RA [deg]",         lambda r: f"{r['ra_deg']:.6f}"),
         ("DEC [deg]",        lambda r: f"{r['dec_deg']:.6f}"),
-        ("offset [arcsec]",  lambda r: f"{r['dist']:.3f}"),
+        ("offset [arcsec]",  lambda r: f"{r['dist_arcsec']:.3f}"),
         ("B [mag]",          lambda r: f"{r['Bmag']:.3f}"),
         ("V [mag]",          lambda r: f"{r['Vmag']:.3f}"),
         ("R [mag]",          lambda r: f"{r['Rmag']:.3f}"),
