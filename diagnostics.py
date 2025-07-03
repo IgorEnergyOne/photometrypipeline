@@ -1461,36 +1461,68 @@ class Distill_Diagnostics(Diagnostics_Html):
                              fontsize=self.conf.thumb_fontsize,
                              horizontalalignment='center',
                              verticalalignment='center')
-                # add compass?
 
-                # place aperture
-                if data['photmode'] == 'APER':
-                    aprad = float(hdulist[0].header['APRAD'])
-                    targetpos = plt.Circle(
-                        (self.conf.image_size_thumb_px/2,
-                         self.conf.image_size_thumb_px/2),
-                        aprad, ec='red', fc='none',
-                        linewidth=self.conf.thumb_linewidth)
-                elif data['photmode'] == 'AUTO':
-                    # Create the ellipse
-                    targetpos = matplotlib.patches.Ellipse(
-                        (self.conf.image_size_thumb_px / 2,
-                         self.conf.image_size_thumb_px / 2),  # Center of the ellipse
-                        width=dat[16] * 6,  # Full width (major axis)
-                        height=dat[17] * 6,  # Full height (minor axis)
-                        angle=dat[18],  # Rotation angle in degrees
-                        edgecolor='red',  # Edge color
-                        facecolor='none',  # Transparent fill
-                        linewidth=self.conf.thumb_linewidth  # Line thickness
-                    )
+                if data['manual_aperture'] is not None:
+                    # parse string to get aperture parameters
+                    aperture_params = toolbox.parse_aperture_string(data['manual_aperture'])
+                    if target != 'Control Star':
+                        # place aperture
+                        if aperture_params['type'] == 'circular':
+                            aprad = aperture_params['radius']
+                            targetpos = plt.Circle(
+                                (self.conf.image_size_thumb_px / 2,
+                                 self.conf.image_size_thumb_px / 2),
+                                aprad, ec='red', fc='none',
+                                linewidth=self.conf.thumb_linewidth)
+                        elif aperture_params['type'] == 'elliptical':
+                            # Create the ellipse
+                            targetpos = matplotlib.patches.Ellipse(
+                                (self.conf.image_size_thumb_px / 2,
+                                 self.conf.image_size_thumb_px / 2),  # Center of the ellipse
+                                width=aperture_params['a'] * 6,  # Full width (major axis)
+                                height=aperture_params['b'] * 6,  # Full height (minor axis)
+                                angle=aperture_params['theta'],  # Rotation angle in degrees
+                                edgecolor='red',  # Edge color
+                                facecolor='none',  # Transparent fill
+                                linewidth=self.conf.thumb_linewidth  # Line thickness
+                            )
+                        else:
+                            targetpos = plt.Rectangle(
+                                (self.conf.image_size_thumb_px / 2 - 7,
+                                 self.conf.image_size_thumb_px / 2 - 7),
+                                15, 15, ec='red', fc='none',
+                                linewidth=self.conf.thumb_linewidth)
+                        plt.gca().add_patch(targetpos)
 
-                else:
-                    targetpos = plt.Rectangle(
-                        (self.conf.image_size_thumb_px/2-7,
-                         self.conf.image_size_thumb_px/2-7),
-                        15, 15, ec='red', fc='none',
-                        linewidth=self.conf.thumb_linewidth)
-                plt.gca().add_patch(targetpos)
+                if (target == 'Control Star') or (data['manual_aperture'] is None):
+                    # place aperture
+                    if data['photmode'] == 'APER':
+                        aprad = float(hdulist[0].header['APRAD'])
+                        targetpos = plt.Circle(
+                            (self.conf.image_size_thumb_px/2,
+                             self.conf.image_size_thumb_px/2),
+                            aprad, ec='red', fc='none',
+                            linewidth=self.conf.thumb_linewidth)
+                    elif data['photmode'] == 'AUTO':
+                        # Create the ellipse
+                        targetpos = matplotlib.patches.Ellipse(
+                            (self.conf.image_size_thumb_px / 2,
+                             self.conf.image_size_thumb_px / 2),  # Center of the ellipse
+                            width=dat[16] * 6,  # Full width (major axis)
+                            height=dat[17] * 6,  # Full height (minor axis)
+                            angle=dat[18],  # Rotation angle in degrees
+                            edgecolor='red',  # Edge color
+                            facecolor='none',  # Transparent fill
+                            linewidth=self.conf.thumb_linewidth  # Line thickness
+                        )
+
+                    else:
+                        targetpos = plt.Rectangle(
+                            (self.conf.image_size_thumb_px/2-7,
+                             self.conf.image_size_thumb_px/2-7),
+                            15, 15, ec='red', fc='none',
+                            linewidth=self.conf.thumb_linewidth)
+                    plt.gca().add_patch(targetpos)
 
                 # place predicted position (if within thumbnail)
                 if ((abs(exp_x-obj_x) <=

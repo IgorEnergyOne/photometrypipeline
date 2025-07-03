@@ -29,8 +29,6 @@ import sys
 import yaml
 import subprocess
 
-from numpy.matlib import empty
-
 try:
     import numpy as np
 except ImportError:
@@ -68,7 +66,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 
 def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
-                     fixed_aprad, source_tolerance, solar,
+                     fixed_aprad, manual_aperture, source_tolerance, solar,
                      rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental):
     """
     wrapper to run the photometry pipeline
@@ -337,7 +335,6 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                     nodeblending=nodeblending,
                                     phot_mode=phot_mode,
                                     diagnostics=True)
-
     # data went through curve-of-growth analysis
     if phot is not None:
         summary_message = ("<FONT COLOR=\"green\">aprad = %5.1f px, " +
@@ -356,6 +353,11 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
     # add information to summary website, if requested
     if _pp_conf.use_diagnostics_summary:
         diag.insert_into_summary(summary_message)
+
+    # perform photometry on target with custom aperture
+    if manual_aperture:
+        target_data = pp_photometry.target_photometry(filenames,
+                                                      telescope=telescope, aperture=manual_aperture)
 
     # run photometric calibration
     if auto:
@@ -434,6 +436,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                     rejectionfilter=rejectionfilter,
                                     asteroids=asteroids,
                                     phot_mode=phot_mode,
+                                    manual_aperture=manual_aperture,
                                     display=True, diagnostics=True)
 
     targets = np.array(list(distillate['targetnames'].keys()))
@@ -495,6 +498,11 @@ if __name__ == '__main__':
                         default=None)
     parser.add_argument('-fixed_aprad', help='fixed aperture radius (px)',
                         default=0)
+    parser.add_argument('-aperture', help='aperture type and parameters for photometry of ONLY the target.\n'
+                                        "examples:\n'c 5' -> circular aperture, radius 5\n"
+                                        "'e 5 2 -18'     -> elliptical aperture, a=5, b=2, theta=-18\n"
+                                        "'p 3 2 -15'     -> pill aperture, length=3, width=2, theta=-15\n",
+                        default=None)
     parser.add_argument('-photo_catalog', help='which photometric catalog to use',
                         choices=['2MASS', 'URAT-1', 'SDSS-R9', 'APASS9', 'PANSTARRS', 'SkyMapper', 'GAIA', 'GAIA3'],
                         default=None)
@@ -553,6 +561,7 @@ if __name__ == '__main__':
         man_filtername = args.manual_filter
         select_filter = args.select_filter
         fixed_aprad = float(args.fixed_aprad)
+        man_aperture = args.aperture
         man_photo_catalog = args.photo_catalog
         man_astro_catalog = args.astro_catalog
         source_tolerance = args.source_tolerance
@@ -587,6 +596,7 @@ if __name__ == '__main__':
         man_filtername = config['pp_run'].get('manual_filter')
         select_filter = config['pp_run'].get('select_filter')
         fixed_aprad = config['pp_run'].get('fixed_aprad')
+        man_aperture = config['pp_run'].get('aperture', None)
         solar = config['pp_run'].get('solar')
         rerun_registration = config['pp_run'].get('rerun_registration')
         asteroids = config['pp_run'].get('asteroids')
@@ -626,6 +636,11 @@ if __name__ == '__main__':
         cal_use_all_stars = config['pp_calibrate'].get('use_all_stars')
         cal_radius_coeff = config['pp_calibrate'].get('radius_coeff')
 
+
+    # check if aperture is provided correctly
+    if man_aperture is not None:
+        _ = pp_photometry.parse_aperture_string(man_aperture)
+
     # if filenames = ['all'], walk through directories and run pipeline
     # each dataset
     _masterroot_directory = os.getcwd()
@@ -657,7 +672,7 @@ if __name__ == '__main__':
                 os.chdir(root)
 
                 run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
-                                 fixed_aprad, source_tolerance, solar,
+                                 fixed_aprad, man_aperture, source_tolerance, solar,
                                  rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental)
                 os.chdir(_masterroot_directory)
             else:
@@ -666,6 +681,6 @@ if __name__ == '__main__':
     else:
         # call run_the_pipeline only on filenames
         run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
-                         fixed_aprad, source_tolerance, solar,
+                         fixed_aprad, man_aperture, source_tolerance, solar,
                          rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental)
         pass

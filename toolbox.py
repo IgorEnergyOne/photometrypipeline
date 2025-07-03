@@ -31,6 +31,12 @@ except ImportError:
 
 import math
 import numpy as np
+from astropy.io import fits
+import astropy.units as u
+from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord
+from photutils.aperture import CircularAperture, EllipticalAperture, aperture_photometry
+
 
 # only import if Python3 is used
 if sys.version_info > (3, 0):
@@ -249,3 +255,82 @@ def if_val_in_dict(target_val, dic):
             if target_val == val:
                 result = True
     return result
+
+
+def load_image(fitsfile):
+    hdu = fits.open(fitsfile)[0]
+    data = hdu.data.astype(float)
+    hdr  = hdu.header
+    wcs  = WCS(hdr)
+    exptime = hdr.get('EXPTIME', hdr.get('EXPOSURE', 1.0))
+    dateobs = hdr.get('DATE-OBS')
+    return data, hdr, wcs, exptime, dateobs
+
+
+def find_asteroid_ldac(ldac, ast_coords):
+    src = SkyCoord(ldac['ra_deg'], ldac['dec_deg'], unit=u.deg)
+    sep = src.separation(ast_coords)
+    i_min = np.argmin(sep)
+    return i_min, sep[i_min]
+
+
+def parse_aperture_string(aperture_str):
+    """
+    Parses a string describing an aperture and returns the corresponding parameters.
+
+    Format examples:
+        "c 5"           -> circular aperture, radius 5
+        "e 5 2 -18"     -> elliptical aperture, a=5, b=2, theta=-18
+        "p 3 2 -15"     -> pill aperture, length=3, width=2, theta=-15
+
+    Returns:
+        dict with keys:
+            - 'type': one of 'circular', 'elliptical', 'pill'
+            - other keys depend on type
+
+    Raises:
+        ValueError if format is invalid.
+    """
+    tokens = aperture_str.strip().lower().split()
+    if not tokens:
+        raise ValueError("Empty aperture string.")
+
+    kind = tokens[0]
+    try:
+        if kind == 'c':
+            if len(tokens) != 2:
+                raise ValueError("Circular aperture requires 1 parameter (radius).")
+            radius = float(tokens[1])
+            if radius <= 0:
+                raise ValueError("Circular aperture radius must be larger than 0.")
+            return {'type': 'circular', 'radius': radius}
+
+        elif kind == 'e':
+            if len(tokens) != 4:
+                raise ValueError("Elliptical aperture requires 3 parameters (a, b, theta).")
+            a = float(tokens[1])
+            b = float(tokens[2])
+            if a <= 0 or b <= 0:
+                raise ValueError("Elliptical aperture a and b must be larger than 0.")
+            theta = float(tokens[3])
+            if theta < -180 or theta > 180:
+                raise ValueError("Elliptical aperture theta must be between -180 and 180.")
+            return {'type': 'elliptical', 'a': a, 'b': b, 'theta': theta}
+
+        elif kind == 'p':
+            if len(tokens) != 4:
+                raise ValueError("Pill aperture requires 3 parameters (length, width, theta).")
+            length = float(tokens[1])
+            width = float(tokens[2])
+            if length <= 0 or width <= 0:
+                raise ValueError("Pill aperture length and width must be larger than 0.")
+            theta = float(tokens[3])
+            if theta < -180 or theta > 180:
+                raise ValueError("Pill aperture theta must be between -180 and 180.")
+            return {'type': 'pill', 'length': length, 'width': width, 'theta': theta}
+
+        else:
+            raise ValueError(f"Unknown aperture type '{kind}'. Use 'c', 'e', or 'p'.")
+
+    except ValueError as e:
+        raise ValueError(f"Invalid aperture string '{aperture_str}': {e}")

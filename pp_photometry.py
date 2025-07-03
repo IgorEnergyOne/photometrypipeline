@@ -28,7 +28,6 @@ import os
 import sys
 import logging
 import argparse
-from astropy.io import fits
 import matplotlib
 matplotlib.use('Agg')
 from astroquery.jplhorizons import Horizons
@@ -431,8 +430,101 @@ def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
     else:
         return None
 
+def target_photometry(filenames, telescope, aperture: str = None):
 
-# MAIN
+    # parse aperture string
+    aper_params = parse_aperture_string(aperture)
+    # get telescope photometry parameters
+    obsparam = _pp_conf.telescope_parameters[telescope]
+    target_m_insts = []
+    for idx, filename in enumerate(filenames):
+        data, header, wcs, exptime, dateobs = load_image(filename)
+        # read ldac data with photometry data
+        ldac_fname = filename.replace('.fits', '.ldac')
+        cat = catalog(ldac_fname)
+        cat.read_ldac(filename=ldac_fname)
+        table = cat.data
+
+        # read out ra and dec from header
+        if obsparam['radec_separator'] == 'XXX':
+            ra_deg = float(header[obsparam['ra']])
+            dec_deg = float(header[obsparam['dec']])
+        else:
+            ra_string = header[obsparam['ra']].split(
+                obsparam['radec_separator'])
+            dec_string = header[obsparam['dec']].split(
+                obsparam['radec_separator'])
+            ra_deg = 15. * (float(ra_string[0]) +
+                            float(ra_string[1]) / 60. +
+                            float(ra_string[2]) / 3600.)
+            dec_deg = (abs(float(dec_string[0])) +
+                       float(dec_string[1]) / 60. +
+                       float(dec_string[2]) / 3600.)
+            if dec_string[0].find('-') > -1:
+                dec_deg = -1 * dec_deg
+
+        ast_coord = SkyCoord(ra_deg*u.deg, dec_deg*u.deg)
+        # get the asteroid coordinates on the image
+        idx_ast, sep_ast = find_asteroid_ldac(table, ast_coord)
+        x_ast, y_ast = table['XWIN_IMAGE'][idx_ast], table['YWIN_IMAGE'][idx_ast]
+
+        # get the patch of the field where the asteroid is located
+        patch = 20
+        xmin = int(x_ast - patch)
+        ymin = int(y_ast - patch)
+        patch_data = data[int(y_ast) - patch:int(y_ast) + patch,
+                     int(x_ast) - patch:int(x_ast) + patch]
+
+        # estimate the background
+        from astropy.stats import SigmaClip
+        from photutils.background import Background2D, MedianBackground
+        sigma_clip = SigmaClip(sigma=3.0)
+        bkg_estimator = MedianBackground()
+        bkg = Background2D(patch_data, (patch*2, patch*2), filter_size=(3, 3),
+                           sigma_clip=sigma_clip, bkg_estimator=bkg_estimator)
+        bkg_value = bkg.background
+
+        # create an aperture
+        if aper_params['type'] == 'circular':
+            aperture = CircularAperture((x_ast - xmin, y_ast - ymin), r=aper_params['radius'])
+        elif aper_params['type'] == 'elliptical':
+            aperture = EllipticalAperture((x_ast - xmin, y_ast - ymin),
+                                          a=aper_params['a'],
+                                          b=aper_params['b'],
+                                          theta=aper_params['theta'] * u.deg)
+        elif aper_params['type'] == 'pill':
+            pass
+        # perform aperture photometry and subtract background
+        phot = aperture_photometry(patch_data - bkg_value, aperture, method='exact', subpixels=5)
+        flux_ast = phot['aperture_sum'][0]
+        m_inst = -2.5 * np.log10(flux_ast)
+        target_m_insts.append(m_inst)
+        flux_ast = phot['aperture_sum'][0]
+
+
+        # inject target photometry into ldac file to be proccessed further by pipeline
+        with fits.open(ldac_fname, mode='update', memmap=False) as hdul:
+            cat_hdu = hdul["LDAC_OBJECTS"]  # binary table HDU
+            table = Table(cat_hdu.data)  # Astropy Table view
+            if aper_params['type'] == 'circular':
+                table['MAG_APER'][idx_ast] = m_inst
+                table['FLUX_APER'][idx_ast] = flux_ast
+            elif aper_params['type'] == 'elliptical':
+                table['MAG_AUTO'][idx_ast] = m_inst
+                table['FLUX_AUTO'][idx_ast] = flux_ast
+                table['A_IMAGE'][idx_ast] = aper_params['a']
+                table['B_IMAGE'][idx_ast] = aper_params['b']
+                table['THETA_IMAGE'][idx_ast] = aper_params['theta']
+
+            # Push the modified table data back into the HDU
+            cat_hdu.data = table.as_array()  # preserves dtypes/format
+            hdul.flush()
+
+    target_m_insts = np.array(target_m_insts)
+    return target_m_insts
+
+
+
 
 if __name__ == '__main__':
 

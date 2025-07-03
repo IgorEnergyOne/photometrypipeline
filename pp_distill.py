@@ -476,7 +476,8 @@ def read_catalogs(catalogs):
 
 
 def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
-            rejectionfilter='pos', phot_mode='APER', instrumental=False, display=False, diagnostics=False,
+            rejectionfilter='pos', phot_mode='APER', manual_aperture=None,
+            instrumental=False, display=False, diagnostics=False,
             variable_stars=False, asteroids=False):
     """
     Extraction of calibrated photometry for targets
@@ -495,6 +496,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
 
     output = {}
     output['photmode'] = phot_mode
+    output['manual_aperture'] = manual_aperture
 
     # read in database files (if necessary)
     if isinstance(catalogs[0], str):
@@ -623,7 +625,6 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
             if key in cat.fields:
                 match_keys_other_catalog.append(key)
                 extract_other_catalog.append(key)
-
         match = target_cat.match_with(
             cat,
             match_keys_this_catalog=('ra_deg', 'dec_deg'),
