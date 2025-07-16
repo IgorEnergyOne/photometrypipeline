@@ -380,7 +380,7 @@ class catalog(object):
                                      'pmDE', 'Epoch',
                                      'Gmag', 'e_Gmag',
                                      'BPmag', 'e_BPmag',
-                                     'RPmag', 'eRPmag', 'VarFlag'],
+                                     'RPmag', 'e_RPmag', 'VarFlag'],
                             column_filters={"phot_g_mean_mag":
                                                 ("<{:f}".format(max_mag)),
                                             "VarFlag": "!=VARIABLE"},  # remove variable stars from the catalog
@@ -400,7 +400,6 @@ class catalog(object):
                 logging.error('no data available from {:s}'.format(
                     self.catalogname))
                 return 0
-
             # rename column names using PP conventions
             self.data.rename_column('Source', 'ident')
             self.data.rename_column('RA_ICRS', 'ra_deg')
@@ -1036,7 +1035,6 @@ class catalog(object):
         # read in data table
         self.data = Table.from_pandas(read_sql('SELECT * FROM data',
                                                db_conn))
-        print('db header', header)
         # rename Johnson filternames
         for filtername in ['B', 'V', 'R', 'I']:
             if '_' + filtername + 'Johnsonmag' in list(self.data.columns):
@@ -1891,7 +1889,7 @@ class catalog(object):
 
         def check_not_nan(x):
             return not np.isnan(x) if \
-                (type(x) is np.float_) else True
+                (type(x) is np.float64) else True
 
         indices = [i for i in indices if all([check_not_nan(self[i[0]][key])
                                               for key in extract_this_catalog]

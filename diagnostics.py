@@ -1479,8 +1479,8 @@ class Distill_Diagnostics(Diagnostics_Html):
                             targetpos = matplotlib.patches.Ellipse(
                                 (self.conf.image_size_thumb_px / 2,
                                  self.conf.image_size_thumb_px / 2),  # Center of the ellipse
-                                width=aperture_params['a'] * 6,  # Full width (major axis)
-                                height=aperture_params['b'] * 6,  # Full height (minor axis)
+                                width=aperture_params['a'] * 2,  # Full width (major axis)
+                                height=aperture_params['b'] * 2,  # Full height (minor axis)
                                 angle=aperture_params['theta'],  # Rotation angle in degrees
                                 edgecolor='red',  # Edge color
                                 facecolor='none',  # Transparent fill
@@ -1560,6 +1560,20 @@ class Distill_Diagnostics(Diagnostics_Html):
 
         data['gifs'] = {}
 
+        # Determine the ImageMagick executable name: magick (v7), convert (v6), or magick convert.
+        for cmd in ['magick convert', 'convert', 'magick']:
+            try:
+                p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+                del p
+                break
+            except OSError:
+                continue
+        else:
+            raise FileNotFoundError('ImageMagick command not found.')
+        imagemagick_cmd = cmd
+
+
         for target in data['targetnames']:
             gif_filename = '{:s}.gif'.format(
                 target.translate(_pp_conf.target2filename))
@@ -1570,7 +1584,7 @@ class Distill_Diagnostics(Diagnostics_Html):
                                   '.diagnostics'))
             try:
                 convert = subprocess.Popen(
-                    ['magick', '-delay', '50',
+                    [f'{imagemagick_cmd}', '-delay', '50',
                      ('{:s}*thumb.{:s}'.format(target.translate(
                          _pp_conf.target2filename),
                          self.conf.image_file_format)),
