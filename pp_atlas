@@ -289,7 +289,7 @@ def form_atlas(filename_header, filename_photometry):
         'observing_site': observatory + f", code {obsparam.get('observatory_code')}",
         "telescope": obsparam.get('telescope_keyword') + f", {header.get(obsparam.get('telescope_diameter', 'diameter'), '')}",
         "detector": 'CCD',  # header.get(obsparam['detector']),
-        "columns": f"#{reduc_filter}-.f", # new #R-.
+        "columns": f"#{reduc_filter}.-f", # new #R-.
         "exptime": obsparam.get('exptime'),
         "airmass": obsparam.get('airmass'),
         "filter": reduc_filter,
