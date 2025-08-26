@@ -706,7 +706,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         outf_reduced.write("#julian_date      mag    sig    sig\n")
 
         # column names for Series row and dataframe
-        colnames = ["rejected", "filename", "julian_date", "mag", "sig", "source_ra", "source_dec", "ra_offset",
+        colnames = ["rejected", "filename", "target", "julian_date", "mag", "sig", "source_ra", "source_dec", "ra_offset",
                     "dec_offset", "man_ra_offset", "man_dec_offset", "exptime", "airmass", "zeropoint", "zeropoint_sig",
                     "inst_mag", "inst_sig", "catalog", "band", "sextractor_flags", "telescope", "photo_method", "FWHM",
                   ]
@@ -763,7 +763,8 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                 if instrumental:
                     catalogname = '-'
                     filtername = '-'
-                data_row = pd.Series([reject_this_target, dat[10].replace(' ', '_'), dat[9][0], dat[7], dat[8],
+                data_row = pd.Series([reject_this_target, dat[10].replace(' ', '_'), target.replace('_', ' '),
+                                      dat[9][0], dat[7], dat[8],
                                       dat[3], dat[4], (dat[1] - dat[3]) * 3600., (dat[2] - dat[4]) * 3600., offset[0],
                                       offset[1], dat[9][1], dat[19], (dat[7] - dat[5]), np.sqrt(dat[8] ** 2 - dat[6] ** 2),
                                       dat[5], dat[6], catalogname, filtername, dat[14], dat[13].split(';')[0],
