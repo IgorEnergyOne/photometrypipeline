@@ -1486,6 +1486,19 @@ class Distill_Diagnostics(Diagnostics_Html):
                                 facecolor='none',  # Transparent fill
                                 linewidth=self.conf.thumb_linewidth  # Line thickness
                             )
+                        elif aperture_params['type'] == 'pill':
+                            from photutils_apertures import PillBoxAperture
+                            aperture = PillBoxAperture(positions=(self.conf.image_size_thumb_px / 2,
+                                                                  self.conf.image_size_thumb_px / 2),
+                                                       h=aperture_params['height'],
+                                                       w=aperture_params['width'],
+                                                       theta=aperture_params['theta'] * u.deg)
+                            targetpos = aperture._to_patch(origin=(0, 0),
+                                                           indices=None,
+                                                           edgecolor='red',  # Edge color
+                                            facecolor='none',  # Transparent fill
+                                            linewidth=self.conf.thumb_linewidth# Line thickness
+                                                           )
                         else:
                             targetpos = plt.Rectangle(
                                 (self.conf.image_size_thumb_px / 2 - 7,
@@ -1561,7 +1574,7 @@ class Distill_Diagnostics(Diagnostics_Html):
         data['gifs'] = {}
 
         # Determine the ImageMagick executable name: magick (v7), convert (v6), or magick convert.
-        for cmd in ['magick convert', 'convert', 'magick']:
+        for cmd in ['magick', 'convert', 'magick convert']:
             try:
                 p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                      stderr=subprocess.PIPE)
@@ -1685,6 +1698,21 @@ class Distill_Diagnostics(Diagnostics_Html):
                     else:
                         animation_button = ""
 
+                    if data['manual_aperture'] is not None:
+                        aperture_params = toolbox.parse_aperture_string(data['manual_aperture'])
+                        if aperture_params['type'] == 'circular':
+                            ap_param_str = f"Circular, r={aperture_params['radius']} px"
+                        elif aperture_params['type'] == 'elliptical':
+                            ap_param_str = (f"Elliptical, a={aperture_params['a']} px, "
+                                         f"b={aperture_params['b']} px, "
+                                         f"deg={aperture_params['theta']} deg")
+                        elif aperture_params['type'] == 'pill':
+                            ap_param_str = (f"Pill, h={aperture_params['height']} px, "
+                                         f"w={aperture_params['width']} px, "
+                                         f"deg={aperture_params['theta']} deg")
+                    else:
+                        ap_param_str = "automatic"
+
                     framehtml = (
                         "<!-- Results {:s} -->\n"
                         "<A HREF=\"#{:s}\" "
@@ -1706,6 +1734,8 @@ class Distill_Diagnostics(Diagnostics_Html):
                         "<TD>{:.2f}</TD></TR>\n"
                         "<TH>Target Source Flag</TH>"
                         "<TD>{:d}</TD></TR>\n"
+                        "<TH>Aperture Parameters</TH>"
+                        "<TD>{:s}</TD></TR>\n"
                         "</TABLE>\n"
                         "{:s}"
                         "<P ALIGN=\"center\">"
@@ -1736,6 +1766,7 @@ class Distill_Diagnostics(Diagnostics_Html):
                             (framedat[1]-framedat[3])*3600,
                             (framedat[2]-framedat[4])*3600,
                             int(framedat[14]),
+                            ap_param_str if target != 'Control Star' else '-',
                             animation_button,
                             data['lightcurveplots'][
                                 target].split('/')[-1],

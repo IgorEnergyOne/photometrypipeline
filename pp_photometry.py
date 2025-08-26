@@ -43,6 +43,7 @@ import pp_extract
 from catalog import *
 from toolbox import *
 from diagnostics import photometry as diag
+from photutils_apertures import PillBoxAperture
 
 # setup logging
 logging.basicConfig(filename=_pp_conf.log_filename,
@@ -432,6 +433,7 @@ def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
 
 def target_photometry(filenames, telescope, aperture: str = None):
 
+
     # parse aperture string
     aper_params = parse_aperture_string(aperture)
     # get telescope photometry parameters
@@ -493,13 +495,17 @@ def target_photometry(filenames, telescope, aperture: str = None):
                                           b=aper_params['b'],
                                           theta=aper_params['theta'] * u.deg)
         elif aper_params['type'] == 'pill':
-            pass
+            aperture = PillBoxAperture(positions=(x_ast - xmin, y_ast - ymin),
+                                       w=aper_params['width'],
+                                       h=aper_params['height'],
+                                       theta=aper_params['theta'] * u.deg)
+        else:
+            raise ValueError('Unknown aperture type %s' % aper_params['type'])
         # perform aperture photometry and subtract background
         phot = aperture_photometry(patch_data - bkg_value, aperture, method='exact', subpixels=5)
         flux_ast = phot['aperture_sum'][0]
         m_inst = -2.5 * np.log10(flux_ast)
         target_m_insts.append(m_inst)
-        flux_ast = phot['aperture_sum'][0]
 
 
         # inject target photometry into ldac file to be proccessed further by pipeline
@@ -514,6 +520,12 @@ def target_photometry(filenames, telescope, aperture: str = None):
                 table['FLUX_AUTO'][idx_ast] = flux_ast
                 table['A_IMAGE'][idx_ast] = aper_params['a']
                 table['B_IMAGE'][idx_ast] = aper_params['b']
+                table['THETA_IMAGE'][idx_ast] = aper_params['theta']
+            elif aper_params['type'] == 'pill':
+                table['MAG_AUTO'][idx_ast] = m_inst
+                table['FLUX_AUTO'][idx_ast] = flux_ast
+                table['A_IMAGE'][idx_ast] = aper_params['width']
+                table['B_IMAGE'][idx_ast] = aper_params['height']
                 table['THETA_IMAGE'][idx_ast] = aper_params['theta']
 
             # Push the modified table data back into the HDU
