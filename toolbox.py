@@ -319,15 +319,15 @@ def parse_aperture_string(aperture_str):
 
         elif kind == 'p':
             if len(tokens) != 4:
-                raise ValueError("Pill aperture requires 3 parameters (length, width, theta).")
-            length = float(tokens[1])
-            width = float(tokens[2])
-            if length <= 0 or width <= 0:
+                raise ValueError("Pill aperture requires 3 parameters (width, height, theta).")
+            width = float(tokens[1])
+            height = float(tokens[2])
+            if height <= 0 or width <= 0:
                 raise ValueError("Pill aperture length and width must be larger than 0.")
             theta = float(tokens[3])
             if theta < -180 or theta > 180:
                 raise ValueError("Pill aperture theta must be between -180 and 180.")
-            return {'type': 'pill', 'length': length, 'width': width, 'theta': theta}
+            return {'type': 'pill', 'width': width, 'height': height,'theta': theta}
 
         else:
             raise ValueError(f"Unknown aperture type '{kind}'. Use 'c', 'e', or 'p'.")
