@@ -5,8 +5,11 @@ import argparse
 import subprocess
 from pathlib import Path
 from tqdm import tqdm
+import pandas as pd
+from toolbox import lister
 
-def pipeline_batch(fname: str):
+
+def pipeline_batch(fname: str, skip_pipeline: bool = False):
     """
     wrapper around pp_run for processing of multiple directories in single run
     :param fname: file name with the list of commands to be executed
@@ -15,6 +18,7 @@ def pipeline_batch(fname: str):
     with open(fname) as f:
         lines = f.readlines()
     try:
+        paths = []
         for line in tqdm(lines, desc='Batch processing', unit='dirs'):
             # parse the command to get the path to directory
             path = line.rsplit(" ")[-1].strip('\n')
@@ -24,16 +28,69 @@ def pipeline_batch(fname: str):
                 dir_path = path
             else:
                 dir_path = Path(core_path) / path
+            # add path to the list
+            paths.append(dir_path)
             # change cwd to dir path
             os.chdir(dir_path)
-            command = " ".join(line.rsplit(' ')[:-1]) + ' *.fit*'
-            try:
-                subprocess.call(['/bin/sh', '-i', '-c', command])
-            except Exception as e:
-                print(f'Error in {dir_path}, exception: {e}')
-                continue
-    except KeyboardInterrupt:
-        print("The script was interrupted by the user. Aborting...")
+            if not skip_pipeline:
+                command = " ".join(line.rsplit(' ')[:-1]) + ' *.fit*'
+                try:
+                    subprocess.call(['/bin/sh', '-i', '-c', command])
+                except Exception as e:
+                    print(f'Error in {dir_path}, exception: {e}')
+                    continue
+        # change cwd one level up
+        prnt = Path(paths[0]).parent
+        os.chdir(prnt)
+        # try to combine data to one csv and atlas, build photometry curve
+        subprocess.call(
+            ['/bin/sh', '-i', '-c', f'pp_combine_csv -dirs_pattern {",".join(str(path) for path in paths)}'])
+        atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in paths)}"
+        subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
+
+        # group directories by photometry filters
+        filter_groups = {}
+        for path in paths:
+            # get control star_data for each directory
+            photo_file = lister(path, name_pattern="photometry_*_.csv",
+                                object_type='file', return_type='path')[0]
+            if photo_file.exists():
+                try:
+                    photo_data = pd.read_csv(photo_file)
+                    if not photo_data.empty and 'band' in photo_data.columns:
+                        # Get the unique filter for this directory
+                        filter_name = photo_data['band'].iloc[0]
+                        if filter_name not in filter_groups:
+                            filter_groups[filter_name] = []
+                        filter_groups[filter_name].append(path)
+                except Exception as e:
+                    print(f'Error reading {photo_file}: {e}')
+        # Process each filter group separately
+        for filter_name, filter_paths in filter_groups.items():
+            print(f'\nProcessing filter: {filter_name}')
+
+            csv_filename = f'combined_results_{filter_name}.csv'
+            # Combine CSV for this filter
+            subprocess.call(['/bin/sh', '-i', '-c',
+                             f'pp_combine_csv -dirs_pattern {",".join(str(p) for p in filter_paths)} -out_path {csv_filename}'])
+
+            # Create atlas file for this filter
+            if Path(csv_filename).exists():
+                atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in filter_paths)} -fname_out combined_atlas_{filter_name}.ATL"
+                subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
+
+                # Generate light curve for this filter
+                target_name = photo_data["target"].iloc[0].replace(' ', '_')
+                # strip name of any special characters
+                target_name = target_name.replace('(', '').replace(')', '')
+                subprocess.call(['/bin/sh', '-i', '-c', f'pp_lightcurve '
+                                                        f'-target_name {target_name} '
+                                                        f'-save_name lightcurve_{target_name}_{filter_name} '
+                                                        f'-plot_flagged'])
+    except Exception as e:
+        print(f'Error in {dir_path}, exception: {e}')
+        if e is KeyboardInterrupt:
+            print("The script was interrupted by the user. Aborting...")
 
 
 if __name__ == '__main__':
@@ -42,8 +99,10 @@ if __name__ == '__main__':
     parser.add_argument('-file',
                         help='name of the file with the list of commands to be executed',
                         default="queue.txt")
+    parser.add_argument('-skip_pipeline',
+                        help='skip pipeline processing',
+                        default=False, action='store_true')
     args = parser.parse_args()
     filename = str(args.file)
-
-    pipeline_batch(filename)
-
+    skip_pipeline = args.skip_pipeline
+    pipeline_batch(filename, skip_pipeline)

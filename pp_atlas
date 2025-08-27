@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import os
@@ -16,8 +17,7 @@ from astroquery.jplsbdb import SBDB
 import pandas as pd
 import numpy as np
 import math
-
-
+from toolbox import lister
 
 # row order in the atlas header
 row_order = ['object', 'reference', 'info_observer', 'info_reducer', 'info_add', 'observing_site', 'telescope',
@@ -50,6 +50,7 @@ atlas_dict = {
     'time_unit': 'UNIT OF TIME'
 }
 
+
 def get_full_name(asteroid_id) -> str:
     jpl_query = SBDB.query("{}".format(asteroid_id), phys=False)
     # check if shortname exists (exists for asteroids with names)
@@ -61,28 +62,6 @@ def get_full_name(asteroid_id) -> str:
         return name
 
 
-def lister(path: Path, name_pattern: str, return_type='name', object_type="file") -> list:
-    """
-    Lists all objects that match the naming pattern by the given path
-    :param path: path to the directory
-    :param name_pattern: name and format of the files: (e.g. "sim_*.dat")
-    :param return_type: "name" - returns only the names of the files in the directory
-                        "path" - returns full paths to the files in the directory
-    :return: list of paths (or names) of the files that satisfy given conditions
-    """
-    # get paths to every object with specified name pattern
-    objects = sorted(list(Path(path).glob('{}'.format(name_pattern))))
-    # check if the object is a file or a directory
-    if object_type == "file":
-        objects = [obj_path for obj_path in objects if os.path.isfile(obj_path)]
-    elif object_type == "dir":
-        objects = [obj_path for obj_path in objects if os.path.isdir(obj_path)]
-    # get only the names of the objects
-    if return_type == 'name':
-        objects = sorted([obj.name for obj in objects])
-    return objects
-
-
 def init_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories.dat') -> dict:
     """read the data with observatories locations and their codes"""
     obs_dict = {}
@@ -92,6 +71,7 @@ def init_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_script
         code, site = obs_site.strip('\n').split(maxsplit=1)
         obs_dict.update({code: site})
     return obs_dict
+
 
 def init_mpc_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories_mpc.dat') -> dict:
     """read the data with mpc observatories locations and their codes"""
@@ -136,8 +116,8 @@ def get_fits_header(filename: str) -> dict:
 
 def get_obsparam(header: dict) -> dict:
     """gets the correct telescope parameters from the pipeline database"""
-    instrument_keys = ['TELESCOP', 'INSTRUME', 'PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME' ,
-                   ]
+    instrument_keys = ['TELESCOP', 'INSTRUME', 'PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME',
+                       ]
     instruments = []
     for key in instrument_keys:
         if key in header:
@@ -148,6 +128,7 @@ def get_obsparam(header: dict) -> dict:
     telescope = instrument_identifiers[instruments[0]]
     obsparam = telescope_parameters[telescope]
     return obsparam
+
 
 def julian_to_ymd(julian_date):
     """Formats a Julian date as a string in the format "YYYY MON DD.D"""
@@ -168,6 +149,7 @@ def julian_to_ymd(julian_date):
 
     return formatted_date
 
+
 def check_object_name(name):
     """check body name for unwanted symbols"""
     # check name
@@ -182,7 +164,6 @@ def check_object_name(name):
     elif has_whitespace:
         name = re.sub(r'\s+', ' ', name)
     return name
-
 
 
 def jpl_query_eph(body, epochs, location):
@@ -210,25 +191,28 @@ def midtime_aspect_data(date: str, target: str, obs_code: str):
     columns = ['r', 'delta', 'alpha_true', 'ObsEclLon', 'ObsEclLat']
     query_data = jpl_query_eph(body=target,
                                location=obs_code,
-                                  epochs=[date])
+                               epochs=[date])
 
     query_data = query_data[columns]
     asp = query_data.values.tolist()[0]
     formatted_aspect = f'{asp[0]:.4f} {asp[1]:.4f} {asp[2]:.2f} {asp[3]:.2f} {asp[4]:.2f}'
     return formatted_aspect
 
+
 def write_atlas(filename_atlas: str, text_atlas: str):
     """writes atlas file"""
     with open(filename_atlas, 'w') as file:
         file.write(text_atlas)
 
+
 end_atlas = """\n===============------------------------========================
 END OF OBJECT   """
+
 
 def form_atlas(filename_header, filename_photometry):
     """forms atlas file from the resulting pipeline data and fits header"""
     header = get_fits_header(filename_header)
-    obsparam = get_obsparam(header) # inst_sigma (reduced sigma) * 2**0.5- cal_sigma - zeropoint_sigma
+    obsparam = get_obsparam(header)  # inst_sigma (reduced sigma) * 2**0.5- cal_sigma - zeropoint_sigma
     obs_dict = init_obs_dict()
     obs_dict_mpc = init_mpc_obs_dict()
     # get photometry data
@@ -242,12 +226,16 @@ def form_atlas(filename_header, filename_photometry):
     photometry_data.replace(to_replace=[True, False], value=['!', ''], inplace=True, regex=True)
     # reducing time
     photometry_data['reduc_time'] = photometry_data['julian_date'].values - zero_time
-    data_formatted = photometry_data[['rejected', 'reduc_time', 'mag', 'inst_sig', 'sig', 'sextractor_flags']].to_string(header=False,
-                                                                                                     index=False,
-                                                                                                     formatters={
-                                    'rejected': '{:s}'.format, 'reduc_time': '  {:.7f}'.format,
-                                    'mag': '{:.4f}'.format, 'inst_sig': '{:.4f}'.format, 'sig': '{:.4f}'.format
-                                                                                                     })
+    data_formatted = photometry_data[
+        ['rejected', 'reduc_time', 'mag', 'inst_sig', 'sig', 'sextractor_flags']].to_string(header=False,
+                                                                                            index=False,
+                                                                                            formatters={
+                                                                                                'rejected': '{:s}'.format,
+                                                                                                'reduc_time': '  {:.7f}'.format,
+                                                                                                'mag': '{:.4f}'.format,
+                                                                                                'inst_sig': '{:.4f}'.format,
+                                                                                                'sig': '{:.4f}'.format
+                                                                                            })
     # calculate the median value of sig (error for the object's magnitude and percentiles)
     sig_median = np.median(photometry_data['sig'])
     sig_percentiles = np.percentile(photometry_data['sig'], [16, 84]) - sig_median
@@ -270,9 +258,6 @@ def form_atlas(filename_header, filename_photometry):
             print(f"Observatory code {obsparam.get('observatory_code')} not found in the database")
             observatory = obsparam.get('observatory_code')
 
-
-
-
     fits_dict = {
         "object": get_full_name(header.get(obsparam.get('object'))),
         "observer": 'Observer(s): ' + header.get(obsparam.get('observer', 'observer'), 'no data'),
@@ -287,9 +272,10 @@ def form_atlas(filename_header, filename_photometry):
         "info_correction": 'Corrected to midtime',
         "info_reduc": 'reduced to midtime of the night',
         'observing_site': observatory + f", code {obsparam.get('observatory_code')}",
-        "telescope": obsparam.get('telescope_keyword') + f", {header.get(obsparam.get('telescope_diameter', 'diameter'), '')}",
+        "telescope": obsparam.get(
+            'telescope_keyword') + f", {header.get(obsparam.get('telescope_diameter', 'diameter'), '')}",
         "detector": 'CCD',  # header.get(obsparam['detector']),
-        "columns": f"#{reduc_filter}.-f", # new #R-.
+        "columns": f"#{reduc_filter}.-f",  # new #R-.
         "exptime": obsparam.get('exptime'),
         "airmass": obsparam.get('airmass'),
         "filter": reduc_filter,
@@ -313,46 +299,60 @@ def form_atlas(filename_header, filename_photometry):
 
     return formatted_atlas
 
-def combine_atlas(fname_batch: str, fname_out: str):
+
+def combine_atlas(input_paths, fname_out: str):
+    """
+    Combines multiple ATLAS files into one.
+
+    Args:
+        input_paths: Either a path to a file containing a list of paths, or a list of directory paths
+        fname_out: Output file path for the combined ATLAS file
+    """
     core_path = os.getcwd()
-    # read paths from the file
-    with open(fname_batch, 'r') as file:
-        paths = file.readlines()
     all_atlas = []
-    # check every path if correct
+
+    # Determine if input_paths is a file (original behavior) or a list of directories (new behavior)
+    if isinstance(input_paths, str):
+        # Original behavior: read paths from a file
+        with open(input_paths, 'r') as file:
+            paths = file.readlines()
+    else:
+        # New behavior: input_paths is already a list of directory paths
+        paths = input_paths
+    # Process each path
     for path in paths:
         path = path.replace('\n', '')
         path = Path(path)
         # check if the path is absolute or not
-        if path.is_absolute():
-            atlas_path = path
-        else:
-            atlas_path = Path(core_path) / path
-
+        if not path.is_absolute():
+            path = Path(core_path) / path
         # check if it is a directory
-        if atlas_path.is_dir():
+        if path.is_dir():
             # look for the atlas file in the directory
-            atlas_files = list(atlas_path.glob('*.ATL'))
-            if len(atlas_files) == 0:
-                raise FileNotFoundError('no atlas files found in the directory: %s' % atlas_path)
-            elif len(atlas_files) > 1:
-                raise ValueError('multiple atlas files found in the directory: %s' % atlas_path)
-            atlas_path = atlas_files[0]
-        # check if the file exists
-        if not atlas_path.is_file():
-            raise FileNotFoundError('file does not exist: %s' % atlas_path)
+            atlas_files = list(path.glob('*.ATL'))
+            if not atlas_files:
+                raise FileNotFoundError('no atlas files found in the directory: %s' % path)
+            if len(atlas_files) > 1:
+                raise ValueError('multiple atlas files found in the directory: %s' % path)
+            path = atlas_files[0]
 
-        with open(atlas_path, 'r') as file:
+        # check if the file exists
+        if not path.is_file():
+            raise FileNotFoundError('file does not exist: %s' % path)
+
+        with open(path, 'r') as file:
             atlas = file.readlines()
             # remove "END OF OBJECT" character
             atlas = atlas[:-1]
             atlas = ''.join(atlas)
             all_atlas.append(atlas)
 
-    atlas_whole = ''.join(all_atlas)
-    atlas_whole += 'END OF OBJECT'
-    with open(fname_out, 'w') as file:
-        file.write(atlas_whole)
+        atlas_whole = ''.join(all_atlas)
+        atlas_whole += 'END OF OBJECT'
+        with open(fname_out, 'w') as file:
+            file.write(atlas_whole)
+
+    print(f'Successfully combined {len(all_atlas)} ATLAS files into {fname_out}')
 
 
 if __name__ == "__main__":
@@ -363,11 +363,11 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument('-fname_out', help='name for the resulting atlas file',
                         default=None)
-    parser.add_argument('-combine', help='combine multiple ATLAS files into one by the paths from file',
-                        default=None)
+    parser.add_argument('-combine', nargs='+',
+                        help='combine multiple ATLAS files. Can be a single file containing a list of paths, '
+                             'or a list of directories containing .ATL files')
 
     args = parser.parse_args()
-
 
     filename_header = args.fname_header
     filename_atlas = args.fname_out
@@ -396,5 +396,12 @@ if __name__ == "__main__":
     else:
         if filename_atlas is None:
             filename_atlas = "combined_atlas.ATL"
-        combine_atlas(args.combine, filename_atlas)
-        print(f'combine ATLAS file created: {filename_atlas}')
+
+        # If only one path is provided and it's a file, use original behavior
+        if len(args.combine) == 1 and os.path.isfile(args.combine[0]):
+            combine_atlas(args.combine[0], filename_atlas)
+        else:
+            # Treat as list of directories
+            combine_atlas(args.combine, filename_atlas)
+
+        print(f'Combined ATLAS file created: {filename_atlas}')

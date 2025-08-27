@@ -6,28 +6,9 @@ import argparse
 import warnings
 import os
 from pathlib import Path
-warnings.filterwarnings("ignore")
+from toolbox import lister
 
-def lister(path: Path, name_pattern: str, return_type='name', object_type="file") -> list:
-    """
-    Lists all objects that match the naming pattern by the given path
-    :param path: path to the directory
-    :param name_pattern: name and format of the files: (e.g. "sim_*.dat")
-    :param return_type: "name" - returns only the names of the files in the directory
-                        "path" - returns full paths to the files in the directory
-    :return: list of paths (or names) of the files that satisfy given conditions
-    """
-    # get paths to every object with specified name pattern
-    objects = sorted(list(Path(path).glob('{}'.format(name_pattern))))
-    # check if the object is a file or a directory
-    if object_type == "file":
-        objects = [obj_path for obj_path in objects if os.path.isfile(obj_path)]
-    elif object_type == "dir":
-        objects = [obj_path for obj_path in objects if os.path.isdir(obj_path)]
-    # get only the names of the objects
-    if return_type == 'name':
-        objects = sorted([obj.name for obj in objects])
-    return objects
+warnings.filterwarnings("ignore")
 
 
 def lightcurve_plots(data, flagged_data=None, target=None, path: str=None):
@@ -92,7 +73,6 @@ if __name__ == "__main__":
     plot_flagged = args.plot_flagged
     target_name = args.target_name
     save_name = args.save_name
-    print(save_name)
 
     if file_path is None:
         file_path = lister(os.getcwd(), '*.csv', 'path', 'file')[0]
@@ -103,5 +83,3 @@ if __name__ == "__main__":
         save_name = f'{target_name}_lightcurve.png'
 
     plot_lightcurve(data_path=file_path, plot_flagged=plot_flagged, target_name=target_name, save_name=save_name)
-
-
