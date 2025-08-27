@@ -12,6 +12,10 @@ import numpy as np
 from astropy.time import Time
 
 DEFAULT_COLORS = ["blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
+MARKERS = [ ('.', 'point'), (',', 'pixel'), ('o', 'circle'), ('v', 'triangle_down'), ('^', 'triangle_up'),
+            ('<', 'triangle_left'), ('>', 'triangle_right'), ('s', 'square'), ('p', 'pentagon'),
+            ('*', 'star'), ('+', 'plus'), ('x', 'x'), ('D', 'diamond'), ('d', 'thin_diamond')
+            ]
 
 def next_version(path: str) -> str:
     """
@@ -60,6 +64,17 @@ class LightCurvePlot:
         self.rejected_color = "red"
         self.flagged_color = "orange"
         self.legend_frame = None
+
+        # Marker and error bar properties
+        self.marker_size = 5.0
+        self.marker_style = 'o'  # Default circle marker
+        self.errorbar_capsize = 3.0
+        self.errorbar_capthick = 1.0
+        self.errorbar_linewidth = 1.0
+
+        # Available marker styles
+        self.available_markers = MARKERS
+        self.marker_dict = {name: marker for marker, name in self.available_markers}
 
     def clear(self):
         self.ax.clear()
@@ -134,22 +149,36 @@ class LightCurvePlot:
         mask_flagged = (df['sextractor_flags'] > 0) & (~df['rejected'])
 
         # Plot with or without error bars based on selection
+        errorbar_kwargs = {
+            'fmt': self.marker_style,
+            'markersize': self.marker_size,
+            'capsize': self.errorbar_capsize,
+            'capthick': self.errorbar_capthick,
+            'elinewidth': self.errorbar_linewidth,
+            'picker': 5
+        }
+
+        plot_kwargs = {
+            'marker': self.marker_style,
+            'markersize': self.marker_size,
+            'linestyle': 'None',
+            'picker': 5
+        }
+
         if yerr is not None:
             self.ax.errorbar(self.x_data[mask_valid], y[mask_valid], yerr=yerr[mask_valid],
-                           fmt='o', color=self.valid_color, picker=5)
+                           color=self.valid_color, **errorbar_kwargs)
             self.ax.errorbar(self.x_data[mask_flagged], y[mask_flagged], yerr=yerr[mask_flagged],
-                           fmt='o', color=self.flagged_color, picker=5)
+                           color=self.flagged_color, **errorbar_kwargs)
             if show_rejected:
                 self.ax.errorbar(self.x_data[mask_rejected], y[mask_rejected],
-                               yerr=yerr[mask_rejected], fmt='o', color=self.rejected_color, picker=5)
+                               yerr=yerr[mask_rejected], color=self.rejected_color, **errorbar_kwargs)
         else:
-            self.ax.plot(self.x_data[mask_valid], y[mask_valid], 'o',
-                        color=self.valid_color, picker=5)
-            self.ax.plot(self.x_data[mask_flagged], y[mask_flagged], 'o',
-                        color=self.flagged_color, picker=5)
+            self.ax.plot(self.x_data[mask_valid], y[mask_valid], color=self.valid_color, **plot_kwargs)
+            self.ax.plot(self.x_data[mask_flagged], y[mask_flagged], color=self.flagged_color, **plot_kwargs)
             if show_rejected:
-                self.ax.plot(self.x_data[mask_rejected], y[mask_rejected], 'o',
-                           color=self.rejected_color, picker=5)
+                self.ax.plot(self.x_data[mask_rejected], y[mask_rejected],
+                           color=self.rejected_color, **plot_kwargs)
 
         if self.selected_index is not None:
             sx, sy = self.x_data[self.selected_index], y[self.selected_index]
@@ -164,7 +193,7 @@ class LightCurvePlot:
         # Update title only if in auto mode
         if self.auto_title:
             self.title = self.target_name_parser(df)
-        
+
         # TODO: make at least 5 yticks on the plot
         self.set_labels()
         self.draw()
@@ -351,6 +380,7 @@ class LightCurveGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.bind("q", self.confirm_exit)
         self.root.bind("r", self.toggle_rejection)
+        self.root.bind("a", self.cancel_selection)
         self.root.bind("<Left>", self.move_left)
         self.root.bind("<Right>", self.move_right)
 
@@ -386,6 +416,9 @@ class LightCurveGUI:
         self.toggle_rejected_var = ttk.BooleanVar(value=True)
         ttk.Checkbutton(control_frame, text="Show Rejected", variable=self.toggle_rejected_var, command=self.set_show_rejected).pack(side=LEFT)
 
+        # Add marker settings button
+        ttk.Button(control_frame, text="Marker Settings", command=self.show_marker_settings).pack(side=LEFT, padx=5)
+
         plot_frame = ttk.Frame(self.master_frame)
         plot_frame.pack(fill=BOTH, expand=True, padx=10, pady=5)
         self.fig, self.ax = plt.subplots(figsize=(8, 4))
@@ -401,7 +434,11 @@ class LightCurveGUI:
 
         help_frame = ttk.Frame(self.master_frame, padding=10)
         help_frame.pack(side=BOTTOM, fill=X)
-        ttk.Label(help_frame, text="Hotkeys: [r] toggle rejection | [q] quit | [arrow left]/[arrow right] move selection | click = select/unselect or edit title/label").pack()
+        ttk.Label(help_frame, text="Hotkeys: [r] toggle rejection "
+                                   "| [a] cancel selection "
+                                   "| [q] quit | "
+                                   "[arrow left]/[arrow right] move selection "
+                                   "| click = select/unselect or edit title/label").pack()
 
 
     def update_colors(self):
@@ -507,14 +544,179 @@ class LightCurveGUI:
     def move_right(self, _=None):
         self.plot.move_selection(1)
         self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, update_legend=False)
+    
+    def cancel_selection(self, _=None):
+        """Cancel the current point selection."""
+        if self.plot.selected_index is not None:
+            self.plot.selected_index = None
+            self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, update_legend=False)
 
     def confirm_exit(self, _=None):
         self.on_close()
 
+    def show_marker_settings(self):
+        """Show dialog for marker and error bar settings"""
+        settings_dialog = ttk.Toplevel()
+        settings_dialog.title("Marker and Error Bar Settings")
+        settings_dialog.transient(self.root)
+        settings_dialog.grab_set()
+
+        # Position the dialog near the main window
+        x = self.root.winfo_x() + 50
+        y = self.root.winfo_y() + 50
+        settings_dialog.geometry(f"+{x}+{y}")
+
+        frame = ttk.Frame(settings_dialog, padding=10)
+        frame.pack(fill=BOTH, expand=True)
+
+        # Marker style
+        ttk.Label(frame, text="Marker Style:").grid(row=0, column=0, sticky=W, pady=2)
+        marker_names = [name for marker, name in self.plot.available_markers]
+        current_marker_name = next((name for marker, name in self.plot.available_markers
+                                 if marker == self.plot.marker_style), 'circle')
+        marker_var = ttk.StringVar(value=current_marker_name)
+        marker_combo = ttk.Combobox(frame, textvariable=marker_var, values=marker_names, state='readonly')
+        marker_combo.grid(row=0, column=1, sticky=EW, pady=2, padx=5)
+
+        # Marker size
+        ttk.Label(frame, text="Marker Size:").grid(row=1, column=0, sticky=W, pady=2)
+        size_var = ttk.DoubleVar(value=self.plot.marker_size)
+        size_scale = ttk.Scale(frame, from_=1, to=30, variable=size_var, orient=HORIZONTAL)
+        size_scale.grid(row=1, column=1, sticky=EW, pady=2, padx=5)
+        size_entry = ttk.Entry(frame, textvariable=size_var, width=5)
+        size_entry.grid(row=1, column=2, sticky=W, pady=2, padx=5)
+
+        # Error bar cap size
+        ttk.Label(frame, text="Error Cap Size:").grid(row=2, column=0, sticky=W, pady=2)
+        capsize_var = ttk.DoubleVar(value=self.plot.errorbar_capsize)
+        capsize_scale = ttk.Scale(frame, from_=0, to=20, variable=capsize_var, orient=HORIZONTAL)
+        capsize_scale.grid(row=2, column=1, sticky=EW, pady=2, padx=5)
+        capsize_entry = ttk.Entry(frame, textvariable=capsize_var, width=5)
+        capsize_entry.grid(row=2, column=2, sticky=W, pady=2, padx=5)
+
+        # Error bar cap thickness
+        ttk.Label(frame, text="Cap Thickness:").grid(row=3, column=0, sticky=W, pady=2)
+        capthick_var = ttk.DoubleVar(value=self.plot.errorbar_capthick)
+        capthick_scale = ttk.Scale(frame, from_=0.0, to=10, variable=capthick_var, orient=HORIZONTAL)
+        capthick_scale.grid(row=3, column=1, sticky=EW, pady=2, padx=5)
+        capthick_entry = ttk.Entry(frame, textvariable=capthick_var, width=5)
+        capthick_entry.grid(row=3, column=2, sticky=W, pady=2, padx=5)
+
+        # Error bar line width
+        ttk.Label(frame, text="Error Bar Width:").grid(row=4, column=0, sticky=W, pady=2)
+        linewidth_var = ttk.DoubleVar(value=self.plot.errorbar_linewidth)
+        linewidth_scale = ttk.Scale(frame, from_=0.0, to=10, variable=linewidth_var, orient=HORIZONTAL)
+        linewidth_scale.grid(row=4, column=1, sticky=EW, pady=2, padx=5)
+        linewidth_entry = ttk.Entry(frame, textvariable=linewidth_var, width=5)
+        linewidth_entry.grid(row=4, column=2, sticky=W, pady=2, padx=5)
+
+        # Preview frame
+        preview_frame = ttk.LabelFrame(frame, text="Preview", padding=5)
+        preview_frame.grid(row=0, column=3, rowspan=5, padx=10, sticky=N+S)
+
+        fig, ax = plt.subplots(figsize=(3, 2), dpi=80)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+
+        # Add sample points with error bars
+        x = [0.2, 0.5, 0.8]
+        y = [0.5, 0.5, 0.5]
+        yerr = [0.2, 0.2, 0.2]
+
+        preview_line = ax.errorbar(x, y, yerr=yerr, fmt='o', color='blue',
+                                 markersize=size_var.get(),
+                                 capsize=capsize_var.get(),
+                                 capthick=capthick_var.get(),
+                                 elinewidth=linewidth_var.get())
+
+        canvas = FigureCanvasTkAgg(fig, master=preview_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+        def update_preview(*args):
+            try:
+                # Get the current marker style
+                marker_style = next((marker for marker, name in self.plot.available_markers
+                                   if name == marker_var.get()), 'o')
+
+                # Clear the current plot
+                ax.clear()
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+
+                # Add sample points with error bars using current settings
+                x = [0.2, 0.5, 0.8]
+                y = [0.5, 0.5, 0.5]
+                yerr = [0.2, 0.2, 0.2]
+
+                # Redraw the errorbar with current settings
+                global preview_line
+                preview_line = ax.errorbar(x, y, yerr=yerr,
+                                         fmt=marker_style,
+                                         color='blue',
+                                         markersize=size_var.get(),
+                                         capsize=capsize_var.get(),
+                                         capthick=capthick_var.get(),
+                                         elinewidth=linewidth_var.get())
+
+                canvas.draw_idle()
+            except Exception as e:
+                print(f"Error updating preview: {e}")
+
+        # Bind variables to update preview
+        marker_var.trace_add('write', update_preview)
+        size_var.trace_add('write', update_preview)
+        capsize_var.trace_add('write', update_preview)
+        capthick_var.trace_add('write', update_preview)
+        linewidth_var.trace_add('write', update_preview)
+
+        # Add Apply and Close buttons
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=5, column=0, columnspan=4, pady=10)
+
+        def apply_settings():
+            # Update plot settings
+            self.plot.marker_style = next((marker for marker, name in self.plot.available_markers
+                                         if name == marker_var.get()), 'o')
+            self.plot.marker_size = size_var.get()
+            self.plot.errorbar_capsize = capsize_var.get()
+            self.plot.errorbar_capthick = capthick_var.get()
+            self.plot.errorbar_linewidth = linewidth_var.get()
+
+            # Update the plot
+            if self.data.df is not None:
+                self.plot.update(
+                    self.data.df,
+                    self.mode,
+                    self.time_mode,
+                    self.show_rejected,
+                    self.errorbar_type
+                )
+
+        ttk.Button(button_frame, text="Apply", command=apply_settings).pack(side=LEFT, padx=5)
+        ttk.Button(button_frame, text="Close", command=settings_dialog.destroy).pack(side=LEFT, padx=5)
+
+        # Make the window resizable
+        settings_dialog.resizable(True, False)
+
+        # Set focus to the dialog
+        settings_dialog.focus_set()
+
+        # Make the dialog modal
+        settings_dialog.wait_window()
+
     def on_close(self):
         if messagebox.askokcancel("Quit", "Do you want to quit?"):
-            self.root.quit()
+            # Close any matplotlib figures
+            plt.close('all')
+            # Destroy the root window
             self.root.destroy()
+            # Exit the application
+            self.root.quit()
 
 if __name__ == '__main__':
     root = ttk.Window(themename="flatly")
