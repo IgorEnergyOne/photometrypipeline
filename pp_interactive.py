@@ -12,9 +12,9 @@ import numpy as np
 from astropy.time import Time
 
 DEFAULT_COLORS = ["blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
-MARKERS = [ ('.', 'point'), (',', 'pixel'), ('o', 'circle'), ('v', 'triangle_down'), ('^', 'triangle_up'),
-            ('<', 'triangle_left'), ('>', 'triangle_right'), ('s', 'square'), ('p', 'pentagon'),
-            ('*', 'star'), ('+', 'plus'), ('x', 'x'), ('D', 'diamond'), ('d', 'thin_diamond')
+MARKERS = [ ('o', 'circle'), ('s', 'square'), ('p', 'pentagon'), ('x', 'x'), ('D', 'diamond'),
+            ('*', 'star'), ('v', 'triangle_down'), ('^', 'triangle_up'), ('<', 'triangle_left'),
+            ('>', 'triangle_right'), ('+', 'plus'), ('d', 'thin_diamond'),
             ]
 
 def next_version(path: str) -> str:
