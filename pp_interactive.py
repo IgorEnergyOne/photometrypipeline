@@ -1,27 +1,37 @@
 #!/usr/bin/env python3
 
+import os
+import subprocess
+import numpy as np
 import pandas as pd
+from astropy.time import Time
+from pathlib import Path
+
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from tkinter import filedialog, messagebox, simpledialog
-from matplotlib.patches import Patch
-import os
-import numpy as np
-from astropy.time import Time
 
-DEFAULT_COLORS = ["blue", "red", "green", "orange", "purple", "brown", "pink", "gray", "olive", "cyan"]
-MARKERS = [ ('o', 'circle'), ('s', 'square'), ('p', 'pentagon'), ('x', 'x'), ('D', 'diamond'),
-            ('*', 'star'), ('v', 'triangle_down'), ('^', 'triangle_up'), ('<', 'triangle_left'),
-            ('>', 'triangle_right'), ('+', 'plus'), ('d', 'thin_diamond'),
-            ]
+# ---------------------- Constants & Utilities ----------------------
+DEFAULT_COLORS = [
+    "blue", "red", "green", "orange", "purple",
+    "brown", "pink", "gray", "olive", "cyan"
+]
+BAND_COLORS = {"B": "blue", "V": "green", "R": "red", "I": "indigo"}
+
+# Marker map (marker symbol, human name)
+MARKERS = [
+    ('o', 'circle'), ('s', 'square'), ('p', 'pentagon'), ('x', 'x'), ('D', 'diamond'),
+    ('*', 'star'), ('v', 'triangle_down'), ('^', 'triangle_up'), ('<', 'triangle_left'),
+    ('>', 'triangle_right'), ('+', 'plus'), ('d', 'thin_diamond'),
+]
+
 
 def next_version(path: str) -> str:
-    """
-    Return path like originalname_1.ext, originalname_2.ext …,
-    choosing the first number that is not on disk.
-    """
+    """Return path like originalname_1.ext, originalname_2.ext … choosing the first free number."""
     base, ext = os.path.splitext(path)
     i = 1
     while os.path.exists(f"{base}_{i}{ext}"):
@@ -29,53 +39,99 @@ def next_version(path: str) -> str:
     return f"{base}_{i}{ext}"
 
 
+# ---------------------- Data Layer ----------------------
 class LightCurveData:
-    def __init__(self):
-        self.df = None
-        self.filename = None
+    """Single-responsibility: loading/saving and light data utilities."""
 
-    def load(self, filepath):
+    def __init__(self):
+        self.df: pd.DataFrame | None = None
+        self.filename: str | None = None
+
+    def load(self, filepath: str) -> None:
         self.filename = filepath
         self.df = pd.read_csv(filepath)
+        # Add missing columns with defaults
         if 'rejected' not in self.df.columns:
             self.df['rejected'] = False
         if 'sextractor_flags' not in self.df.columns:
             self.df['sextractor_flags'] = 0
 
-    def save(self):
+    def save(self) -> None:
         if self.df is not None and self.filename:
             self.df.to_csv(self.filename, index=False)
 
-    def toggle_rejection(self, index):
+    def toggle_rejection(self, index: int) -> None:
         self.df.loc[index, 'rejected'] = not self.df.loc[index, 'rejected']
 
+    # Band utilities
+    def get_bands(self) -> list[str]:
+        if self.df is None:
+            return []
+        if 'band' not in self.df.columns:
+            return []
+        vals = self.df['band'].dropna().astype(str).unique().tolist()
+        # Stable ordering: common photometric order if present
+        desired = ['U', 'B', 'V', 'R', 'I', 'g', 'r', 'i', 'z']
+        # Preserve encountered order but bias by desired order
+        present = {b: i for i, b in enumerate(vals)}
+        ordered = sorted(vals, key=lambda b: (desired.index(b) if b in desired else 1_000 + present[b]))
+        return ordered
+
+    def subset_by_bands(self, bands: list[str]) -> dict[str, pd.DataFrame]:
+        """Return a dict mapping band -> DataFrame (filtered) for provided bands present in df."""
+        if self.df is None or 'band' not in self.df.columns:
+            return {}
+        out = {}
+        for b in bands:
+            sub = self.df[self.df['band'].astype(str) == str(b)]
+            if not sub.empty:
+                out[b] = sub.reset_index(drop=True)
+        return out
+
+
+# ---------------------- Plotting Layer ----------------------
 class LightCurvePlot:
-    def __init__(self, figure, ax, master_frame):
+    """Owns matplotlib figure/axes, drawing, and interactive state."""
+
+    def __init__(self, figure: matplotlib.figure.Figure, ax: matplotlib.axes.Axes, master_frame):
         self.fig = figure
         self.ax = ax
         self.master_frame = master_frame
-        self.selected_index = None
+
+        # Interaction state
+        self.selected_index: int | None = None
+        self.x_data: np.ndarray | None = None
+
+        # Labels
         self.xlabel = "Julian Date"
         self.ylabel = "Magnitude"
         self.title = "Lightcurve"
-        self.auto_title = True  # Start with auto title enabled
-        self.x_data = None
-        self.valid_color = "blue"
+        self.auto_title = True
+
+        # Colors
+        self.valid_color = "blue"      # used for single-band mode
         self.rejected_color = "red"
         self.flagged_color = "orange"
-        self.legend_frame = None
 
-        # Marker and error bar properties
+        # Marker & errorbar appearance
         self.marker_size = 5.0
-        self.marker_style = 'o'  # Default circle marker
+        self.marker_style = 'o'
         self.errorbar_capsize = 3.0
         self.errorbar_capthick = 1.0
         self.errorbar_linewidth = 1.0
 
-        # Available marker styles
+        # Marker dictionary
         self.available_markers = MARKERS
         self.marker_dict = {name: marker for marker, name in self.available_markers}
 
+        # Legend frame handle (for color pickers)
+        self.legend_frame = None
+        self.legend_patches = {}
+
+        # Back-reference to GUI (set by GUI after creation)
+        self.parent_gui = None
+
+    # ---- basic helpers ----
     def clear(self):
         self.ax.clear()
 
@@ -83,300 +139,368 @@ class LightCurvePlot:
         self.ax.set_xlabel(self.xlabel)
         self.ax.set_ylabel(self.ylabel)
         self.ax.set_title(self.title)
+        # Allow clicking these text artists
         self.ax.title.set_picker(True)
         self.ax.xaxis.label.set_picker(True)
         self.ax.yaxis.label.set_picker(True)
         self.ax.invert_yaxis()
 
-    def target_name_parser(self, df):
-        """parse target name from csv file"""
-        try:
-            target_name = df['target'].iloc[0]
-
-        except KeyError:
-            target_name = 'Lightcurve'
-        return target_name
-
     def draw(self):
-        self.fig.canvas.draw()
+        self.fig.canvas.draw_idle()
 
-    def update(self, df, mode, time_mode, show_rejected, errorbar_type='calibrated', update_legend=True):
+    def target_name_parser(self, df: pd.DataFrame) -> str:
+        try:
+            return str(df['target'].iloc[0])
+        except Exception:
+            return 'Lightcurve'
+
+    # ---- main update ----
+    def update(self, df: pd.DataFrame, mode: str, time_mode: str, show_rejected: bool,
+               errorbar_type: str = 'calibrated', selected_band: str = 'All', update_legend: bool = True) -> None:
         self.clear()
+        if df is None or df.empty:
+            self.draw()
+            return
+
+        # X axis handling
         try:
             jd = df['julian_date']
         except KeyError:
-            # show massage if no data for control star is available
             messagebox.showwarning("Warning", "No date is available (wrong file?).")
-            return None
-        if time_mode == 'julian_date':
-            x = jd
-        elif time_mode == 'mjd':
-            x = jd - 2400000.5
-        elif time_mode == 'minutes':
-            x = (jd - jd.min()) * 24 * 60
-        self.x_data = x.to_numpy()
-        self.xlabel = {
-            'minutes': f"Minutes from {Time(jd.min(), format='jd').to_value('iso', subfmt='date_hm')} UT",
-            'julian_date': "Julian Date",
-            'mjd': "Modified Julian Date (MJD)"
-        }[time_mode]
+            return
 
-        if mode == 'target':
-            y = df['mag'].to_numpy()
-        elif mode == 'instrumental':
-            y = df['inst_mag'].to_numpy()
-        elif mode == 'control':
+        # Build list of bands to plot
+        if 'band' in df.columns:
+            if selected_band == 'All':
+                bands = df['band'].dropna().astype(str).unique().tolist()
+            else:
+                bands = [selected_band]
+        else:
+            # No band column: behave like single-band
+            bands = [None]
+
+        # Assign colors for bands (only used in All mode)
+        band_colors = {b: DEFAULT_COLORS[i % len(DEFAULT_COLORS)] for i, b in enumerate(bands)}
+
+        # For label management
+        plotted_any = False
+
+        for b in bands:
+            sub = df if b is None else df[df['band'].astype(str) == str(b)]
+            if sub.empty:
+                continue
+
+            # X vector
+            if time_mode == 'julian_date':
+                x = sub['julian_date']
+                self.xlabel = "Julian Date"
+            elif time_mode == 'mjd':
+                x = sub['julian_date'] - 2400000.5
+                self.xlabel = "Modified Julian Date (MJD)"
+            elif time_mode == 'minutes':
+                x = (sub['julian_date'] - sub['julian_date'].min()) * 24 * 60
+                try:
+                    self.xlabel = f"Minutes from {Time(sub['julian_date'].min(), format='jd').to_value('iso', subfmt='date_hm')} UT"
+                except Exception:
+                    self.xlabel = "Minutes"
+            else:
+                raise ValueError(f"Invalid time_mode: {time_mode}")
+
+            # Y vector per mode
+            if mode == 'target':
+                y = sub['mag'].to_numpy()
+            elif mode == 'instrumental':
+                y = sub['inst_mag'].to_numpy()
+            elif mode == 'control':
+                if 'mag_control' not in sub.columns:
+                    messagebox.showwarning("Warning", "No control star data available.")
+                    return
+                y = sub['mag_control'].to_numpy()
+            else:
+                raise ValueError(f"Invalid mode: {mode}")
+
+            # Errorbars
+            if errorbar_type == 'instrumental':
+                yerr = sub['inst_sig'].to_numpy()
+            elif errorbar_type == 'calibrated':
+                col = 'sig' if mode != 'control' else 'sig_control'
+                if col not in sub.columns:
+                    yerr = None
+                else:
+                    yerr = sub[col].to_numpy()
+            else:  # 'none'
+                yerr = None
+
+            # Masks
+            mask_valid = ~sub['rejected'] & (sub['sextractor_flags'] == 0)
+            mask_rejected = sub['rejected']
+            mask_flagged = (sub['sextractor_flags'] > 0) & (~sub['rejected'])
+
+            # Style
+            if selected_band == 'All' and b is not None:
+                valid_color = band_colors[b]
+            else:
+                valid_color = self.valid_color
+
+            errorbar_kwargs = dict(
+                fmt=self.marker_style,
+                markersize=self.marker_size,
+                capsize=self.errorbar_capsize,
+                capthick=self.errorbar_capthick,
+                elinewidth=self.errorbar_linewidth,
+                picker=5,
+            )
+            plot_kwargs = dict(marker=self.marker_style, markersize=self.marker_size, linestyle='None', picker=5)
+
+            X = x.to_numpy()
+            if self.x_data is None or len(self.x_data) != len(df):
+                # store total x for selection distance in single-band context; we'll refresh later
+                self.x_data = df['julian_date'].to_numpy()
+
+            # Plotting
+            if yerr is not None:
+                self.ax.errorbar(X[mask_valid], y[mask_valid], yerr=yerr[mask_valid], color=valid_color, **errorbar_kwargs)
+                self.ax.errorbar(X[mask_flagged], y[mask_flagged], yerr=yerr[mask_flagged], color=self.flagged_color, **errorbar_kwargs)
+                if show_rejected:
+                    self.ax.errorbar(X[mask_rejected], y[mask_rejected], yerr=yerr[mask_rejected], color=self.rejected_color, **errorbar_kwargs)
+            else:
+                self.ax.plot(X[mask_valid], y[mask_valid], color=valid_color, **plot_kwargs)
+                self.ax.plot(X[mask_flagged], y[mask_flagged], color=self.flagged_color, **plot_kwargs)
+                if show_rejected:
+                    self.ax.plot(X[mask_rejected], y[mask_rejected], color=self.rejected_color, **plot_kwargs)
+
+            # Label once per band
+            if selected_band == 'All' and b is not None:
+                # add a tiny dummy point for legend label
+                self.ax.plot([], [], marker=self.marker_style, linestyle='None', color=valid_color, label=f"{b}")
+
+            plotted_any = True
+
+        # Selected point marker/label (only meaningful if using a single series)
+        if self.selected_index is not None and self.selected_index < len(df):
+            # Choose x,y in current mode/time for the selected index
             try:
-                y = df['mag_control'].to_numpy()
-            except KeyError:
-                # show massage if no data for control star is available
-                messagebox.showwarning("Warning", "No control star data available.")
-                return None
-        else:
-            raise ValueError(f"Invalid mode: {mode}")
+                x_click_jd = df['julian_date'].iloc[self.selected_index]
+                if time_mode == 'julian_date':
+                    sx = x_click_jd
+                elif time_mode == 'mjd':
+                    sx = x_click_jd - 2400000.5
+                else:
+                    # minutes relative to min of its band; use df-wide min to keep consistent
+                    sx = (x_click_jd - df['julian_date'].min()) * 24 * 60
+                if mode == 'target':
+                    sy = df['mag'].iloc[self.selected_index]
+                elif mode == 'instrumental':
+                    sy = df['inst_mag'].iloc[self.selected_index]
+                else:
+                    sy = df['mag_control'].iloc[self.selected_index]
 
+                self.ax.plot(sx, sy, 'o', color='orange', markersize=10)
+                label = os.path.splitext(os.path.basename(df.loc[self.selected_index, 'filename']))[0] if 'filename' in df.columns else str(self.selected_index)
+                self.ax.text(sx, sy + 0.1, label, color='orange')
+            except Exception:
+                pass
 
-        # Determine which error bars to use based on the selected type
-        if errorbar_type == 'instrumental':
-            yerr = df['inst_sig'].to_numpy()
-        elif errorbar_type == 'calibrated':
-            yerr = df['sig' if mode != 'control' else 'sig_control'].to_numpy()
-        else:  # 'none'
-            yerr = None
-
-        mask_valid = ~df['rejected'] & (df['sextractor_flags'] == 0)
-        mask_rejected = df['rejected']
-        mask_flagged = (df['sextractor_flags'] > 0) & (~df['rejected'])
-
-        # Plot with or without error bars based on selection
-        errorbar_kwargs = {
-            'fmt': self.marker_style,
-            'markersize': self.marker_size,
-            'capsize': self.errorbar_capsize,
-            'capthick': self.errorbar_capthick,
-            'elinewidth': self.errorbar_linewidth,
-            'picker': 5
-        }
-
-        plot_kwargs = {
-            'marker': self.marker_style,
-            'markersize': self.marker_size,
-            'linestyle': 'None',
-            'picker': 5
-        }
-
-        if yerr is not None:
-            self.ax.errorbar(self.x_data[mask_valid], y[mask_valid], yerr=yerr[mask_valid],
-                           color=self.valid_color, **errorbar_kwargs)
-            self.ax.errorbar(self.x_data[mask_flagged], y[mask_flagged], yerr=yerr[mask_flagged],
-                           color=self.flagged_color, **errorbar_kwargs)
-            if show_rejected:
-                self.ax.errorbar(self.x_data[mask_rejected], y[mask_rejected],
-                               yerr=yerr[mask_rejected], color=self.rejected_color, **errorbar_kwargs)
-        else:
-            self.ax.plot(self.x_data[mask_valid], y[mask_valid], color=self.valid_color, **plot_kwargs)
-            self.ax.plot(self.x_data[mask_flagged], y[mask_flagged], color=self.flagged_color, **plot_kwargs)
-            if show_rejected:
-                self.ax.plot(self.x_data[mask_rejected], y[mask_rejected],
-                           color=self.rejected_color, **plot_kwargs)
-
-        if self.selected_index is not None:
-            sx, sy = self.x_data[self.selected_index], y[self.selected_index]
-            self.ax.plot(sx, sy, 'o', color='orange', markersize=10)
-            label = os.path.splitext(os.path.basename(df.loc[self.selected_index, 'filename']))[0] if 'filename' in df.columns else str(self.selected_index)
-            # plot at least 5 yticks on the plot
-            self.ax.text(sx, sy + 0.1, label, color='orange')
-
+        # Legend
         if update_legend:
-            self.update_legend()
+            self.update_legend(selected_band=selected_band)
 
-        # Update title only if in auto mode
+        # Auto title
         if self.auto_title:
             self.title = self.target_name_parser(df)
 
-        # TODO: make at least 5 yticks on the plot
+        # Axes labels and draw
         self.set_labels()
+        # If All bands, add a legend of bands
+        if selected_band == 'All' and plotted_any:
+            self.ax.legend(title='Band')
         self.draw()
 
-    def update_legend(self):
+    # ---- legend with clickable color pickers for valid/rejected/flagged ----
+    def update_legend(self, selected_band: str = 'All') -> None:
+        # Destroy pre-existing legend frame
         if self.legend_frame and self.legend_frame.winfo_exists():
             self.legend_frame.destroy()
+
         self.legend_frame = ttk.Frame(self.master_frame)
         self.legend_frame.pack(before=self.fig.canvas.get_tk_widget(), side="top", pady=5)
 
-        # Create a frame for the legend items
         legend_items_frame = ttk.Frame(self.legend_frame)
         legend_items_frame.pack()
 
-        # Create legend items with clickable patches
         self.legend_handles = {
             'valid': self.valid_color,
             'rejected': self.rejected_color,
-            'flagged': self.flagged_color
+            'flagged': self.flagged_color,
         }
 
-        # Create a list of (label, color_var) pairs
         legend_items = [
             ("Valid", 'valid'),
             ("Rejected", 'rejected'),
-            ("Flagged", 'flagged')
+            ("Flagged", 'flagged'),
         ]
 
-        for i, (label, color_key) in enumerate(legend_items):
+        # In All-bands mode, clarify that Valid color only applies in single-band mode
+        if selected_band == 'All':
+            note = ttk.Label(self.legend_frame, text="Note: Per-filter colors are auto-assigned in 'All' mode.")
+            note.pack(pady=(0, 5))
+
+        for label, color_key in legend_items:
             frame = ttk.Frame(legend_items_frame)
             frame.pack(side=LEFT, padx=10)
 
-            # Create a colored patch using a simple colored frame
             color = self.legend_handles[color_key]
             patch_frame = ttk.Frame(frame, width=20, height=20)
             patch_frame.pack(side=LEFT, padx=2)
-            patch_frame.pack_propagate(False)  # Prevent frame from resizing
+            patch_frame.pack_propagate(False)
 
-            # Create a colored label inside the frame
             patch = ttk.Label(patch_frame, background=color, borderwidth=1, relief='solid')
             patch.pack(fill='both', expand=True)
-
-            # Store the patch for later updates
-            if not hasattr(self, 'legend_patches'):
-                self.legend_patches = {}
             self.legend_patches[color_key] = patch
 
-            # Add label
             ttk.Label(frame, text=label).pack(side=LEFT, padx=2)
 
-            # Make the patch and label clickable
             def on_patch_click(event, key=color_key):
                 self.on_legend_click(key)
 
             patch.bind('<Button-1>', on_patch_click)
             patch_frame.bind('<Button-1>', on_patch_click)
-
-            # Also make the label clickable
             for widget in frame.winfo_children():
                 if isinstance(widget, ttk.Label):
                     widget.bind('<Button-1>', on_patch_click)
 
-    def on_legend_click(self, color_key):
-        """Handle click on legend patch with a dropdown color picker"""
-        # Create a new top-level window
+    def on_legend_click(self, color_key: str) -> None:
+        # Color picker dialog implemented via a combobox of DEFAULT_COLORS
         color_dialog = ttk.Toplevel()
         color_dialog.title(f"Select {color_key.capitalize()} Color")
-        color_dialog.transient(self.master_frame)  # Set to be on top of the main window
-        color_dialog.grab_set()  # Make the dialog modal
+        color_dialog.transient(self.master_frame)
+        color_dialog.grab_set()
 
-        # Position the dialog near the mouse click
         x = self.master_frame.winfo_pointerx()
         y = self.master_frame.winfo_pointery()
         color_dialog.geometry(f"+{x}+{y}")
 
-        # Create a frame for the color selection
-        frame = ttk.Frame(color_dialog, padding="10")
+        frame = ttk.Frame(color_dialog, padding=10)
         frame.pack(fill=BOTH, expand=True)
 
-        # Label
         ttk.Label(frame, text=f"Select color for {color_key} points:").pack(pady=5)
 
-        # Create a combobox with color options
         color_var = ttk.StringVar(value=self.legend_handles[color_key])
-        color_combo = ttk.Combobox(
-            frame,
-            textvariable=color_var,
-            values=DEFAULT_COLORS,
-            state='readonly',
-            width=15
-        )
+        color_combo = ttk.Combobox(frame, textvariable=color_var, values=DEFAULT_COLORS, state='readonly', width=15)
         color_combo.pack(pady=5)
 
-        # Preview the selected color
         preview_frame = ttk.Frame(frame, height=30, width=100)
         preview_frame.pack_propagate(False)
         preview_frame.pack(pady=5)
         preview = ttk.Frame(preview_frame, style=f"{color_var.get().title()}.TFrame")
         preview.pack(fill=BOTH, expand=True)
 
-        def update_preview(event=None):
-            color = color_var.get()
-            preview.configure(style=f"{color.title()}.TFrame")
+        def update_preview(*_):
+            preview.configure(style=f"{color_var.get().title()}.TFrame")
 
         color_var.trace_add('write', lambda *_: update_preview())
 
-        # Create styles for color preview
-        for color in DEFAULT_COLORS:
-            ttk.Style().configure(f"{color.title()}.TFrame", background=color)
+        for c in DEFAULT_COLORS:
+            ttk.Style().configure(f"{c.title()}.TFrame", background=c)
 
-        # OK and Cancel buttons
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(pady=5)
+        btns = ttk.Frame(frame)
+        btns.pack(pady=5)
 
         def apply_color():
-            color = color_var.get()
-            if color and color in DEFAULT_COLORS:
-                # Update the corresponding color variable
+            c = color_var.get()
+            if c in DEFAULT_COLORS:
                 if color_key == 'valid':
-                    self.valid_color = color
+                    self.valid_color = c
                 elif color_key == 'rejected':
-                    self.rejected_color = color
+                    self.rejected_color = c
                 elif color_key == 'flagged':
-                    self.flagged_color = color
+                    self.flagged_color = c
 
-                # Update the legend patch color
-                if hasattr(self, 'legend_patches') and color_key in self.legend_patches:
-                    self.legend_patches[color_key].configure(background=color)
+                if color_key in self.legend_patches:
+                    self.legend_patches[color_key].configure(background=c)
 
-                # Get the current plot data from the parent GUI
-                if hasattr(self, 'parent_gui') and hasattr(self.parent_gui, 'data') and self.parent_gui.data.df is not None:
-                    # Update the plot with new colors
+                # Trigger a redraw with new colors
+                if hasattr(self, 'parent_gui') and self.parent_gui and self.parent_gui.data.df is not None:
                     self.update(
                         self.parent_gui.data.df,
                         self.parent_gui.mode,
                         self.parent_gui.time_mode,
                         self.parent_gui.show_rejected,
                         self.parent_gui.errorbar_type,
-                        update_legend=False
+                        self.parent_gui.selected_band,
+                        update_legend=False,
                     )
-                    self.fig.canvas.draw_idle()
             color_dialog.destroy()
 
-        ttk.Button(button_frame, text="OK", command=apply_color).pack(side=LEFT, padx=5)
-        ttk.Button(button_frame, text="Cancel", command=color_dialog.destroy).pack(side=LEFT, padx=5)
+        ttk.Button(btns, text="OK", command=apply_color).pack(side=LEFT, padx=5)
+        ttk.Button(btns, text="Cancel", command=color_dialog.destroy).pack(side=LEFT, padx=5)
 
-        # Bind Enter key to apply color
         color_dialog.bind('<Return>', lambda e: apply_color())
         color_dialog.bind('<Escape>', lambda e: color_dialog.destroy())
-
-        # Initial preview update
         update_preview()
 
-    def select_point(self, x_click, y_click, df, mode):
-        y = df[f'{"mag" if mode == "target" else "inst_mag" if mode == "instrumental" else "mag_control"}'].to_numpy()
-        # check the extent of the data
-        x_ext = max(self.x_data) - min(self.x_data)
-        y_ext = max(y) - min(y)
-        extent = max(x_ext, y_ext)
-        distances = np.sqrt((self.x_data - x_click)**2 + (y - y_click)**2)
-        self.selected_index = int(np.argmin(distances)) if distances.min() < max(extent*0.01, 0.1) else None
+    # ---- selection helpers ----
+    def select_point(self, x_click: float, y_click: float, df: pd.DataFrame, mode: str, time_mode: str) -> None:
+        # For distance calculation, convert x into JD-scale for stability
+        if time_mode == 'julian_date':
+            x_all = df['julian_date']
+        elif time_mode == 'mjd':
+            x_all = df['julian_date'] - 2400000.5
+        else:
+            # minutes relative to min of its band; use df-wide min to keep consistent
+            x_all = (df['julian_date'] - df['julian_date'].min()) * 24 * 60
+        x_all = x_all.to_numpy()
+        if mode == 'target':
+            y_all = df['mag'].to_numpy()
+        elif mode == 'instrumental':
+            y_all = df['inst_mag'].to_numpy()
+        else:
+            y_all = df['mag_control'].to_numpy()
 
-    def move_selection(self, direction):
-        if self.x_data is None:
+        # Normalize all distances to 1
+        def normalize(x): return (x - np.min(x)) / (np.max(x) - np.min(x)), np.min(x), np.max(x)
+        x_all, x_min, x_max = normalize(x_all)
+        y_all, y_min, y_max = normalize(y_all)
+        # normalize click coordinates
+        x_click_norm = (x_click - x_min) / (x_max - x_min)
+        y_click_norm = (y_click - y_min) / (y_max - y_min)
+        # Note: This is a best-effort selection when multiple bands shown.
+        distances = np.sqrt((x_all - x_click_norm)**2 + (y_all - y_click_norm)**2)
+        idx = int(np.argmin(distances))
+        self.selected_index = idx if distances[idx] < 0.05 else None
+
+    def move_selection(self, direction: int) -> None:
+        if self.parent_gui is None or self.parent_gui.data.df is None:
+            return
+        n = len(self.parent_gui.data.df)
+        if n == 0:
             return
         if self.selected_index is None:
-            self.selected_index = 0 if direction > 0 else len(self.x_data) - 1
+            self.selected_index = 0 if direction > 0 else n - 1
         else:
-            self.selected_index = max(0, min(len(self.x_data) - 1, self.selected_index + direction))
+            self.selected_index = max(0, min(n - 1, self.selected_index + direction))
 
 
+# ---------------------- GUI Layer ----------------------
 class LightCurveGUI:
-    def __init__(self, root):
+    def __init__(self, root: ttk.Window):
         self.root = root
         self.root.title("Lightcurve Viewer and Editor")
 
+        # Model
         self.data = LightCurveData()
-        self.mode = 'target'
-        self.time_mode = 'minutes'
-        self.show_rejected = True
-        self.errorbar_type = 'calibrated'  # Can be 'instrumental', 'calibrated', or 'none'
 
+        # View state
+        self.mode = 'target'              # 'target' | 'instrumental' | 'control'
+        self.time_mode = 'minutes'         # 'minutes' | 'julian_date' | 'mjd'
+        self.show_rejected = True
+        self.errorbar_type = 'calibrated'  # 'instrumental' | 'calibrated' | 'none'
+        self.selected_band = 'All'         # 'All' or concrete band value
+
+        # Build UI
         self.create_widgets()
+
+        # Window / key bindings
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.bind("q", self.confirm_exit)
         self.root.bind("r", self.toggle_rejection)
@@ -384,41 +508,50 @@ class LightCurveGUI:
         self.root.bind("<Left>", self.move_left)
         self.root.bind("<Right>", self.move_right)
 
-    def create_widgets(self):
+    # ---- UI construction ----
+    def create_widgets(self) -> None:
         self.master_frame = ttk.Frame(self.root)
         self.master_frame.pack(fill=BOTH, expand=True)
 
         control_frame = ttk.Frame(self.master_frame, padding=10)
         control_frame.pack(side=TOP, fill=X)
 
+        # File ops
         ttk.Button(control_frame, text="Open CSV", command=self.open_csv).pack(side=LEFT, padx=5)
-        ttk.Button(control_frame, text="Save CSV", command=self.save_csv).pack(side=LEFT, padx=5)
-        ttk.Button(control_frame, text="Save Plot", command=self.save_plot).pack(side=LEFT, padx=5)
+        # Save menu button
+        self.save_menu_btn = ttk.Menubutton(control_frame, text="Save")
+        self.save_menu = ttk.Menu(self.save_menu_btn, tearoff=0)
+        self.save_menu.add_command(label="Save CSV", command=self.save_csv)
+        self.save_menu.add_command(label="Save Plot", command=self.save_plot)
+        self.save_menu.add_command(label="Save Atlas", command=self.save_atlas)  # new placeholder
+        self.save_menu_btn["menu"] = self.save_menu
+        self.save_menu_btn.pack(side=ttk.LEFT)
+        # ttk.Button(control_frame, text="Save CSV", command=self.save_csv).pack(side=LEFT, padx=5)
+        # ttk.Button(control_frame, text="Save Plot", command=self.save_plot).pack(side=LEFT, padx=5)
 
+        # Mode
         ttk.Label(control_frame, text="Mode:").pack(side=LEFT)
-        self.mode_var = ttk.StringVar(value='target')
-        ttk.Combobox(control_frame, textvariable=self.mode_var, values=['target', 'instrumental', 'control'], state='readonly').pack(side=LEFT)
+        self.mode_var = ttk.StringVar(value=self.mode)
+        ttk.Combobox(control_frame, textvariable=self.mode_var, values=['target', 'instrumental', 'control'], state='readonly', width=13).pack(side=LEFT)
         self.mode_var.trace_add('write', lambda *_: self.set_mode())
 
-        # Add error bar type selection
+        # Errorbar type
         ttk.Label(control_frame, text="Error Bars:").pack(side=LEFT, padx=(10, 0))
-        self.errorbar_var = ttk.StringVar(value='calibrated')
-        ttk.Combobox(control_frame, textvariable=self.errorbar_var,
-                    values=['calibrated', 'instrumental', 'none'],
-                    state='readonly', width=12).pack(side=LEFT)
+        self.errorbar_var = ttk.StringVar(value=self.errorbar_type)
+        ttk.Combobox(control_frame, textvariable=self.errorbar_var, values=['calibrated', 'instrumental', 'none'], state='readonly', width=12).pack(side=LEFT)
         self.errorbar_var.trace_add('write', lambda *_: self.set_errorbar_type())
 
+        # Time axis
         ttk.Label(control_frame, text="Time Axis:").pack(side=LEFT)
-        self.time_var = ttk.StringVar(value='minutes')
-        ttk.Combobox(control_frame, textvariable=self.time_var, values=['minutes', 'julian_date', 'mjd'], state='readonly').pack(side=LEFT)
+        self.time_var = ttk.StringVar(value=self.time_mode)
+        ttk.Combobox(control_frame, textvariable=self.time_var, values=['minutes', 'julian_date', 'mjd'], state='readonly', width=13).pack(side=LEFT)
         self.time_var.trace_add('write', lambda *_: self.set_time_mode())
 
-        self.toggle_rejected_var = ttk.BooleanVar(value=True)
-        ttk.Checkbutton(control_frame, text="Show Rejected", variable=self.toggle_rejected_var, command=self.set_show_rejected).pack(side=LEFT)
+        # Show rejected
+        self.toggle_rejected_var = ttk.BooleanVar(value=self.show_rejected)
+        ttk.Checkbutton(control_frame, text="Show Rejected", variable=self.toggle_rejected_var, command=self.set_show_rejected).pack(side=LEFT, padx=5)
 
-        # Add marker settings button
-        ttk.Button(control_frame, text="Marker Settings", command=self.show_marker_settings).pack(side=LEFT, padx=5)
-
+        # Plot area
         plot_frame = ttk.Frame(self.master_frame)
         plot_frame.pack(fill=BOTH, expand=True, padx=10, pady=5)
         self.fig, self.ax = plt.subplots(figsize=(8, 4))
@@ -427,297 +560,296 @@ class LightCurveGUI:
         NavigationToolbar2Tk(self.canvas, plot_frame).update()
 
         self.plot = LightCurvePlot(self.fig, self.ax, self.master_frame)
-        self.plot.parent_gui = self  # Set reference to parent GUI
+        self.plot.parent_gui = self
 
+        # Band selection
+        ttk.Label(control_frame, text="Filter:").pack(side=LEFT, padx=(10, 0))
+        self.band_var = ttk.StringVar(value=self.selected_band)
+        self.band_combo = ttk.Combobox(control_frame, textvariable=self.band_var, state='readonly', width=10)
+        self.band_combo.pack(side=LEFT)
+        self.band_var.trace_add('write', lambda *_: self.set_band())
+        # Initially only 'All'
+        self.band_combo['values'] = ['All']
+        self.band_var.set('All')
+
+        # Marker settings
+        ttk.Button(control_frame, text="Marker Settings", command=self.show_marker_settings).pack(side=LEFT, padx=8)
+
+
+        # Matplotlib event connections
         self.canvas.mpl_connect("button_press_event", self.on_click)
         self.canvas.mpl_connect("pick_event", self.on_pick)
 
+        # Help panel
         help_frame = ttk.Frame(self.master_frame, padding=10)
         help_frame.pack(side=BOTTOM, fill=X)
-        ttk.Label(help_frame, text="Hotkeys: [r] toggle rejection "
-                                   "| [a] cancel selection "
-                                   "| [q] quit | "
-                                   "[arrow left]/[arrow right] move selection "
-                                   "| click = select/unselect or edit title/label").pack()
+        ttk.Label(
+            help_frame,
+            text=(
+                "Hotkeys: [r] toggle rejection | [a] cancel selection | [q] quit | "
+                "[left]/[right] move selection | click = select/unselect or edit title/labels | "
+                "Filter dropdown = select filter or 'All'"
+            ),
+        ).pack()
 
+    # ---- UI actions ----
+    def open_csv(self) -> None:
+        file = filedialog.askopenfilename(initialdir=os.getcwd(), filetypes=[("CSV Files", "*.csv")])
+        if not file:
+            return
+        self.data.load(file)
+        # put filename in title bar
+        self.root.title(f"Lightcurve Viewer – {os.path.basename(file)}")
+        # Populate band combobox
+        bands = self.data.get_bands()
+        if not bands:
+            self.band_combo['values'] = ['All']
+            self.band_var.set('All')
+        elif len(bands) == 1:
+            # Only one band → no "All", auto-select that band
+            self.band_combo['values'] = bands
+            self.band_var.set(bands[0])
+            self.selected_band = bands[0]
+        else:
+            # Multiple bands → include "All"
+            self.band_combo['values'] = ['All'] + bands
+            self.band_var.set('All')
+            self.selected_band = 'All'
+        # Initial plot
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
 
-    def update_colors(self):
-        self.plot.valid_color = self.valid_color_var.get()
-        self.plot.rejected_color = self.rejected_color_var.get()
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, update_legend=True)
-
-    def open_csv(self):
-        file = filedialog.askopenfilename(initialdir=os.getcwd(),
-                                          filetypes=[("CSV Files", "*.csv")])
-        if file:
-            self.data.load(file)
-            #  ⬇️  put filename in the title bar
-            self.root.title(f"Lightcurve Viewer – {os.path.basename(file)}")
-            self.plot.update(self.data.df, self.mode, self.time_mode,
-                             self.show_rejected)
-
-    def save_csv(self):
+    def save_csv(self) -> None:
         if self.data.df is None or self.data.filename is None:
             messagebox.showerror("Nothing to save", "Load a CSV first.")
             return
-
-        # ask the user; empty string means they pressed “Cancel”
         file = filedialog.asksaveasfilename(
             initialdir=os.path.dirname(self.data.filename),
             initialfile=os.path.basename(self.data.filename),
             defaultextension=".csv",
-            filetypes=[("CSV Files", "*.csv")]
+            filetypes=[("CSV Files", "*.csv")],
         )
-
-        if not file:  # <- user hit Cancel
+        if not file:  # user cancelled -> write versioned next to current
             file = next_version(self.data.filename)
-
         self.data.filename = file
         self.data.save()
         messagebox.showinfo("Saved", f"CSV saved as {file}")
 
-    def save_plot(self):
+    def save_plot(self) -> None:
         if self.data.df is None:
             return
-
         default_png = os.path.splitext(self.data.filename or "plot")[0] + ".png"
-
         file = filedialog.asksaveasfilename(
             initialdir=os.path.dirname(default_png),
             initialfile=os.path.basename(default_png),
             defaultextension=".png",
-            filetypes=[("PNG Files", "*.png")]
+            filetypes=[("PNG Files", "*.png")],
         )
-
         if not file:
             file = next_version(default_png)
-
         self.plot.fig.savefig(file, dpi=300, bbox_inches="tight")
         messagebox.showinfo("Saved", f"Plot saved as {file}")
 
-    def set_mode(self, _=None):
+    def save_atlas(self):
+        if self.data.df is None:
+            return
+        # Ask for FITS/FTS file
+        filetypes = [("FITS files", "*.fits *.fts"), ("All files", "*.*")]
+        fits_filepath = filedialog.askopenfilename(
+            title="Select Atlas FITS file",
+            filetypes=filetypes
+        )
+        if fits_filepath is None:
+            # give message that no files were selected
+            messagebox.showerror("Nothing to save", "Select atlas FITS file")
+            return
+
+        atlas_name = f"{Path(self.data.filename).stem}.ATL"
+        file = filedialog.asksaveasfilename(
+            initialdir=os.path.dirname(atlas_name),
+            initialfile=os.path.basename(atlas_name),
+            defaultextension=".ATL",
+            filetypes=[("Atlas Files", "*.ATL")],
+        )
+        # save data as a temporary file
+        self.data.df.to_csv('tmp.csv', header=True)
+        atlas_name = file
+        atlas_cmd = f"pp_atlas -fname_header {fits_filepath} -fname_photo tmp.csv -fname_out {atlas_name}"
+        subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
+        # remove tmp file
+        os.remove('tmp.csv')
+        # atlas = form_atlas(filename_header=fits_filepath, filename_photometry=self.data.df)
+        # write_atlas(filename_atlas=self.data.filename, text_atlas=atlas)
+        messagebox.showinfo("Saved", f"ATLAS file saved as {file}")
+
+    def set_mode(self, _=None) -> None:
         self.mode = self.mode_var.get()
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected)
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
 
-    def set_time_mode(self, _=None):
+    def set_time_mode(self, _=None) -> None:
         self.time_mode = self.time_var.get()
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected)
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
 
-    def set_show_rejected(self):
+    def set_show_rejected(self) -> None:
         self.show_rejected = self.toggle_rejected_var.get()
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type)
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
 
-    def set_errorbar_type(self, _=None):
+    def set_errorbar_type(self, _=None) -> None:
         self.errorbar_type = self.errorbar_var.get()
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type)
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
 
-    def on_click(self, event):
+    def set_band(self) -> None:
+        self.selected_band = self.band_var.get()
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
+
+    # ---- matplotlib events ----
+    def on_click(self, event) -> None:
         if event.inaxes != self.ax or self.data.df is None:
             return
-        if event.xdata and event.ydata:
-            self.plot.select_point(event.xdata, event.ydata, self.data.df, self.mode)
-            self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, update_legend=False)
+        if event.xdata is not None and event.ydata is not None:
+            self.plot.select_point(event.xdata, event.ydata, self.data.df, self.mode, self.time_mode)
+            self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band, update_legend=False)
 
-    def on_pick(self, event):
+    def on_pick(self, event) -> None:
         artist = event.artist
         if artist == self.ax.title:
             new = simpledialog.askstring("Edit Title", "New Title:", initialvalue=self.plot.title)
-            if new: self.plot.title = new
-            self.plot.auto_title = False
+            if new:
+                self.plot.title = new
+                self.plot.auto_title = False
         elif artist == self.ax.xaxis.label:
             new = simpledialog.askstring("Edit X Label", "New X Label:", initialvalue=self.plot.xlabel)
-            if new: self.plot.xlabel = new
+            if new:
+                self.plot.xlabel = new
         elif artist == self.ax.yaxis.label:
             new = simpledialog.askstring("Edit Y Label", "New Y Label:", initialvalue=self.plot.ylabel)
-            if new: self.plot.ylabel = new
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, update_legend=False)
+            if new:
+                self.plot.ylabel = new
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band, update_legend=False)
 
-    def toggle_rejection(self, _=None):
-        if self.plot.selected_index is not None:
+    # ---- keyboard conveniences ----
+    def toggle_rejection(self, _=None) -> None:
+        if self.plot.selected_index is not None and self.data.df is not None:
             self.data.toggle_rejection(self.plot.selected_index)
-            self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, update_legend=False)
+            self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band, update_legend=False)
 
-    def move_left(self, _=None):
+    def move_left(self, _=None) -> None:
         self.plot.move_selection(-1)
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, update_legend=False)
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band, update_legend=False)
 
-    def move_right(self, _=None):
+    def move_right(self, _=None) -> None:
         self.plot.move_selection(1)
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, update_legend=False)
-    
-    def cancel_selection(self, _=None):
-        """Cancel the current point selection."""
+        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band, update_legend=False)
+
+    def cancel_selection(self, _=None) -> None:
         if self.plot.selected_index is not None:
             self.plot.selected_index = None
-            self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, update_legend=False)
+            self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band, update_legend=False)
 
-    def confirm_exit(self, _=None):
+    def confirm_exit(self, _=None) -> None:
         self.on_close()
 
-    def show_marker_settings(self):
-        """Show dialog for marker and error bar settings"""
-        settings_dialog = ttk.Toplevel()
-        settings_dialog.title("Marker and Error Bar Settings")
-        settings_dialog.transient(self.root)
-        settings_dialog.grab_set()
+    # ---- marker settings dialog ----
+    def show_marker_settings(self) -> None:
+        dlg = ttk.Toplevel()
+        dlg.title("Marker and Error Bar Settings")
+        dlg.transient(self.root)
+        dlg.grab_set()
 
-        # Position the dialog near the main window
         x = self.root.winfo_x() + 50
         y = self.root.winfo_y() + 50
-        settings_dialog.geometry(f"+{x}+{y}")
+        dlg.geometry(f"+{x}+{y}")
 
-        frame = ttk.Frame(settings_dialog, padding=10)
+        frame = ttk.Frame(dlg, padding=10)
         frame.pack(fill=BOTH, expand=True)
 
         # Marker style
         ttk.Label(frame, text="Marker Style:").grid(row=0, column=0, sticky=W, pady=2)
-        marker_names = [name for marker, name in self.plot.available_markers]
-        current_marker_name = next((name for marker, name in self.plot.available_markers
-                                 if marker == self.plot.marker_style), 'circle')
+        marker_names = [name for _, name in self.plot.available_markers]
+        current_marker_name = next((name for m, name in self.plot.available_markers if m == self.plot.marker_style), 'circle')
         marker_var = ttk.StringVar(value=current_marker_name)
-        marker_combo = ttk.Combobox(frame, textvariable=marker_var, values=marker_names, state='readonly')
-        marker_combo.grid(row=0, column=1, sticky=EW, pady=2, padx=5)
+        ttk.Combobox(frame, textvariable=marker_var, values=marker_names, state='readonly').grid(row=0, column=1, sticky=EW, pady=2, padx=5)
 
         # Marker size
         ttk.Label(frame, text="Marker Size:").grid(row=1, column=0, sticky=W, pady=2)
         size_var = ttk.DoubleVar(value=self.plot.marker_size)
-        size_scale = ttk.Scale(frame, from_=1, to=30, variable=size_var, orient=HORIZONTAL)
-        size_scale.grid(row=1, column=1, sticky=EW, pady=2, padx=5)
-        size_entry = ttk.Entry(frame, textvariable=size_var, width=5)
-        size_entry.grid(row=1, column=2, sticky=W, pady=2, padx=5)
+        ttk.Scale(frame, from_=1, to=30, variable=size_var, orient=HORIZONTAL).grid(row=1, column=1, sticky=EW, pady=2, padx=5)
+        ttk.Entry(frame, textvariable=size_var, width=6).grid(row=1, column=2, sticky=W, pady=2, padx=5)
 
         # Error bar cap size
         ttk.Label(frame, text="Error Cap Size:").grid(row=2, column=0, sticky=W, pady=2)
         capsize_var = ttk.DoubleVar(value=self.plot.errorbar_capsize)
-        capsize_scale = ttk.Scale(frame, from_=0, to=20, variable=capsize_var, orient=HORIZONTAL)
-        capsize_scale.grid(row=2, column=1, sticky=EW, pady=2, padx=5)
-        capsize_entry = ttk.Entry(frame, textvariable=capsize_var, width=5)
-        capsize_entry.grid(row=2, column=2, sticky=W, pady=2, padx=5)
+        ttk.Scale(frame, from_=0, to=20, variable=capsize_var, orient=HORIZONTAL).grid(row=2, column=1, sticky=EW, pady=2, padx=5)
+        ttk.Entry(frame, textvariable=capsize_var, width=6).grid(row=2, column=2, sticky=W, pady=2, padx=5)
 
         # Error bar cap thickness
         ttk.Label(frame, text="Cap Thickness:").grid(row=3, column=0, sticky=W, pady=2)
         capthick_var = ttk.DoubleVar(value=self.plot.errorbar_capthick)
-        capthick_scale = ttk.Scale(frame, from_=0.0, to=10, variable=capthick_var, orient=HORIZONTAL)
-        capthick_scale.grid(row=3, column=1, sticky=EW, pady=2, padx=5)
-        capthick_entry = ttk.Entry(frame, textvariable=capthick_var, width=5)
-        capthick_entry.grid(row=3, column=2, sticky=W, pady=2, padx=5)
+        ttk.Scale(frame, from_=0.0, to=10, variable=capthick_var, orient=HORIZONTAL).grid(row=3, column=1, sticky=EW, pady=2, padx=5)
+        ttk.Entry(frame, textvariable=capthick_var, width=6).grid(row=3, column=2, sticky=W, pady=2, padx=5)
 
         # Error bar line width
         ttk.Label(frame, text="Error Bar Width:").grid(row=4, column=0, sticky=W, pady=2)
         linewidth_var = ttk.DoubleVar(value=self.plot.errorbar_linewidth)
-        linewidth_scale = ttk.Scale(frame, from_=0.0, to=10, variable=linewidth_var, orient=HORIZONTAL)
-        linewidth_scale.grid(row=4, column=1, sticky=EW, pady=2, padx=5)
-        linewidth_entry = ttk.Entry(frame, textvariable=linewidth_var, width=5)
-        linewidth_entry.grid(row=4, column=2, sticky=W, pady=2, padx=5)
+        ttk.Scale(frame, from_=0.0, to=10, variable=linewidth_var, orient=HORIZONTAL).grid(row=4, column=1, sticky=EW, pady=2, padx=5)
+        ttk.Entry(frame, textvariable=linewidth_var, width=6).grid(row=4, column=2, sticky=W, pady=2, padx=5)
 
-        # Preview frame
+        # Preview
         preview_frame = ttk.LabelFrame(frame, text="Preview", padding=5)
         preview_frame.grid(row=0, column=3, rowspan=5, padx=10, sticky=N+S)
 
         fig, ax = plt.subplots(figsize=(3, 2), dpi=80)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-
-        # Add sample points with error bars
-        x = [0.2, 0.5, 0.8]
-        y = [0.5, 0.5, 0.5]
-        yerr = [0.2, 0.2, 0.2]
-
-        preview_line = ax.errorbar(x, y, yerr=yerr, fmt='o', color='blue',
-                                 markersize=size_var.get(),
-                                 capsize=capsize_var.get(),
-                                 capthick=capthick_var.get(),
-                                 elinewidth=linewidth_var.get())
-
+        ax.set_xticks([]); ax.set_yticks([]); ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+        x_demo = [0.2, 0.5, 0.8]; y_demo = [0.5, 0.5, 0.5]; yerr_demo = [0.2, 0.2, 0.2]
+        ax.errorbar(x_demo, y_demo, yerr=yerr_demo, fmt='o', color='blue',
+                    markersize=size_var.get(), capsize=capsize_var.get(), capthick=capthick_var.get(),
+                    elinewidth=linewidth_var.get())
         canvas = FigureCanvasTkAgg(fig, master=preview_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+        canvas.draw(); canvas.get_tk_widget().pack(fill=BOTH, expand=True)
 
-        def update_preview(*args):
+        def update_preview(*_):
             try:
-                # Get the current marker style
-                marker_style = next((marker for marker, name in self.plot.available_markers
-                                   if name == marker_var.get()), 'o')
-
-                # Clear the current plot
-                ax.clear()
-                ax.set_xticks([])
-                ax.set_yticks([])
-                ax.set_xlim(0, 1)
-                ax.set_ylim(0, 1)
-
-                # Add sample points with error bars using current settings
-                x = [0.2, 0.5, 0.8]
-                y = [0.5, 0.5, 0.5]
-                yerr = [0.2, 0.2, 0.2]
-
-                # Redraw the errorbar with current settings
-                global preview_line
-                preview_line = ax.errorbar(x, y, yerr=yerr,
-                                         fmt=marker_style,
-                                         color='blue',
-                                         markersize=size_var.get(),
-                                         capsize=capsize_var.get(),
-                                         capthick=capthick_var.get(),
-                                         elinewidth=linewidth_var.get())
-
+                marker_style = next((m for m, name in self.plot.available_markers if name == marker_var.get()), 'o')
+                ax.clear(); ax.set_xticks([]); ax.set_yticks([]); ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+                ax.errorbar(x_demo, y_demo, yerr=yerr_demo, fmt=marker_style, color='blue',
+                            markersize=size_var.get(), capsize=capsize_var.get(), capthick=capthick_var.get(),
+                            elinewidth=linewidth_var.get())
                 canvas.draw_idle()
             except Exception as e:
-                print(f"Error updating preview: {e}")
+                print(f"Preview update error: {e}")
 
-        # Bind variables to update preview
         marker_var.trace_add('write', update_preview)
         size_var.trace_add('write', update_preview)
         capsize_var.trace_add('write', update_preview)
         capthick_var.trace_add('write', update_preview)
         linewidth_var.trace_add('write', update_preview)
 
-        # Add Apply and Close buttons
-        button_frame = ttk.Frame(frame)
-        button_frame.grid(row=5, column=0, columnspan=4, pady=10)
+        btns = ttk.Frame(frame); btns.grid(row=5, column=0, columnspan=4, pady=10)
 
         def apply_settings():
-            # Update plot settings
-            self.plot.marker_style = next((marker for marker, name in self.plot.available_markers
-                                         if name == marker_var.get()), 'o')
+            self.plot.marker_style = next((m for m, name in self.plot.available_markers if name == marker_var.get()), 'o')
             self.plot.marker_size = size_var.get()
             self.plot.errorbar_capsize = capsize_var.get()
             self.plot.errorbar_capthick = capthick_var.get()
             self.plot.errorbar_linewidth = linewidth_var.get()
-
-            # Update the plot
             if self.data.df is not None:
-                self.plot.update(
-                    self.data.df,
-                    self.mode,
-                    self.time_mode,
-                    self.show_rejected,
-                    self.errorbar_type
-                )
+                self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
 
-        ttk.Button(button_frame, text="Apply", command=apply_settings).pack(side=LEFT, padx=5)
-        ttk.Button(button_frame, text="Close", command=settings_dialog.destroy).pack(side=LEFT, padx=5)
+        ttk.Button(btns, text="Apply", command=apply_settings).pack(side=LEFT, padx=5)
+        ttk.Button(btns, text="Close", command=dlg.destroy).pack(side=LEFT, padx=5)
 
-        # Make the window resizable
-        settings_dialog.resizable(True, False)
+        dlg.resizable(True, False)
+        dlg.focus_set()
+        dlg.wait_window()
 
-        # Set focus to the dialog
-        settings_dialog.focus_set()
-
-        # Make the dialog modal
-        settings_dialog.wait_window()
-
-    def on_close(self):
+    # ---- lifecycle ----
+    def on_close(self) -> None:
         if messagebox.askokcancel("Quit", "Do you want to quit?"):
-            # Close any matplotlib figures
             plt.close('all')
-            # Destroy the root window
             self.root.destroy()
-            # Exit the application
             self.root.quit()
 
+
+# ---------------------- Entrypoint ----------------------
 if __name__ == '__main__':
     root = ttk.Window(themename="flatly")
     app = LightCurveGUI(root)

@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
     if save_name is None:
         save_name = 'lightcurve.png'
-    if target_name is not None:
+    elif (save_name is None) & (target_name is not None):
         save_name = f'{target_name}_lightcurve.png'
 
     plot_lightcurve(data_path=file_path, plot_flagged=plot_flagged, target_name=target_name, save_name=save_name)
