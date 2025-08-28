@@ -29,6 +29,9 @@ MARKERS = [
     ('>', 'triangle_right'), ('+', 'plus'), ('d', 'thin_diamond'),
 ]
 
+TIME_STEP = 0.02 # hours
+DEFAULT_PERIOD = 4.0 # hours
+
 
 def next_version(path: str) -> str:
     """Return path like originalname_1.ext, originalname_2.ext … choosing the first free number."""
@@ -114,9 +117,9 @@ class LightCurvePlot:
         self.flagged_color = "orange"
 
         # Marker & errorbar appearance
-        self.marker_size = 5.0
-        self.marker_style = 'o'
-        self.errorbar_capsize = 3.0
+        self.marker_size = 2.0
+        self.marker_style = 's'
+        self.errorbar_capsize = 2.0
         self.errorbar_capthick = 1.0
         self.errorbar_linewidth = 1.0
 
@@ -190,7 +193,6 @@ class LightCurvePlot:
             if sub.empty:
                 continue
 
-            # X vector
             if time_mode == 'julian_date':
                 x = sub['julian_date']
                 self.xlabel = "Julian Date"
@@ -203,6 +205,17 @@ class LightCurvePlot:
                     self.xlabel = f"Minutes from {Time(sub['julian_date'].min(), format='jd').to_value('iso', subfmt='date_hm')} UT"
                 except Exception:
                     self.xlabel = "Minutes"
+            elif time_mode == 'rotation_phase':
+                if hasattr(self.parent_gui, "rotation_period_var"):
+                    period_hours = round(float(self.parent_gui.rotation_period_var.get()), 4)
+                    jd0 = sub['julian_date'].min()
+                    phases = ((sub['julian_date'] - jd0) * 24.0 / period_hours) * 2 * np.pi
+                    phases = np.mod(phases, 2 * np.pi)
+                    x = phases
+                    self.xlabel = "Rotation Phase [rad]"
+                else:
+                    x = sub['julian_date']  # fallback
+                    self.xlabel = "Julian Date"
             else:
                 raise ValueError(f"Invalid time_mode: {time_mode}")
 
@@ -285,9 +298,13 @@ class LightCurvePlot:
                     sx = x_click_jd
                 elif time_mode == 'mjd':
                     sx = x_click_jd - 2400000.5
-                else:
+                elif time_mode == 'minutes':
                     # minutes relative to min of its band; use df-wide min to keep consistent
                     sx = (x_click_jd - df['julian_date'].min()) * 24 * 60
+                elif time_mode == 'rotation_phase':  # and hasattr(self.parent_gui, 'rotation_period_var'):
+                    period_hours = float(self.parent_gui.rotation_period_var.get())
+                    jd0 = df['julian_date'].min()
+                    sx = np.mod((x_click_jd - jd0) * 24.0 / period_hours * 2 * np.pi, 2 * np.pi)
                 if mode == 'target':
                     sy = df['mag'].iloc[self.selected_index]
                 elif mode == 'instrumental':
@@ -446,9 +463,13 @@ class LightCurvePlot:
             x_all = df['julian_date']
         elif time_mode == 'mjd':
             x_all = df['julian_date'] - 2400000.5
-        else:
+        elif time_mode == 'minutes':
             # minutes relative to min of its band; use df-wide min to keep consistent
             x_all = (df['julian_date'] - df['julian_date'].min()) * 24 * 60
+        elif time_mode == 'rotation_phase': #and hasattr(self.parent_gui, 'rotation_period_var'):
+            period_hours = float(self.parent_gui.rotation_period_var.get())
+            jd0 = df['julian_date'].min()
+            x_all = np.mod((df['julian_date'] - jd0) * 24.0 / period_hours * 2 * np.pi, 2 * np.pi)
         x_all = x_all.to_numpy()
         if mode == 'target':
             y_all = df['mag'].to_numpy()
@@ -544,7 +565,13 @@ class LightCurveGUI:
         # Time axis
         ttk.Label(control_frame, text="Time Axis:").pack(side=LEFT)
         self.time_var = ttk.StringVar(value=self.time_mode)
-        ttk.Combobox(control_frame, textvariable=self.time_var, values=['minutes', 'julian_date', 'mjd'], state='readonly', width=13).pack(side=LEFT)
+        ttk.Combobox(
+            control_frame,
+            textvariable=self.time_var,
+            values=['minutes', 'julian_date', 'mjd', 'rotation_phase'],  # added
+            state='readonly',
+            width=13
+        ).pack(side=LEFT)
         self.time_var.trace_add('write', lambda *_: self.set_time_mode())
 
         # Show rejected
@@ -571,6 +598,37 @@ class LightCurveGUI:
         # Initially only 'All'
         self.band_combo['values'] = ['All']
         self.band_var.set('All')
+
+        # pack the matplotlib canvas
+        self.canvas.get_tk_widget().pack(fill=BOTH, expand=True)
+
+        # Rotation controls frame (under plot, hidden until needed)
+        self.rotation_frame = ttk.Frame(self.master_frame)  # attach to master, not top bar
+        #self.rotation_frame.pack(fill=X, pady=5)
+
+        ttk.Label(self.rotation_frame, text="Rotation period (h):").pack(side=LEFT, padx=5)
+
+        if self.data.df is not None and "julian_date" in self.data.df.columns:
+            time_span = (self.data.df["julian_date"].max() - self.data.df["julian_date"].min()) / 24.0
+        else:
+            time_span = DEFAULT_PERIOD  # fallback default in hours
+        self.rotation_period_var = ttk.StringVar(value=f"{time_span:.3f}")
+
+        self.rotation_slider = ttk.Scale(
+            self.rotation_frame, from_=0.1, to=100.0,
+            variable=self.rotation_period_var, orient=HORIZONTAL,
+            length=int(self.master_frame.winfo_screenwidth() / 2),  # ~half window width
+            command=lambda v: self.update_rotation_period()
+        )
+        self.rotation_slider.pack(side=LEFT, padx=5, expand=True, fill=X)
+
+        entry = ttk.Entry(self.rotation_frame, textvariable=self.rotation_period_var, width=8)
+        entry.pack(side=LEFT, padx=5)
+        entry.bind("<Return>", lambda e: self.update_rotation_period())
+
+        self.root.bind("z", lambda e: self.adjust_rotation_period(-TIME_STEP))
+        self.root.bind("x", lambda e: self.adjust_rotation_period(+TIME_STEP))
+        entry.bind("<Return>", lambda e: self.update_rotation_period())
 
         # Marker settings
         ttk.Button(control_frame, text="Marker Settings", command=self.show_marker_settings).pack(side=LEFT, padx=8)
@@ -685,9 +743,19 @@ class LightCurveGUI:
         self.mode = self.mode_var.get()
         self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
 
-    def set_time_mode(self, _=None) -> None:
+    def set_time_mode(self, _=None):
         self.time_mode = self.time_var.get()
-        self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band)
+        if self.time_mode == "rotation_phase":
+            if not self.rotation_frame.winfo_ismapped():
+                self.rotation_frame.pack(fill=X, pady=5)
+        else:
+            if self.rotation_frame.winfo_ismapped():
+                self.rotation_frame.pack_forget()
+
+        self.plot.update(
+            self.data.df, self.mode, self.time_mode,
+            self.show_rejected, self.errorbar_type, self.selected_band
+        )
 
     def set_show_rejected(self) -> None:
         self.show_rejected = self.toggle_rejected_var.get()
@@ -744,6 +812,33 @@ class LightCurveGUI:
         if self.plot.selected_index is not None:
             self.plot.selected_index = None
             self.plot.update(self.data.df, self.mode, self.time_mode, self.show_rejected, self.errorbar_type, self.selected_band, update_legend=False)
+
+    def adjust_rotation_period(self, delta: float):
+        current = float(self.rotation_period_var.get())
+        new_value = max(0.1, current + delta)
+        self.rotation_period_var.set(f"{new_value:.4f}")
+        self.update_rotation_period()
+
+    def update_rotation_period(self, *_):
+        if self.time_mode != "rotation_phase" or self.data.df is None:
+            return
+        period = round(float(self.rotation_period_var.get()), 4)
+
+        # recompute phase column
+        self.data.df["phase"] = ((self.data.df["julian_date"] % period) / period)
+
+        # update scatter directly if exists
+        if hasattr(self.plot, "sc"):
+            self.plot.sc.set_offsets(
+                np.c_[self.data.df["phase"], self.data.df["mag"]]
+            )
+            self.canvas.draw_idle()
+        else:
+            # fallback full redraw
+            self.plot.update(
+                self.data.df, self.mode, self.time_mode,
+                self.show_rejected, self.errorbar_type, self.selected_band
+            )
 
     def confirm_exit(self, _=None) -> None:
         self.on_close()
