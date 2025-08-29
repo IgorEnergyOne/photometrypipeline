@@ -17,10 +17,10 @@ from tkinter import filedialog, messagebox, simpledialog
 
 # ---------------------- Constants & Utilities ----------------------
 DEFAULT_COLORS = [
-    "blue", "red", "green", "orange", "purple",
-    "brown", "pink", "gray", "olive", "cyan"
-]
-BAND_COLORS = {"B": "blue", "V": "green", "R": "red", "I": "indigo"}
+    "red", "orange", "olive", "green", "blue", "purple",
+    "brown", "pink", "gray",  "cyan"
+    ]
+BAND_COLORS = {"B": "royalblue", "V": "limegreen", "R": "coral", "I": "dimgray", "U": "indigo"}
 
 # Marker map (marker symbol, human name)
 MARKERS = [
@@ -31,6 +31,9 @@ MARKERS = [
 
 TIME_STEP = 0.02 # hours
 DEFAULT_PERIOD = 4.0 # hours
+
+WINDOW_WIDTH = 1100
+WINDOW_HEIGHT = 600
 
 
 def next_version(path: str) -> str:
@@ -183,7 +186,7 @@ class LightCurvePlot:
             bands = [None]
 
         # Assign colors for bands (only used in All mode)
-        band_colors = {b: DEFAULT_COLORS[i % len(DEFAULT_COLORS)] for i, b in enumerate(bands)}
+        band_colors = BAND_COLORS#{b: DEFAULT_COLORS[i % len(DEFAULT_COLORS)] for i, b in enumerate(bands)}
 
         # For label management
         plotted_any = False
@@ -531,11 +534,20 @@ class LightCurveGUI:
 
     # ---- UI construction ----
     def create_widgets(self) -> None:
+        # create necessary frames
         self.master_frame = ttk.Frame(self.root)
         self.master_frame.pack(fill=BOTH, expand=True)
 
         control_frame = ttk.Frame(self.master_frame, padding=10)
         control_frame.pack(side=TOP, fill=X)
+
+        self.bottom_frame = ttk.Frame(self.master_frame)
+        self.rotation_frame = ttk.Frame(self.bottom_frame)  # attach to master, not top bar
+        self.bottom_frame.pack(side="bottom", fill="x")
+
+        self.plot_frame = ttk.Frame(self.master_frame)
+        self.plot_frame.pack(side="top", fill="both", expand=True)
+
 
         # File ops
         ttk.Button(control_frame, text="Open CSV", command=self.open_csv).pack(side=LEFT, padx=5)
@@ -547,10 +559,8 @@ class LightCurveGUI:
         self.save_menu.add_command(label="Save Atlas", command=self.save_atlas)  # new placeholder
         self.save_menu_btn["menu"] = self.save_menu
         self.save_menu_btn.pack(side=ttk.LEFT)
-        # ttk.Button(control_frame, text="Save CSV", command=self.save_csv).pack(side=LEFT, padx=5)
-        # ttk.Button(control_frame, text="Save Plot", command=self.save_plot).pack(side=LEFT, padx=5)
 
-        # Mode
+        # Photometry Mode
         ttk.Label(control_frame, text="Mode:").pack(side=LEFT)
         self.mode_var = ttk.StringVar(value=self.mode)
         ttk.Combobox(control_frame, textvariable=self.mode_var, values=['target', 'instrumental', 'control'], state='readonly', width=13).pack(side=LEFT)
@@ -579,12 +589,10 @@ class LightCurveGUI:
         ttk.Checkbutton(control_frame, text="Show Rejected", variable=self.toggle_rejected_var, command=self.set_show_rejected).pack(side=LEFT, padx=5)
 
         # Plot area
-        plot_frame = ttk.Frame(self.master_frame)
-        plot_frame.pack(fill=BOTH, expand=True, padx=10, pady=5)
         self.fig, self.ax = plt.subplots(figsize=(8, 4))
-        self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
-        self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=True)
-        NavigationToolbar2Tk(self.canvas, plot_frame).update()
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
+        self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=True, in_=self.plot_frame)
+        NavigationToolbar2Tk(self.canvas, self.plot_frame).update()
 
         self.plot = LightCurvePlot(self.fig, self.ax, self.master_frame)
         self.plot.parent_gui = self
@@ -602,10 +610,6 @@ class LightCurveGUI:
         # pack the matplotlib canvas
         self.canvas.get_tk_widget().pack(fill=BOTH, expand=True)
 
-        # Rotation controls frame (under plot, hidden until needed)
-        self.rotation_frame = ttk.Frame(self.master_frame)  # attach to master, not top bar
-        #self.rotation_frame.pack(fill=X, pady=5)
-
         ttk.Label(self.rotation_frame, text="Rotation period (h):").pack(side=LEFT, padx=5)
 
         if self.data.df is not None and "julian_date" in self.data.df.columns:
@@ -615,12 +619,12 @@ class LightCurveGUI:
         self.rotation_period_var = ttk.StringVar(value=f"{time_span:.3f}")
 
         self.rotation_slider = ttk.Scale(
-            self.rotation_frame, from_=0.1, to=100.0,
+            self.rotation_frame, from_=0.1, to=50.0,
             variable=self.rotation_period_var, orient=HORIZONTAL,
-            length=int(self.master_frame.winfo_screenwidth() / 2),  # ~half window width
+            #length=int(self.master_frame.winfo_screenwidth() / 4),
             command=lambda v: self.update_rotation_period()
         )
-        self.rotation_slider.pack(side=LEFT, padx=5, expand=True, fill=X)
+        self.rotation_slider.pack(side=LEFT, padx=10, expand=True, fill=X)
 
         entry = ttk.Entry(self.rotation_frame, textvariable=self.rotation_period_var, width=8)
         entry.pack(side=LEFT, padx=5)
@@ -638,17 +642,25 @@ class LightCurveGUI:
         self.canvas.mpl_connect("button_press_event", self.on_click)
         self.canvas.mpl_connect("pick_event", self.on_pick)
 
-        # Help panel
-        help_frame = ttk.Frame(self.master_frame, padding=10)
-        help_frame.pack(side=BOTTOM, fill=X)
-        ttk.Label(
-            help_frame,
-            text=(
-                "Hotkeys: [r] toggle rejection | [a] cancel selection | [q] quit | "
-                "[left]/[right] move selection | click = select/unselect or edit title/labels | "
-                "Filter dropdown = select filter or 'All'"
-            ),
-        ).pack()
+        self.hotkeys_label = ttk.Label(
+                self.bottom_frame,
+                text=(
+                    "Hotkeys: [r] toggle rejection | [a] cancel selection | [q] quit | "
+                    "[left]/[right] move selection | click = select/unselect or edit title/labels | "
+                    "[z]/[x] decrease/increase rotation period |"
+                    "Filter dropdown = select filter or 'All'"
+                ),
+                anchor="w",
+                justify="left",
+                wraplength=self.master_frame.winfo_width()
+            )
+        self.hotkeys_label.pack(fill="x", padx=5, pady=3)
+
+        # Update wraplength when window is resized
+        self.master_frame.bind(
+            "<Configure>",
+            lambda e: self.hotkeys_label.config(wraplength=e.width)
+        )
 
     # ---- UI actions ----
     def open_csv(self) -> None:
@@ -867,7 +879,7 @@ class LightCurveGUI:
         # Marker size
         ttk.Label(frame, text="Marker Size:").grid(row=1, column=0, sticky=W, pady=2)
         size_var = ttk.DoubleVar(value=self.plot.marker_size)
-        ttk.Scale(frame, from_=1, to=30, variable=size_var, orient=HORIZONTAL).grid(row=1, column=1, sticky=EW, pady=2, padx=5)
+        ttk.Scale(frame, from_=1, to=20, variable=size_var, orient=HORIZONTAL).grid(row=1, column=1, sticky=EW, pady=2, padx=5)
         ttk.Entry(frame, textvariable=size_var, width=6).grid(row=1, column=2, sticky=W, pady=2, padx=5)
 
         # Error bar cap size
@@ -947,5 +959,10 @@ class LightCurveGUI:
 # ---------------------- Entrypoint ----------------------
 if __name__ == '__main__':
     root = ttk.Window(themename="flatly")
+    # center the window
+    x = WINDOW_WIDTH // 2
+    y = WINDOW_HEIGHT // 2
+    # apply geometry
+    root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
     app = LightCurveGUI(root)
     root.mainloop()
