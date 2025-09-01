@@ -9,7 +9,7 @@ import pandas as pd
 from toolbox import lister
 
 
-def pipeline_batch(fname: str, skip_pipeline: bool = False):
+def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = False):
     """
     wrapper around pp_run for processing of multiple directories in single run
     :param fname: file name with the list of commands to be executed
@@ -42,20 +42,25 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False):
         # change cwd one level up
         prnt = Path(paths[0]).parent
         os.chdir(prnt)
+        if len(paths) == 1:
+            paths = [paths[0], '']
         # try to combine data to one csv and atlas, build photometry curve
         subprocess.call(
             ['/bin/sh', '-i', '-c', f'pp_combine_csv -dirs_pattern {",".join(str(path) for path in paths)}'])
         atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in paths)}"
         subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
 
-        # group directories by photometry filters
-        filter_groups = {}
-        for path in paths:
-            # get control star_data for each directory
-            photo_file = lister(path, name_pattern="photometry_*_.csv",
-                                object_type='file', return_type='path')[0]
-            if photo_file.exists():
-                try:
+        if by_filter:
+
+            # group directories by photometry filters
+            filter_groups = {}
+            for path in paths:
+                if len(str(path)) == 0:
+                    continue
+                # get control star_data for each directory
+                photo_file = lister(path, name_pattern="photometry_*_.csv",
+                                    object_type='file', return_type='path')[0]
+                if photo_file.exists():
                     photo_data = pd.read_csv(photo_file)
                     if not photo_data.empty and 'band' in photo_data.columns:
                         # Get the unique filter for this directory
@@ -63,35 +68,39 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False):
                         if filter_name not in filter_groups:
                             filter_groups[filter_name] = []
                         filter_groups[filter_name].append(path)
-                except Exception as e:
-                    print(f'Error reading {photo_file}: {e}')
-        # Process each filter group separately
-        for filter_name, filter_paths in filter_groups.items():
-            print(f'\nProcessing filter: {filter_name}')
+            # Process each filter group separately
+            for filter_name, filter_paths in filter_groups.items():
+                print(f'\nProcessing filter: {filter_name}')
+                if len(filter_paths) == 1:
+                    filter_paths = [filter_paths[0], '']
 
-            csv_filename = f'combined_results_{filter_name}.csv'
-            # Combine CSV for this filter
-            subprocess.call(['/bin/sh', '-i', '-c',
-                             f'pp_combine_csv -dirs_pattern {",".join(str(p) for p in filter_paths)} -out_path {csv_filename}'])
+                csv_filename = f'combined_results_{filter_name}.csv'
+                # Combine CSV for this filter
+                subprocess.call(['/bin/sh', '-i', '-c',
+                                 f'pp_combine_csv -dirs_pattern {",".join(str(p) for p in filter_paths)} -out_path {csv_filename}'])
 
-            # Create atlas file for this filter
-            if Path(csv_filename).exists():
-                atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in filter_paths)} -fname_out combined_atlas_{filter_name}.ATL"
-                subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
+                # Create atlas file for this filter
+                if Path(csv_filename).exists():
+                    atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in filter_paths)} -fname_out combined_atlas_{filter_name}.ATL"
+                    subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
 
-                # Generate light curve for this filter
-                target_name = photo_data["target"].iloc[0].replace(' ', '_')
-                # strip name of any special characters
-                target_name = target_name.replace('(', '').replace(')', '')
-                subprocess.call(['/bin/sh', '-i', '-c', f'pp_lightcurve '
-                                                        f'-target_name {target_name} '
-                                                        f'-save_name lightcurve_{target_name}_{filter_name} '
-                                                        f'-plot_flagged'])
+                    try:
+                        target_name = photo_data["target"].iloc[0].replace(' ', '_')
+                        # strip name of any special characters
+                        target_name = target_name.replace('(', '').replace(')', '')
+                    except KeyError:
+                        target_name = f'Asteroid'
+                    lightcurve_cmd = f'pp_lightcurve ' \
+                                     f'-file_path {csv_filename} ' \
+                                     f'-target_name "{target_name} ({filter_name} filter)" ' \
+                                     f'-save_name lightcurve_{target_name}_{filter_name}.png ' \
+                                     f'-plot_flagged'
+                    subprocess.call(['/bin/sh', '-i', '-c', lightcurve_cmd])
+
     except Exception as e:
         print(f'Error in {dir_path}, exception: {e}')
         if e is KeyboardInterrupt:
             print("The script was interrupted by the user. Aborting...")
-
 
 if __name__ == '__main__':
     core_path = os.getcwd()
@@ -102,7 +111,11 @@ if __name__ == '__main__':
     parser.add_argument('-skip_pipeline',
                         help='skip pipeline processing',
                         default=False, action='store_true')
+    parser.add_argument('-by_filter',
+                        help='perform creation of atlas and lightcurve files for each filter',
+                        default=False, action='store_true')
     args = parser.parse_args()
     filename = str(args.file)
     skip_pipeline = args.skip_pipeline
-    pipeline_batch(filename, skip_pipeline)
+    by_filter = args.by_filter
+    pipeline_batch(filename, skip_pipeline, by_filter)
