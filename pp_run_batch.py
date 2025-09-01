@@ -13,12 +13,16 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
     """
     wrapper around pp_run for processing of multiple directories in single run
     :param fname: file name with the list of commands to be executed
+    :param skip_pipeline: skip pipeline processing and perform only postprocessing
+    :param by_filter: create separate csv and atlas files for each filter present
     :return:
     """
     with open(fname) as f:
         lines = f.readlines()
     try:
         paths = []
+        if skip_pipeline:
+            print("Skipping pipeline processing")
         for line in tqdm(lines, desc='Batch processing', unit='dirs'):
             # parse the command to get the path to directory
             path = line.rsplit(" ")[-1].strip('\n')
@@ -32,16 +36,23 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
             paths.append(dir_path)
             # change cwd to dir path
             os.chdir(dir_path)
-            if not skip_pipeline:
+            if skip_pipeline:
+                continue
+            # check if cmd is marked as skip with '!': means skip pipeline processing for the directory
+            elif line.startswith('!') and not skip_pipeline:
+                print(f'Skipping {dir_path} for pipeline processing')
+            else:
+                # compile the command to run pipeline
                 command = " ".join(line.rsplit(' ')[:-1]) + ' *.fit*'
                 try:
                     subprocess.call(['/bin/sh', '-i', '-c', command])
                 except Exception as e:
                     print(f'Error in {dir_path}, exception: {e}')
                     continue
-        # change cwd one level up
+        # change cwd one level up to the base directory
         prnt = Path(paths[0]).parent
         os.chdir(prnt)
+        # if only one directory is processed, add empty string to the list
         if len(paths) == 1:
             paths = [paths[0], '']
         # try to combine data to one csv and atlas, build photometry curve
@@ -51,7 +62,6 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
         subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
 
         if by_filter:
-
             # group directories by photometry filters
             filter_groups = {}
             for path in paths:
@@ -83,7 +93,6 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
                 if Path(csv_filename).exists():
                     atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in filter_paths)} -fname_out combined_atlas_{filter_name}.ATL"
                     subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
-
                     try:
                         target_name = photo_data["target"].iloc[0].replace(' ', '_')
                         # strip name of any special characters
