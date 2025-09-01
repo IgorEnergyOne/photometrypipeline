@@ -216,7 +216,10 @@ def form_atlas(filename_header, filename_photometry):
     obs_dict = init_obs_dict()
     obs_dict_mpc = init_mpc_obs_dict()
     # get photometry data
-    photometry_data = pd.read_csv(filename_photometry)
+    if type(filename_photometry) == pd.DataFrame:
+        photometry_data = filename_photometry
+    else:
+        photometry_data = pd.read_csv(filename_photometry)
     # zero time of observations (int of julian date - 0.5)
     zero_time = int(photometry_data['julian_date'].values[0]) - 0.5
     # (observing time) - mean time of observation
