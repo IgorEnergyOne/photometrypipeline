@@ -32,14 +32,15 @@ def combine_csv_files(path_core_dir: str,
     # get csv files in every directory
     target_data = []
     control_data = []
-    for dir in dirs:
-        # get control star_data for each directory
-        control_star_path = lister(dir, name_pattern="photometry_Control_Star.csv",
-                                   object_type='file', return_type='path')
-        control_data.append(pd.read_csv(control_star_path[0]))
-        # get target data for each directory
-        file = lister(dir, name_pattern=file_name_pattern, object_type='file', return_type='path')
-        target_data.append(pd.read_csv(file[0]))
+    for directory in dirs:
+        if len(str(directory)) != 1:
+            # get control star_data for each directory
+            control_star_path = lister(directory, name_pattern="photometry_Control_Star.csv",
+                                       object_type='file', return_type='path')
+            control_data.append(pd.read_csv(control_star_path[0]))
+            # get target data for each directory
+            file = lister(directory, name_pattern=file_name_pattern, object_type='file', return_type='path')
+            target_data.append(pd.read_csv(file[0]))
     # combine data
     control_data = pd.concat([*control_data], ignore_index=True)
     control_data.rename(columns={"mag": "mag_control", "sig": "sig_control",
@@ -95,3 +96,4 @@ if __name__ == '__main__':
     else:
         combine_csv_files(core_path, dir_name_pattern, file_name_pattern, out_path)
         print('Done! Results are saved in {}'.format(out_path))
+
