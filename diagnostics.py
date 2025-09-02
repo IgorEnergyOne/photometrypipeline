@@ -260,31 +260,28 @@ class Prepare_Diagnostics(Diagnostics_Html):
         imgdat[np.where(np.isnan(imgdat))[0]] = np.nanmedian(imgdat)
         imgdat = np.clip(imgdat, np.percentile(imgdat, 1),
                          np.percentile(imgdat, 99))
-        imgdat = (imgdat-np.min(imgdat)) / np.max(imgdat-np.min(imgdat)+0.1)
+        imgdat = (imgdat - np.min(imgdat)) / (np.max(imgdat - np.min(imgdat)) + 0.1)
 
-        # resize image larger than lg_image_size_px on one side
-        imgdat = resize(imgdat,
-                        (min(imgdat.shape[0], self.conf.image_size_lg_px),
-                         min(imgdat.shape[1], self.conf.image_size_lg_px)))
+        # uniform resize: scale both axes by the same factor so the larger side == image_size_lg_px
+        h, w = imgdat.shape
+        s = min(1.0, self.conf.image_size_lg_px / float(max(h, w)))
+        new_h, new_w = int(round(h * s)), int(round(w * s))
+        imgdat = resize(imgdat, (new_h, new_w), preserve_range=True, anti_aliasing=True)
 
-        plt.figure(figsize=(self.conf.image_size_lg_in,
-                            self.conf.image_size_lg_in))
-
+        # render with equal aspect and limits matching resized data
+        plt.figure(figsize=(self.conf.image_size_lg_in, self.conf.image_size_lg_in))
         norm = ImageNormalize(
             imgdat, interval=ZScaleInterval(),
-            stretch={'linear': LinearStretch(),
-                     'log': LogStretch()}[self.conf.image_stretch])
-
-        img = plt.imshow(imgdat, cmap='gray', norm=norm,
-                         origin='lower')
+            stretch={'linear': LinearStretch(), 'log': LogStretch()}[self.conf.image_stretch]
+        )
+        ax = plt.imshow(imgdat, cmap='gray', norm=norm, origin='lower')
         # remove axes
         plt.axis('off')
-        img.axes.get_xaxis().set_visible(False)
-        img.axes.get_yaxis().set_visible(False)
+        ax.axes.set_xlim(0, new_w)
+        ax.axes.set_ylim(0, new_h)
 
-        framefilename = os.path.join(self.conf.diagnostics_path,
-                                     '.diagnostics', filename + '.' +
-                                     self.conf.image_file_format)
+        framefilename = os.path.join(self.conf.diagnostics_path, '.diagnostics',
+                                     filename + '.' + self.conf.image_file_format)
         plt.savefig(framefilename, format=self.conf.image_file_format,
                     bbox_inches='tight',
                     pad_inches=0, dpi=self.conf.image_dpi)
@@ -450,11 +447,6 @@ class Registration_Diagnostics(Diagnostics_Html):
         return html
 
     def registration_maps(self, data, extraction_data, obsparam):
-        """build overlays for image maps indicating astrometric reference
-        stars"""
-
-        logging.info('create registration overlays with reference stars')
-
         # load reference catalog
         refcat = catalog(data['catalog'])
         for filename in os.listdir('.'):
@@ -464,53 +456,38 @@ class Registration_Diagnostics(Diagnostics_Html):
 
         # create overlays
         for dat in extraction_data:
-            framefilename = os.path.join(self.conf.diagnostics_path,
-                                         '.diagnostics',
-                                         '{:s}_astrometry.{:s}'.format(
-                                             dat['fits_filename'],
-                                             self.conf.image_file_format))
-            imgdat = fits.open(dat['fits_filename'],
-                               ignore_missing_end=True)[0].data
-            resize_factor = min(
-                1.,
-                self.conf.image_size_lg_px/np.max(imgdat.shape))
+            fits_fn = dat['fits_filename']
+            imgdat = fits.open(fits_fn, ignore_missing_end=True)[0].data
+            h, w = imgdat.shape
+            resize_factor = min(1.0, self.conf.image_size_lg_px / float(max(h, w)))
+            new_h, new_w = int(round(h * resize_factor)), int(round(w * resize_factor))
 
-            header = fits.open(dat['fits_filename'],
-                               ignore_missing_end=True)[0].header
-
-            # turn relevant header keys into floats
-            # astropy.io.fits bug
+            header = fits.open(fits_fn, ignore_missing_end=True)[0].header
             for key, val in list(header.items()):
-                if 'CD1_' in key or 'CD2_' in key or \
-                   'CRVAL' in key or 'CRPIX' in key or \
-                   'EQUINOX' in key:
+                if 'CD1_' in key or 'CD2_' in key or 'CRVAL' in key or 'CRPIX' in key or 'EQUINOX' in key:
                     header[key] = float(val)
 
-            plt.figure(figsize=(self.conf.image_size_lg_in,
-                                self.conf.image_size_lg_in))
-            # create fake image to ensure image dimensions and margins
-            img = plt.imshow(np.ones((self.conf.image_size_lg_px,
-                                      self.conf.image_size_lg_px))*np.nan,
-                             origin='lower')
-
-            # remove axes
+            # canvas matches resized dimensions
+            plt.figure(figsize=(self.conf.image_size_lg_in, self.conf.image_size_lg_in))
+            ax = plt.imshow(np.ones((new_h, new_w)) * np.nan, origin='lower')
             plt.axis('off')
-            img.axes.get_xaxis().set_visible(False)
-            img.axes.get_yaxis().set_visible(False)
+            ax.axes.set_xlim(0, new_w)
+            ax.axes.set_ylim(0, new_h)
 
-            # plot reference sources
+            # project and scale star positions
             if refcat.shape[0] > 0:
                 try:
-                    w = wcs.WCS(header)
-                    world_coo = np.array(list(zip(refcat['ra_deg'],
-                                                  refcat['dec_deg'])))
-                    img_coo = w.wcs_world2pix(world_coo, True)
-                    img_coo = [c for c in img_coo
-                               if (c[0] > 0 and c[1] > 0 and
-                                   c[0] < header[obsparam['extent'][0]] and
-                                   c[1] < header[obsparam['extent'][1]])]
-                    plt.scatter([c[0]*resize_factor for c in img_coo],
-                                [c[1]*resize_factor for c in img_coo],
+                    wcs_obj = wcs.WCS(header)
+                    world_coo = np.column_stack((refcat['ra_deg'], refcat['dec_deg']))
+                    img_coo = wcs_obj.wcs_world2pix(world_coo, 1)  # 1-based to match FITS/WCS usage
+                    # keep points within original frame
+                    in_frame = ((img_coo[:, 0] > 0) & (img_coo[:, 1] > 0) &
+                                (img_coo[:, 0] < header[obsparam['extent'][0]]) &
+                                (img_coo[:, 1] < header[obsparam['extent'][1]]))
+                    img_coo = img_coo[in_frame]
+                    # uniform scaling
+                    plt.scatter(img_coo[:, 0] * resize_factor,
+                                img_coo[:, 1] * resize_factor ,
                                 s=5, marker='o', edgecolors='red',
                                 linewidth=self.conf.overlay_lg_linewidth,
                                 facecolor='none')
@@ -520,9 +497,10 @@ class Registration_Diagnostics(Diagnostics_Html):
                                   'most likely unknown distortion '
                                   'parameters.')
 
-            plt.savefig(framefilename, bbox_inches='tight',
-                        pad_inches=0, dpi=self.conf.image_dpi,
-                        transparent=True)
+            framefilename = os.path.join(self.conf.diagnostics_path, '.diagnostics',
+                                         f"{dat['fits_filename']}_astrometry.{self.conf.image_file_format}")
+            plt.savefig(framefilename, bbox_inches='tight', pad_inches=0,
+                        dpi=self.conf.image_dpi, transparent=True)
             logging.info(('registration map image file for image {:s} '
                           'written to {:s}').format(
                               filename, os.path.abspath(framefilename)))
