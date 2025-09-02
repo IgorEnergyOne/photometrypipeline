@@ -542,7 +542,7 @@ if __name__ == '__main__':
                         help='fraction (0-1) of the FOV from the center to use for the photometric calibration',
                         default=0.9)
     parser.add_argument('-exclude_edge',
-                        help='exclude % of the image staring from the edge from processing (0-50)',
+                        help='exclude percentage of the image staring from the edge from processing (0-50)',
                         default=0)
     parser.add_argument('-nodeblending',
                         help='deactivate deblending in source extraction',
