@@ -484,8 +484,12 @@ def target_photometry(filenames, telescope, aperture: str = None):
         from photutils.background import Background2D, MedianBackground
         sigma_clip = SigmaClip(sigma=3.0)
         bkg_estimator = MedianBackground()
-        bkg = Background2D(patch_data, (patch*2, patch*2), filter_size=(3, 3),
-                           sigma_clip=sigma_clip, bkg_estimator=bkg_estimator)
+        try:
+            bkg = Background2D(patch_data, (patch*2, patch*2), filter_size=(3, 3),
+                               sigma_clip=sigma_clip, bkg_estimator=bkg_estimator)
+        except ValueError:
+            bkg = Background2D(patch_data, (patch*2, patch*2), filter_size=(3, 3),
+                               sigma_clip=sigma_clip, bkg_estimator=bkg_estimator, exclude_percentile=50)
         bkg_value = bkg.background
 
         # create an aperture
