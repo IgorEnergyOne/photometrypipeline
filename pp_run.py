@@ -67,7 +67,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                      fixed_aprad, manual_aperture, source_tolerance, solar,
-                     rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental):
+                     rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, exclude_edge):
     """
     wrapper to run the photometry pipeline
     """
@@ -280,6 +280,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                                 nodeblending=nodeblending,
                                                 phot_mode=phot_mode,
                                                 max_rad=max_rad,
+                                                exclude_edge=exclude_edge,
                                                 display=True,
                                                 diagnostics=True)
             if len(registration['badfits']) == len(filenames):
@@ -334,6 +335,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                     telescope, obsparam, display=True,
                                     nodeblending=nodeblending,
                                     phot_mode=phot_mode,
+                                    exclude_edge=exclude_edge,
                                     diagnostics=True)
     # data went through curve-of-growth analysis
     if phot is not None:
@@ -539,6 +541,9 @@ if __name__ == '__main__':
     parser.add_argument('-calib_fov',
                         help='fraction (0-1) of the FOV from the center to use for the photometric calibration',
                         default=0.9)
+    parser.add_argument('-exclude_edge',
+                        help='exclude % of the image staring from the edge from processing (0-50)',
+                        default=0)
     parser.add_argument('-nodeblending',
                         help='deactivate deblending in source extraction',
                         action="store_true", default=False)
@@ -573,6 +578,7 @@ if __name__ == '__main__':
         phot_mode = args.photmode
         rewrite_radec = args.rewrite_radec
         calib_fov = float(args.calib_fov)
+        exclude_edge = float(args.exclude_edge)
         nodeblending = args.nodeblending
         report_instrumental = args.instrumental
         filenames = sorted(args.images)
@@ -673,7 +679,7 @@ if __name__ == '__main__':
 
                 run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                  fixed_aprad, man_aperture, source_tolerance, solar,
-                                 rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental)
+                                 rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, exclude_edge)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
@@ -682,5 +688,5 @@ if __name__ == '__main__':
         # call run_the_pipeline only on filenames
         run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                          fixed_aprad, man_aperture, source_tolerance, solar,
-                         rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental)
+                         rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, exclude_edge)
         pass

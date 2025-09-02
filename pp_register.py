@@ -54,7 +54,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 
 def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, aprad,
-             mancat, obsparam, source_tolerance, nodeblending, phot_mode='APER', max_rad=10.0,
+             mancat, obsparam, source_tolerance, nodeblending, exclude_edge=0, phot_mode='APER', max_rad=10.0,
              display=False, diagnostics=False):
     """
     astrometric calibration of the input images using SCAMP
@@ -108,7 +108,8 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
                              'global_background': False,
                              'nodeblending': nodeblending,
                              'photmode': phot_mode,
-                             'quiet': False}
+                             'quiet': False,
+                             'exclude_edge': exclude_edge}
 
         extraction = pp_extract.extract_multiframe(filenames,
                                                    extractparameters)

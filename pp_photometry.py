@@ -53,7 +53,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 
 def curve_of_growth_analysis(filenames, parameters,
-                             nodeblending=False, phot_mode='APER', display=False,
+                             nodeblending=False, phot_mode='APER', exclude_edge=0, display=False,
                              diagnostics=False):
 
     output = {}
@@ -83,6 +83,7 @@ def curve_of_growth_analysis(filenames, parameters,
                          'aprad': aprads, 'telescope': parameters['telescope'],
                          'nodeblending': nodeblending,
                          'photmode': phot_mode,
+                         'exclude_edge': exclude_edge,
                          'quiet': False}
 
     extraction = pp_extract.extract_multiframe(filenames, extractparameters)
@@ -344,7 +345,7 @@ def curve_of_growth_analysis(filenames, parameters,
 
 def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
                manobjectname, background_only, target_only,
-               telescope, obsparam, nodeblending=False, phot_mode='APER',
+               telescope, obsparam, nodeblending=False, exclude_edge=0, phot_mode='APER',
                display=False,
                diagnostics=False):
     """
@@ -361,6 +362,7 @@ def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
                'obsparam': obsparam,
                'telescope': telescope,
                'nodeblending': nodeblending,
+               'exclude_edge': exclude_edge,
                'quiet': not display}
 
     # do curve-of-growth analysis if aprad not provided
