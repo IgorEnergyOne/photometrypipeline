@@ -53,7 +53,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 
 def curve_of_growth_analysis(filenames, parameters,
-                             nodeblending=False, phot_mode='APER', exclude_edge=0, display=False,
+                             nodeblending=False, phot_mode='APER', crop_edge=(0,0), display=False,
                              diagnostics=False):
 
     output = {}
@@ -83,7 +83,7 @@ def curve_of_growth_analysis(filenames, parameters,
                          'aprad': aprads, 'telescope': parameters['telescope'],
                          'nodeblending': nodeblending,
                          'photmode': phot_mode,
-                         'exclude_edge': exclude_edge,
+                         'crop_edge': crop_edge,
                          'quiet': False}
 
     extraction = pp_extract.extract_multiframe(filenames, extractparameters)
@@ -345,7 +345,7 @@ def curve_of_growth_analysis(filenames, parameters,
 
 def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
                manobjectname, background_only, target_only,
-               telescope, obsparam, nodeblending=False, exclude_edge=0, phot_mode='APER',
+               telescope, obsparam, nodeblending=False, crop_edge=(0, 0), phot_mode='APER',
                display=False,
                diagnostics=False):
     """
@@ -362,7 +362,7 @@ def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
                'obsparam': obsparam,
                'telescope': telescope,
                'nodeblending': nodeblending,
-               'exclude_edge': exclude_edge,
+               'crop_edge': crop_edge,
                'quiet': not display}
 
     # do curve-of-growth analysis if aprad not provided
@@ -487,6 +487,8 @@ def target_photometry(filenames, telescope, aperture: str = None):
         try:
             bkg = Background2D(patch_data, (patch*2, patch*2), filter_size=(3, 3),
                                sigma_clip=sigma_clip, bkg_estimator=bkg_estimator)
+
+        # if getting background estimation error
         except ValueError:
             bkg = Background2D(patch_data, (patch*2, patch*2), filter_size=(3, 3),
                                sigma_clip=sigma_clip, bkg_estimator=bkg_estimator, exclude_percentile=50)

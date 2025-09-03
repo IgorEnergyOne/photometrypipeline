@@ -67,7 +67,7 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 
 def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                      fixed_aprad, manual_aperture, source_tolerance, solar,
-                     rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, exclude_edge):
+                     rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, crop_edge):
     """
     wrapper to run the photometry pipeline
     """
@@ -280,7 +280,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                                 nodeblending=nodeblending,
                                                 phot_mode=phot_mode,
                                                 max_rad=max_rad,
-                                                exclude_edge=exclude_edge,
+                                                crop_edge=crop_edge,
                                                 display=True,
                                                 diagnostics=True)
             if len(registration['badfits']) == len(filenames):
@@ -335,7 +335,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                     telescope, obsparam, display=True,
                                     nodeblending=nodeblending,
                                     phot_mode=phot_mode,
-                                    exclude_edge=exclude_edge,
+                                    crop_edge=crop_edge,
                                     diagnostics=True)
     # data went through curve-of-growth analysis
     if phot is not None:
@@ -541,9 +541,11 @@ if __name__ == '__main__':
     parser.add_argument('-calib_fov',
                         help='fraction (0-1) of the FOV from the center to use for the photometric calibration',
                         default=0.9)
-    parser.add_argument('-exclude_edge',
-                        help='exclude percentage of the image staring from the edge from processing (0-50)',
-                        default=0)
+    parser.add_argument('-crop_edge',
+                        help='x, y to crop from the image. '
+                             'If < 1 - percentage of the image to crop from processing (x, y)'
+                             'if > 1, then the number of pixels to crop (x, y)',
+                        default=(0, 0))
     parser.add_argument('-nodeblending',
                         help='deactivate deblending in source extraction',
                         action="store_true", default=False)
@@ -578,7 +580,14 @@ if __name__ == '__main__':
         phot_mode = args.photmode
         rewrite_radec = args.rewrite_radec
         calib_fov = float(args.calib_fov)
-        exclude_edge = float(args.exclude_edge)
+        # split crop_edge into tuple
+        if isinstance(args.crop_edge, str):
+            try:
+                crop_edge = tuple(float(x) for x in args.crop_edge.split(','))
+                if len(crop_edge) != 2:
+                    raise ValueError
+            except ValueError:
+                raise ValueError('crop_edge must be a tuple of two values, e.g., 0.1,0.1 or 10,10')
         nodeblending = args.nodeblending
         report_instrumental = args.instrumental
         filenames = sorted(args.images)
@@ -632,6 +641,7 @@ if __name__ == '__main__':
         photo_target = config['pp_photometry'].get('target_only')
         phot_mode = config['pp_photometry'].get('photmode')
         photo_fov = config['pp_photometry'].get('fov')
+        crop_edge = (config['pp_photometry'].get('crop_x', 0), config['pp_photometry'].get('crop_y', 0))
         nodeblending = config['pp_photometry'].get('deblending')
         report_instrumental = config['pp_photometry'].get('instrumental')
         # ========= pp_calibrate ===============================
@@ -679,7 +689,7 @@ if __name__ == '__main__':
 
                 run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                  fixed_aprad, man_aperture, source_tolerance, solar,
-                                 rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, exclude_edge)
+                                 rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, crop_edge)
                 os.chdir(_masterroot_directory)
             else:
                 print('\n NOTHING TO DO IN %s' % root)
@@ -688,5 +698,5 @@ if __name__ == '__main__':
         # call run_the_pipeline only on filenames
         run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                          fixed_aprad, man_aperture, source_tolerance, solar,
-                         rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, exclude_edge)
+                         rerun_registration, asteroids, keep_wcs, phot_mode, rewrite_radec, nodeblending, report_instrumental, crop_edge)
         pass

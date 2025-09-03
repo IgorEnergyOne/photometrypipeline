@@ -92,7 +92,8 @@ def _find_image_hdu(hdul, preferred=None):
 def make_edge_weight(image_fits, x_pct=5.0, y_pct=None, hdu=None, min_px=0):
     """
     Build a weight map with edges masked.
-    x_pct, y_pct are per-side percentages (0–<50). y_pct defaults to x_pct.
+    x_pct, y_pct: if value is smaller than 1 are per-side percentages (0–<50).
+                  If value is 1 or larger, it is the number of pixels to mask on each side.
     min_px guarantees at least this many pixels are masked on each side.
     """
     with fits.open(image_fits, memmap=False) as hdul:
@@ -109,12 +110,17 @@ def make_edge_weight(image_fits, x_pct=5.0, y_pct=None, hdu=None, min_px=0):
     if y_pct is None:
         y_pct = x_pct
 
-    if not (0 <= x_pct < 50) or not (0 <= y_pct < 50):
-        raise ValueError("x_pct and y_pct must be in [0, 50). Values ≥50 would remove the whole image.")
 
-    mx = max(int(round(nx * (x_pct / 100.0))), int(min_px))
-    my = max(int(round(ny * (y_pct / 100.0))), int(min_px))
+    # if smaller than 1, interpret as percentage
+    if x_pct <= 0.5 or y_pct < 0.5:
+        mx = max(int(round(nx * x_pct)), int(min_px))
+        my = max(int(round(ny * y_pct)), int(min_px))
+    # if 1 or larger, interpret as number of pixels
+    else:
+        mx = max(int(round(x_pct)), int(min_px))
+        my = max(int(round(y_pct)), int(min_px))
 
+    logging.info(f'Crop edge: x={my} px, y={my} px')
     weight = np.ones((ny, nx), dtype=np.float32)
     if my > 0:
         weight[:my, :]  = 0.0
@@ -122,7 +128,6 @@ def make_edge_weight(image_fits, x_pct=5.0, y_pct=None, hdu=None, min_px=0):
     if mx > 0:
         weight[:, :mx]  = 0.0
         weight[:, -mx:] = 0.0
-    print(weight.shape, weight.dtype, weight.min(), weight.max())
 
     hdr_out = hdr.copy()
     hdr_out['HISTORY'] = f'Edge mask: left/right {mx}px (~{x_pct:.3g}%), top/bottom {my}px (~{y_pct:.3g}%)'
@@ -324,9 +329,10 @@ def extract_multiframe(filenames, parameters):
     binning = get_binning(hdu[0].header, parameters['obsparam'])
     bin_string = '%d,%d' % (binning[0], binning[1])
 
-    if parameters['exclude_edge'] > 0:
-        logging.info(f'Exclude edge: {parameters["exclude_edge"]} %')
-        weightmap = make_edge_weight(filenames[0], x_pct=parameters['exclude_edge'], min_px=0)
+    crop_x, crop_y = parameters['crop_edge']
+    # check if cropping of edges is requested
+    if (crop_x > 0) or (crop_y > 0):
+        weightmap = make_edge_weight(filenames[0], x_pct=crop_x, y_pct=crop_y, min_px=0)
         parameters['mask_file'] = weightmap
 
     if bin_string in parameters['obsparam']['mask_file']:
