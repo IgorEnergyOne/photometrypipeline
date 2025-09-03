@@ -545,7 +545,7 @@ if __name__ == '__main__':
                         help='x, y to crop from the image. '
                              'If < 1 - percentage of the image to crop from processing (x, y)'
                              'if > 1, then the number of pixels to crop (x, y)',
-                        default=(0, 0))
+                        default='0,0')
     parser.add_argument('-nodeblending',
                         help='deactivate deblending in source extraction',
                         action="store_true", default=False)
