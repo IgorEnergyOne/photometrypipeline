@@ -118,10 +118,10 @@ class ConfDiagnostics(Conf):
 
     # target thumbnail overlay properties
     thumb_scalelength = 10  # length of pixelscale indicators in arcsec
-    thumb_fontsize = 8  # fontsize for text in thumbnail overlay
+    thumb_fontsize = 6  # fontsize for text in thumbnail overlay
     thumb_linewidth = 0.3  # linewidth for lines on overlay
     thumb_predicted_pos_marker = 'x'  # marker style for predicted position
-    thumb_predicted_pos_size = 20  # marker size for predicted position
+    thumb_predicted_pos_size = 16  # marker size for predicted position
     thumb_predicted_pos_color = 'cornflowerblue'  # marker color
 
 

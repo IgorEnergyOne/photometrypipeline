@@ -1565,7 +1565,9 @@ class Distill_Diagnostics(Diagnostics_Html):
         imagemagick_cmd = cmd
 
 
+
         for target in data['targetnames']:
+
             gif_filename = '{:s}.gif'.format(
                 target.translate(_pp_conf.target2filename))
             logging.info('converting images to gif: {:s}'.format(
@@ -1573,16 +1575,44 @@ class Distill_Diagnostics(Diagnostics_Html):
             root = os.getcwd()
             os.chdir(os.path.join(self.conf.diagnostics_path,
                                   '.diagnostics'))
+
+            # overlay thumbnails with aperture/position info
+            thumb_name = ('{:s}*thumb.{:s}'.format(target.translate(
+                _pp_conf.target2filename),
+                self.conf.image_file_format))
+            overlay_name = ('{:s}*thumb_overlay.{:s}'.format(target.translate(
+                _pp_conf.target2filename),
+                self.conf.image_file_format))
+            # get list of files that match the pattern
+            import glob
+            thumbs = sorted(glob.glob(thumb_name))
+            overlays = sorted(glob.glob(overlay_name))
+            # create filenames for temporary overlayed images
+            # (to be deleted after gif creation)
+            tmps = [('{:s}_tmp.{:s}'.format(
+                os.path.basename(t)[:t.find('.'+self.conf.image_file_format)],
+                self.conf.image_file_format)) for t in thumbs]
+
             try:
+                for overlay, thumb, tmp_name in zip(overlays, thumbs, tmps):
+                    overlay = subprocess.Popen(
+                        [f'{imagemagick_cmd}', 'composite', '-gravity', 'center',
+                         ('{:s}'.format(overlay)),
+                         ('{:s}'.format(thumb)),
+                         ('{:s}'.format(tmp_name))])
+                    overlay.wait()
                 convert = subprocess.Popen(
                     [f'{imagemagick_cmd}', '-delay', '50',
-                     ('{:s}*thumb.{:s}'.format(target.translate(
+                     ('{:s}*tmp.{:s}'.format(target.translate(
                          _pp_conf.target2filename),
                          self.conf.image_file_format)),
                      '-loop', '0',
                      ('{:s}'.format(gif_filename))])
 
                 convert.wait()
+                # remove temporary files
+                for tmp_name in tmps:
+                    os.remove(tmp_name)
             except:
                 logging.warning('could not produce gif animation for '
                                 + 'target {:s}'.format(target))
