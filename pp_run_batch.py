@@ -19,6 +19,8 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
     """
     with open(fname) as f:
         lines = f.readlines()
+        # remove empty lines
+        lines = [line for line in lines if line.strip()]
     try:
         paths = []
         if skip_pipeline:
