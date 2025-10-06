@@ -69,8 +69,8 @@ AC32_param = {
 
     # scamp settings
     'scamp-config-file': rootpath + '/setup/AC32.scamp',
-    'reg_max_mag': 18.5,  # 19
-    'reg_search_radius': 1.0,  # deg
+    'reg_max_mag': 16.5,  # 19
+    'reg_search_radius': 0.5,  # deg
     'source_tolerance': 'high',
 
     # swarp settings
@@ -818,6 +818,7 @@ rozhen_2000 = {
 
     # source extractor settings
     'source_minarea': 15,  # default sextractor source minimum N_pixels
+    #'source_maxarea': 30,
     'source_snr': 5,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
     'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
@@ -840,8 +841,8 @@ rozhen_2000 = {
     'swarp-config-file': rootpath + '/setup/rozhen2000.swarp',
 
     # default catalog settings
-    'astrometry_catalogs': ['SDSS-R9'],
-    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'GAIA3', 'APASS9', '2MASS']
 }
 
 # Kitab Boris Satovsky
@@ -1087,7 +1088,7 @@ Prompt7_param = {
 
     # scamp settings
     'scamp-config-file': rootpath + '/setup/Prompt7.scamp',
-    'reg_max_mag': 19.0,
+    'reg_max_mag': 16.0,
     'reg_search_radius': 0.5,  # deg
     'source_tolerance': 'high',
 
@@ -1103,6 +1104,78 @@ Prompt7_param = {
     'astrometry_catalogs': ['GAIA3'],
     'photometry_catalogs': ['GAIA3','PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
+
+
+Prompt8_param = {
+    'telescope_instrument': 'FLI',  # telescope/instrument name
+    'telescope_keyword': 'Prompt8',  # telescope/instrument keyword
+    'observatory_code': '807',  # MPC observatory code
+    'secpix': (0.59, 0.59),  # pixel size (arcsec) before binning
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJRA',  # telescope pointing, RA
+    'dec': 'OBJDEC',  # telescope pointin, Dec
+    'radec_separator': ':',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    #'date_keyword': 'DATE|TIME-OBS',  # obs date/time
+   'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'JD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Lum': 'R',
+                            'uprime': 'u',
+                            'gprime': 'g',
+                            'rprime': 'r',
+                            'iprime': 'i',
+                            'zprime': 'z',
+                            },
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 10,  # default sextractor source minimum N_pixels
+#    'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+
+    'sex-config-file': rootpath + '/setup/Prompt8.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/Prompt8.scamp',
+    'reg_max_mag': 16.0,
+    'reg_search_radius': 0.5,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    # 'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+    #                 'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+    #                'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    #    'swarp-config-file': rootpath+'/setup/vatt4k.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3','PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
 
 TianShan_param = {
     'telescope_instrument': 'FLI',  # telescope/instrument name
@@ -5386,6 +5459,8 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'BART 254/1600 mm': 'BART254',
                           'Prompt6': 'Prompt6',
                           'Prompt7': 'Prompt7',
+                          'Prompt8': 'Prompt8',
+                          'Prompt8 ': 'Prompt8',
                           # 'FLI': 'Prompt7',
 
                           'FLI': 'TShAO-1m',
@@ -5491,6 +5566,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'BART254': BART254_param,
                         'Prompt6': Prompt6_param,
                         'Prompt7': Prompt7_param,
+                        'Prompt8': Prompt8_param,
                         'TShAO-1m': TianShan_param,
                         'DCTLMI': dctlmi_param,
                         'ARC35ARCTIC': arc35arctic_param,
