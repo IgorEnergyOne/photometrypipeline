@@ -361,6 +361,12 @@ class Prepare_Diagnostics(Diagnostics_Html):
         raw_filtername = refheader[obsparam['filter']]
         if header_update is not None:
             translated_filtername = header_update.get('man_filter', None)
+            if translated_filtername is None:
+                try:
+                    translated_filtername = obsparam['filter_translations'][
+                        refheader[obsparam['filter']]]
+                except KeyError:
+                    translated_filtername = None
         else:
             translated_filtername = obsparam['filter_translations'][
                 refheader[obsparam['filter']]]
@@ -1595,22 +1601,12 @@ class Distill_Diagnostics(Diagnostics_Html):
 
             try:
                 for overlay, thumb, tmp_name in zip(overlays, thumbs, tmps):
-                    # for image magick v6
-                    if imagemagick_cmd == 'convert':
-                        overlay = subprocess.Popen(
-                            ['composite',
-                             ('{:s}'.format(overlay)),
-                             ('{:s}'.format(thumb)),
-                             ('{:s}'.format(tmp_name))])
-                        overlay.wait()
-                    # for image magick v7
-                    else:
-                        overlay = subprocess.Popen(
-                            [f'{imagemagick_cmd}', 'composite', '-gravity', 'center',
-                             ('{:s}'.format(overlay)),
-                             ('{:s}'.format(thumb)),
-                             ('{:s}'.format(tmp_name))])
-                        overlay.wait()
+                    overlay = subprocess.Popen(
+                        [f'{imagemagick_cmd}', '-composite', '-gravity', 'center',
+                         ('{:s}'.format(thumb)),
+                         ('{:s}'.format(overlay)),
+                         ('{:s}'.format(tmp_name))])
+                    overlay.wait()
                 convert = subprocess.Popen(
                     [f'{imagemagick_cmd}', '-delay', '50',
                      ('{:s}*tmp.{:s}'.format(target.translate(
@@ -1623,9 +1619,9 @@ class Distill_Diagnostics(Diagnostics_Html):
                 # remove temporary files
                 for tmp_name in tmps:
                     os.remove(tmp_name)
-            except:
+            except Exception as e:
                 logging.warning('could not produce gif animation for '
-                                + 'target {:s}'.format(target))
+                                + 'target {:s}: {}'.format(target, e))
             data['gifs'][target] = os.path.join(
                 self.conf.diagnostics_path, '.diagnostics', gif_filename)
             os.chdir(root)
