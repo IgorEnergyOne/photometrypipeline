@@ -12,7 +12,7 @@ Key additions in this refactor:
 
 Hotkeys:
   q – quit; r – toggle rejection; a – cancel selection
-  S – show image for selected point
+  S – show/hide image for selected point
   ←/→ – move selection point; ↑/↓ – nudge offset for active scope
   z/x – −/+ rotation period (when in rotation phase mode)
 
@@ -42,7 +42,6 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from tkinter import filedialog, messagebox, simpledialog, colorchooser
 
-### NEW ###
 # Import Pillow for image handling. Add a check in case it's not installed.
 try:
     from PIL import Image, ImageTk
@@ -51,8 +50,6 @@ except ImportError:
     ImageTk = None
     print("Warning: Pillow library not found. Image display feature will not work.")
     print("Please install it using: pip install Pillow")
-### END NEW ###
-
 
 # ────────────────────────────── Globals & style ─────────────────────────────
 # Global debug flag
@@ -63,12 +60,12 @@ DEFAULT_COLORS = [
     "brown", "pink", "gray", "cyan"
 ]
 BAND_COLORS = {"U": "indigo", "B": "royalblue", "V": "limegreen", "R": '#7c3150', "I": "dimgray",
-               "g": "#2ca02c", "r": "#d62728", "i": "#9467bd", "z": "#8c564b"}
+               "g": "#348034", "r": "#944d4d", "i": "#59327d", "z": "#753427"}
 
 TIME_STEP = 0.02  # hours
 DEFAULT_PERIOD = 4.0  # hours
-WINDOW_WIDTH = 1400 # px
-WINDOW_HEIGHT = 720 # pix
+WINDOW_WIDTH = 1400  # px
+WINDOW_HEIGHT = 720  # pix
 
 SELECTION_MARKER = {'markersize': 5, 'zorder': 20, 'form': 'o', 'color': 'red'}
 
@@ -458,12 +455,27 @@ class LightCurvePlot:
                 # choose Y array by mode (which magnitude column to plot)
                 if mode == 'target':
                     Yfull = arr.get('mag')
+                    # check if not empty (give the message)
+                    if Yfull is None or not Yfull.size:
+                        messagebox.showwarning("No valid target magnitudes",
+                                               f"No valid 'mag' values to plot.")
+                        continue
                 elif mode == 'instrumental':
                     Yfull = arr.get('inst_mag')
+                    if Yfull is None or not Yfull.size:
+                        messagebox.showwarning("No valid target magnitudes",
+                                               f"No valid instrumental (inst_mag) values to plot.")
+                        continue
                 elif mode == 'relative':
                     Yfull = arr.get('rel_mag')
+                    if Yfull is None or not Yfull.size:
+                        messagebox.showwarning("No valid relative magnitudes",
+                                               f"No valid relative (rel_mag) values to plot.")
                 else:  # control
                     Yfull = arr.get('mag_control')
+                    if Yfull is None or not Yfull.size:
+                        messagebox.showwarning("No valid magnitudes for control star",
+                                               f"No valid data (mag_control) for control star to plot.")
 
                 # choose Yerr array based on the selected errorbar type regardless of mode
                 # (previously Yerr was tied to the current mode which caused missing/incorrect
@@ -877,14 +889,14 @@ class LightCurvePlot:
                              lc_dict: Dict[str, LightCurveData],
                              offsets: Dict[str, Dict[str, float]],
                              mode: str, time_mode: str,
-                             selected_bands: Set[str], show_rejected: bool) \
-            -> Tuple[Optional[str], Optional[int], Optional[str]]:
+                             selected_bands: Set[str], show_rejected: bool) -> Tuple[
+        Optional[str], Optional[int], Optional[str]]:
         pts = []  # (x_disp, y_disp, alias, df_idx, band)
         trans = self.ax.transData
         for alias, lc in lc_dict.items():
             if lc.df is None or lc.df.empty:
                 continue
-            df = lc.df
+            df = lc.df;
             arr = lc.arr
             jd = arr.get('jd')
             if jd is None or not jd.size:
@@ -970,10 +982,8 @@ class LightCurveGUI:
         self.current_point_index: Optional[int] = None
         self.current_point_band: Optional[str] = None
 
-        ### NEW ###
         # Add a reference for the image window
         self.image_window: Optional[tk.Toplevel] = None
-        ### END NEW ###
 
         # View state
         self.mode = 'target'  # 'target' | 'instrumental' | 'control' | 'relative'
@@ -1018,10 +1028,8 @@ class LightCurveGUI:
         self.root.bind("d", lambda e: self.adjust_lc_offset(+self._get_offset_step()))
         self.root.bind("z", lambda e: self.adjust_rotation_period(-1))
         self.root.bind("x", lambda e: self.adjust_rotation_period(+1))
-        ### NEW ###
         # Bind Shift+S to show the image for the selected point
         self.root.bind("<S>", self.show_asteroid_image)
-        ### END NEW ###
 
     # ——— UI construction ———
     # Replace the top layout inside _build_ui()
@@ -1273,6 +1281,7 @@ class LightCurveGUI:
         self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=True)
         NavigationToolbar2Tk(self.canvas, plot_frame).update()
         self.plot = LightCurvePlot(self.fig, self.ax, self.canvas)
+        self.plot.selection = {'alias': None, 'index': None}
         self.canvas.mpl_connect("button_press_event", self.on_click)
         # allow clicking on the title/axis labels to edit them
         try:
@@ -1309,11 +1318,10 @@ class LightCurveGUI:
         self.rotation_step_var = ttk.DoubleVar(value=TIME_STEP)
         ttk.Entry(rot, textvariable=self.rotation_step_var, width=6).pack(side=LEFT)
 
-        ### NEW ###
+        ### MODIFIED ###
         # Updated hotkey label to include 'S' for showing the image
         self.hotkeys_label = ttk.Label(bottom,
-                                       text="F1 - help; q - quit; r - reject; a - cancel sel; S - show image; <-/-> - move; z/x - period; s/d - offset")
-        ### END NEW ###
+                                       text="F1-help; q-quit; r-reject; a-cancel sel; S-show/hide image; ←/→-move; z/x-period; s/d-offset")
         self.hotkeys_label.pack(fill=X, padx=5, pady=3)
         self.master_frame.bind("<Configure>", lambda e: self.hotkeys_label.config(wraplength=e.width - 200))
         bottom.pack(side=BOTTOM, fill=X)
@@ -1525,7 +1533,7 @@ class LightCurveGUI:
             sw_w = 28
             sw_h = 18
             for i, c in enumerate(colors):
-                r = i // cols
+                r = i // cols;
                 col = i % cols
                 sw = tk.Canvas(frm, width=sw_w, height=sw_h, highlightthickness=1, bd=0)
                 sw.grid(row=r, column=col, padx=3, pady=3)
@@ -1543,13 +1551,15 @@ class LightCurveGUI:
             pass
 
     def show_help(self):
+        ### MODIFIED ###
+        # Updated help text with 'S' key functionality
         msg = (
             "Hotkeys & Controls\n"
             "--------------------\n"
             "q              Quit application\n"
             "r              Toggle rejection for selected point\n"
             "a              Cancel/clear selection\n"
-            "S              Show image for selected point\n"
+            "S              Show / Hide image for selected point\n"
             "<- / ->        Move selected point left/right\n"
             "s / d           Change vertical offset\n"
             "z / x          Decrease / Increase rotation period\n"
@@ -1867,8 +1877,8 @@ class LightCurveGUI:
 
     def _sync_offset_var_to_scope(self):
         if not self.current_lc_alias:
-            self.offset_var.set(0.0);
-            self.offset_entry_var.set(f"{0.0:.3f}");
+            self.offset_var.set(0.0)
+            self.offset_entry_var.set(f"{0.0:.3f}")
             return
         band_key = self._active_offset_band()
         off = self.lc_offsets.get(self.current_lc_alias, {}).get(band_key, 0.0)
@@ -1886,25 +1896,6 @@ class LightCurveGUI:
             self.offset_entry_var.set(f"{v:.4f}")
         except Exception:
             pass
-
-    # point navigation within the current LC
-    def move_point(self, direction: int):
-        if self.current_lc_alias is None:
-            return
-        lc = self.lightcurves.get(self.current_lc_alias)
-        if lc is None or lc.df is None:
-            return
-        n = len(lc.df)
-        if n == 0:
-            return
-        if self.current_point_index is None:
-            self.current_point_index = 0 if direction > 0 else n - 1
-        else:
-            self.current_point_index = max(0, min(n - 1, self.current_point_index + direction))
-        self.plot.selection['alias'] = self.current_lc_alias
-        self.plot.selection['index'] = self.current_point_index
-        self.request_plot_update()
-
 
     # ——— State setters ——
     def set_mode(self):
@@ -2023,32 +2014,25 @@ class LightCurveGUI:
             self.lc_offsets,
             self.mode,
             self.time_mode,
-            # pass the same filters and flag your plot uses
             getattr(self, "selected_bands", set()) if isinstance(getattr(self, "selected_bands", None), set) else set(),
             self.show_rejected,
         )
 
-        # Nothing close enough? clear selection marker
         if alias is None or idx is None:
             self.plot.selection = {'alias': None, 'index': None}
             self.current_point_index = None
             self.current_point_band = None
-            self.request_plot_update()
-            return
+        else:
+            self.current_lc_alias = alias
+            self.current_point_index = idx
+            self.current_point_band = b
+            if self.offset_scope_var.get() == 'auto':
+                self.offset_scope_combo.set(b if b else 'ALL')
+            self._sync_offset_var_to_scope()
+            self.plot.selection = {'alias': alias, 'index': idx}
 
-        # Record selection
-        self.current_lc_alias = alias
-        self.current_point_index = idx
-        self.current_point_band = b
-
-        # Snap offset scope to this band if we’re in 'auto'
-        if self.offset_scope_var.get() == 'auto':
-            self.offset_scope_combo.set(b if b else 'ALL')
-        self._sync_offset_var_to_scope()
-
-        # Tell the plot and redraw (selection marker is a persistent artist)
-        self.plot.selection = {'alias': alias, 'index': idx}
         self.request_plot_update()
+        self._update_asteroid_image()  # Update image on any click
 
     def toggle_rejection(self):
         if self.current_lc_alias is None or self.current_point_index is None:
@@ -2057,20 +2041,12 @@ class LightCurveGUI:
         if lc is None or lc.df is None:
             return
         if 0 <= self.current_point_index < len(lc.df):
-            # flip the boolean in the DataFrame and sync the cache
             lc.toggle_rejection(self.current_point_index)
-
-            # keep the same point selected (even if it moved categories)
             self.plot.selection = {'alias': self.current_lc_alias, 'index': self.current_point_index}
-
-            # IMPORTANT: masks in plotted_handles are stale -> force rebuild
             if hasattr(self.plot, "invalidate_layout"):
                 self.plot.invalidate_layout()
             else:
-                # fallback if you didn’t add invalidate_layout()
                 self.plot._layout_signature = None
-
-            # redraw
             self.request_plot_update()
 
     def cancel_selection(self):
@@ -2078,52 +2054,90 @@ class LightCurveGUI:
         self.current_point_index = None
         self.current_point_band = None
         self.request_plot_update()
+        self._update_asteroid_image()  # Update (clear) image window
 
-    ### NEW ###
+    def move_point(self, direction: int):
+        """Move selection to the next/previous point using arrow keys."""
+        if self.current_lc_alias is None:
+            return
+        lc = self.lightcurves.get(self.current_lc_alias)
+        if lc is None or lc.df is None or lc.df.empty:
+            return
+
+        n = len(lc.df)
+        if self.current_point_index is None:
+            # If nothing is selected, select the first or last point
+            self.current_point_index = 0 if direction > 0 else n - 1
+        else:
+            # Move index, clamping between 0 and n-1
+            self.current_point_index = max(0, min(n - 1, self.current_point_index + direction))
+
+        # Update plot selection and redraw
+        self.plot.selection['alias'] = self.current_lc_alias
+        self.plot.selection['index'] = self.current_point_index
+        self.request_plot_update()
+
+        # Update the image if the window is open
+        self._update_asteroid_image()
+
     def show_asteroid_image(self, event=None):
-        """
-        Displays the image corresponding to the selected data point in a new window.
-        Triggered by the <S> key (Shift + s).
-        """
-        # Check if the Pillow library was imported successfully
+        """Toggles the visibility of the asteroid image window."""
+        if hasattr(self, 'image_window') and self.image_window and self.image_window.winfo_exists():
+            self._on_image_window_close()
+            return
+
         if Image is None or ImageTk is None:
             messagebox.showwarning(
                 "Missing Library",
                 "The Pillow library is required to display images.\n"
                 "Please install it using: pip install Pillow",
-                parent=self.root
-            )
+                parent=self.root)
             return
 
-        # 1. Check if a point is selected
+        # dont make window active
+        self.image_window = tk.Toplevel(self.root)
+        self.image_window.transient(self.root)
+        self.image_window.attributes("-topmost", False)  # Do not force focus/topmost
+        self.image_window.protocol("WM_DELETE_WINDOW", self._on_image_window_close)
+
+        self._update_asteroid_image()
+
+    def _on_image_window_close(self):
+        """Cleanly destroys the image window and resets the reference."""
+        if hasattr(self, 'image_window') and self.image_window:
+            self.image_window.destroy()
+            self.image_window = None
+
+    def _update_asteroid_image(self):
+        """Loads and displays the image for the current selection in the existing window."""
+        if not hasattr(self, 'image_window') or not self.image_window or not self.image_window.winfo_exists():
+            return
+
+        # Clear any previous content
+        for widget in self.image_window.winfo_children():
+            widget.destroy()
+
         if self.current_lc_alias is None or self.current_point_index is None:
-            messagebox.showinfo("No Selection", "Please select a point on the plot first.", parent=self.root)
+            ttk.Label(self.image_window, text="No point selected.").pack(padx=20, pady=20)
+            self.image_window.title("Asteroid Image")
             return
 
-        # 2. Get the light curve data and the specific row
         try:
             lc = self.lightcurves[self.current_lc_alias]
             row_data = lc.df.iloc[self.current_point_index]
-        except (KeyError, IndexError) as e:
-            debug_print(f"Could not retrieve data for selected point: {e}")
-            messagebox.showerror("Error", "Could not retrieve data for the selected point.", parent=self.root)
+        except (KeyError, IndexError):
+            ttk.Label(self.image_window, text="Error retrieving data for point.").pack(padx=20, pady=20)
             return
 
-        # 3. Find the image path in the dataframe (assuming 'filename' column)
-        image_path = None
         cwd = os.getcwd()
         if 'filename' in row_data and pd.notna(row_data['filename']):
             image_name = Path(row_data['filename']).stem
             image_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb.png')][0]
             overlay_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb_overlay.png')][0]
-
-        if not image_path:
-            messagebox.showinfo("No Image Path", "The 'filename' column for the selected point is empty or missing.",
-                                parent=self.root)
+        if not image_path or pd.isna(image_path):
+            ttk.Label(self.image_window, text="No image path for this point.").pack(padx=20, pady=20)
             return
 
-        # 4. Construct the full path (handle relative paths)
-        # Assume relative paths are relative to the directory of the CSV file.
         if not os.path.isabs(image_path) and lc.filename:
             csv_directory = os.path.dirname(lc.filename)
             full_path = os.path.join(csv_directory, image_path)
@@ -2133,25 +2147,14 @@ class LightCurveGUI:
             full_path_overlay = overlay_path
 
         if not os.path.exists(full_path):
-            messagebox.showerror("File Not Found", f"Image file not found at the specified path:\n{full_path}",
-                                 parent=self.root)
+            ttk.Label(self.image_window, text=f"Image file not found:\n{os.path.basename(full_path)}",
+                      wraplength=300).pack(padx=20, pady=20)
             return
 
-        # 5. Create or update the image display window
-        # If a window already exists, destroy it to create a new one.
-        if hasattr(self, 'image_window') and self.image_window and self.image_window.winfo_exists():
-            self.image_window.destroy()
-
-        self.image_window = tk.Toplevel(self.root)
-        self.image_window.title(f"Asteroid Image: {os.path.basename(full_path)}")
-        self.image_window.transient(self.root)  # Keep it on top of the main window
-
-        # 6. Load and display the image
         try:
             img = Image.open(full_path)
             overlay = Image.open(full_path_overlay)
             photo = ImageTk.PhotoImage(img)
-
             img_label = ttk.Label(self.image_window, image=photo)
             # This is a classic Tkinter gotcha: you must keep a reference to the PhotoImage
             # object, otherwise it gets garbage collected and the image disappears.
@@ -2164,32 +2167,12 @@ class LightCurveGUI:
                 img_label.configure(image=photo_with_overlay)
                 img_label.image = photo_with_overlay
             img_label.pack(padx=10, pady=10)
-
-            # Center the new window over the main one
-            self.root.update_idletasks()
-            main_x = self.root.winfo_x()
-            main_y = self.root.winfo_y()
-            main_w = self.root.winfo_width()
-            main_h = self.root.winfo_height()
-
-            self.image_window.update_idletasks()
-            win_w = self.image_window.winfo_width()
-            win_h = self.image_window.winfo_height()
-
-            x_pos = main_x + (main_w - win_w) // 2
-            y_pos = main_y + (main_h - win_h) // 2
-            self.image_window.geometry(f"+{x_pos}+{y_pos}")
-
+            self.image_window.title(f"Image: {os.path.basename(full_path)}")
         except Exception as e:
-            self.image_window.destroy()
-            messagebox.showerror("Image Error", f"Failed to load or display the image:\n{e}", parent=self.root)
-
-    ### END NEW ###
+            ttk.Label(self.image_window, text=f"Error loading image:\n{e}", wraplength=300).pack(padx=20, pady=20)
 
     # ——— Rotation period ———
-
     def adjust_rotation_period(self, delta: float):
-        # delta is ±1 from keybinding; multiply by user-defined step
         try:
             step = float(self.rotation_step_var.get())
             if not np.isfinite(step) or step <= 0:
@@ -2207,7 +2190,6 @@ class LightCurveGUI:
         self.update_rotation_period()
 
     def update_rotation_period(self, *_):
-        # Always format the rotation period input to 3 decimals
         try:
             val = float(self.rotation_period_var.get())
         except Exception:
@@ -2219,61 +2201,43 @@ class LightCurveGUI:
         self.request_plot_update()
 
     def on_pick_label(self, event):
-        """Handle pick events on axis labels/title to allow in-place editing.
-
-        The Text artist for xlabel/ylabel/title is made pickable in the plot layer.
-        When the user clicks one, show a simple dialog to accept new text and apply it.
-        """
         try:
             artist = getattr(event, 'artist', None)
-            if artist is None:
-                return
-            # Ensure we have the plot reference
+            if artist is None: return
             plot = getattr(self, 'plot', None)
-            if plot is None:
-                return
-            # determine which label was clicked by identity
+            if plot is None: return
+
             if artist is getattr(plot, 'title_text', None):
                 cur = getattr(plot, 'title', '')
                 new = simpledialog.askstring("Edit Title", "Enter new title:", initialvalue=cur, parent=self.root)
-                if new is None:
-                    return
+                if new is None: return
                 plot.title = new
-                # user explicitly edited title -> disable auto_title
                 plot.auto_title = False
             elif artist is getattr(plot, 'xlabel_text', None):
                 cur = getattr(plot, 'xlabel', '')
                 new = simpledialog.askstring("Edit X label", "Enter new X axis label:", initialvalue=cur,
                                              parent=self.root)
-                if new is None:
-                    return
+                if new is None: return
                 plot.xlabel = new
             elif artist is getattr(plot, 'ylabel_text', None):
                 cur = getattr(plot, 'ylabel', '')
                 new = simpledialog.askstring("Edit Y label", "Enter new Y axis label:", initialvalue=cur,
                                              parent=self.root)
-                if new is None:
-                    return
+                if new is None: return
                 plot.ylabel = new
             else:
                 return
 
-            # force a full rebuild so the new labels are applied and pickers set
             if hasattr(plot, 'invalidate_layout'):
                 plot.invalidate_layout()
             self.request_plot_update()
-            # ensure immediate repaint
-            try:
-                if hasattr(plot, 'blit') and plot.blit is not None:
-                    plot.blit._bg = None
-                    plot.blit.quick_redraw()
-            except Exception:
-                pass
+            if hasattr(plot, 'blit') and plot.blit is not None:
+                plot.blit._bg = None
+                plot.blit.quick_redraw()
         except Exception:
             pass
 
-        # ---------- marker settings dialog ----------
-
+    # ---------- marker settings dialog ----------
     def show_marker_settings(self):
         marker_dialog = ttk.Toplevel()
         marker_dialog.title("Marker and Error Bar Settings")
@@ -2297,8 +2261,7 @@ class LightCurveGUI:
 
         ttk.Label(frame, text="Marker Size:").grid(row=1, column=0, sticky=W, pady=2)
         size_var = ttk.DoubleVar(value=self.plot.marker_size)
-        ttk.Scale(frame, from_=1, to=20, variable=size_var, orient=HORIZONTAL).grid(row=1, column=1, sticky=EW,
-                                                                                    pady=2,
+        ttk.Scale(frame, from_=1, to=20, variable=size_var, orient=HORIZONTAL).grid(row=1, column=1, sticky=EW, pady=2,
                                                                                     padx=5)
         ttk.Entry(frame, textvariable=size_var, width=6).grid(row=1, column=2, sticky=W, pady=2, padx=5)
 
@@ -2310,15 +2273,13 @@ class LightCurveGUI:
 
         ttk.Label(frame, text="Cap Thickness:").grid(row=3, column=0, sticky=W, pady=2)
         capthick_var = ttk.DoubleVar(value=self.plot.errorbar_capthick)
-        ttk.Scale(frame, from_=0.0, to=10, variable=capthick_var, orient=HORIZONTAL).grid(row=3, column=1,
-                                                                                          sticky=EW,
+        ttk.Scale(frame, from_=0.0, to=10, variable=capthick_var, orient=HORIZONTAL).grid(row=3, column=1, sticky=EW,
                                                                                           pady=2, padx=5)
         ttk.Entry(frame, textvariable=capthick_var, width=6).grid(row=3, column=2, sticky=W, pady=2, padx=5)
 
         ttk.Label(frame, text="Error Bar Width:").grid(row=4, column=0, sticky=W, pady=2)
         linewidth_var = ttk.DoubleVar(value=self.plot.errorbar_linewidth)
-        ttk.Scale(frame, from_=0.0, to=10, variable=linewidth_var, orient=HORIZONTAL).grid(row=4, column=1,
-                                                                                           sticky=EW,
+        ttk.Scale(frame, from_=0.0, to=10, variable=linewidth_var, orient=HORIZONTAL).grid(row=4, column=1, sticky=EW,
                                                                                            pady=2, padx=5)
         ttk.Entry(frame, textvariable=linewidth_var, width=6).grid(row=4, column=2, sticky=W, pady=2, padx=5)
 
@@ -2330,9 +2291,7 @@ class LightCurveGUI:
         ax.set_yticks([])
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
-        x_demo = [0.2, 0.5, 0.8]
-        y_demo = [0.5, 0.5, 0.5]
-        yerr_demo = [0.15, 0.15, 0.15]
+        x_demo, y_demo, yerr_demo = [0.2, 0.5, 0.8], [0.5, 0.5, 0.5], [0.15, 0.15, 0.15]
         ax.errorbar(x_demo, y_demo, yerr=yerr_demo, fmt='o', color='blue',
                     markersize=size_var.get(), capsize=capsize_var.get(), capthick=capthick_var.get(),
                     elinewidth=linewidth_var.get())
@@ -2361,18 +2320,16 @@ class LightCurveGUI:
         capthick_var.trace_add('write', update_preview)
         linewidth_var.trace_add('write', update_preview)
 
-        btns = ttk.Frame(frame);
+        btns = ttk.Frame(frame)
         btns.grid(row=5, column=0, columnspan=4, pady=10)
 
         def apply_settings():
-            self.plot.marker_style = next(
-                (m for m, name in self.plot.available_markers if name == marker_var.get()),
-                'o')
+            self.plot.marker_style = next((m for m, name in self.plot.available_markers if name == marker_var.get()),
+                                          'o')
             self.plot.marker_size = size_var.get()
             self.plot.errorbar_capsize = capsize_var.get()
             self.plot.errorbar_capthick = capthick_var.get()
             self.plot.errorbar_linewidth = linewidth_var.get()
-            # force full rebuild to apply style changes
             self.plot._layout_signature = None
             self.request_plot_update()
 
