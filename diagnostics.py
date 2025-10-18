@@ -452,13 +452,16 @@ class Registration_Diagnostics(Diagnostics_Html):
         logging.info('image registration overview table created')
         return html
 
-    def registration_maps(self, data, extraction_data, obsparam):
+    def registration_maps(self, data, extraction_data, parameters):
         # load reference catalog
         refcat = catalog(data['catalog'])
         for filename in os.listdir('.'):
             if data['catalog'] in filename and '.cat' in filename:
                 refcat.read_ldac(filename)
                 break
+
+        crop_x, crop_y = parameters['crop_edge']
+        obsparam = parameters['obsparam']
 
         # create overlays
         for dat in extraction_data:
@@ -487,9 +490,11 @@ class Registration_Diagnostics(Diagnostics_Html):
                     world_coo = np.column_stack((refcat['ra_deg'], refcat['dec_deg']))
                     img_coo = wcs_obj.wcs_world2pix(world_coo, 1)  # 1-based to match FITS/WCS usage
                     # keep points within original frame
-                    in_frame = ((img_coo[:, 0] > 0) & (img_coo[:, 1] > 0) &
-                                (img_coo[:, 0] < header[obsparam['extent'][0]]) &
-                                (img_coo[:, 1] < header[obsparam['extent'][1]]))
+                    crop_x = crop_x * header[obsparam['extent'][0]] if crop_x < 1.0 else crop_x
+                    crop_y = crop_y * header[obsparam['extent'][1]] if crop_y < 1.0 else crop_y
+                    in_frame = ((img_coo[:, 0] > crop_x) & (img_coo[:, 1] > crop_y) &
+                                (img_coo[:, 0] < header[obsparam['extent'][0]] - crop_x) &
+                                (img_coo[:, 1] < header[obsparam['extent'][1]] - crop_y))
                     img_coo = img_coo[in_frame]
                     # uniform scaling
                     plt.scatter(img_coo[:, 0] * resize_factor,
@@ -541,7 +546,7 @@ class Registration_Diagnostics(Diagnostics_Html):
         if (self.conf.individual_frame_pages and
             self.conf.show_quickview_image and
                 self.conf.show_registration_star_map):
-            self.registration_maps(data, extraction_data, obsparam)
+            self.registration_maps(data, extraction_data, extraction_data[0]['parameters'])
 
             for framedata in data['fitresults']:
                 # update frame page
