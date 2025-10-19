@@ -853,8 +853,22 @@ class LightCurvePlot:
                         lo, hi = self.ax.get_ylim()
                         # span may be inverted; use absolute span
                         yspan = abs(hi - lo) if hi is not None and lo is not None else 0.0
-                        y_offset = 0.03 * (yspan if yspan > 0 else 1.0)
-                        self.sel_text.set_position((sx, sy + off + y_offset))
+                        y_offset = 0.05 * (yspan if yspan > 0 else 1.0)
+
+                        # Check if text would go outside the right edge
+                        xlim = self.ax.get_xlim()
+                        x_range = xlim[1] - xlim[0]
+                        # Estimate text width as ~0.5 of plot width for typical filename lengths
+                        text_width_estimate = 0.25 * x_range
+
+                        # If text extends beyond right edge, place it to the left of marker
+                        if sx + text_width_estimate > xlim[1]:
+                            self.sel_text.set_position((sx, sy + off + y_offset))
+                            self.sel_text.set_horizontalalignment('right')
+                        else:
+                            self.sel_text.set_position((sx, sy + off + y_offset))
+                            self.sel_text.set_horizontalalignment('left')
+
                         # shorten long filenames
                         display = txt if len(txt) <= 40 else txt[:36] + '...'
                         self.sel_text.set_text(display)
@@ -1321,7 +1335,10 @@ class LightCurveGUI:
         ### MODIFIED ###
         # Updated hotkey label to include 'S' for showing the image
         self.hotkeys_label = ttk.Label(bottom,
-                                       text="F1-help; q-quit; r-reject; a-cancel sel; S-show/hide image; ←/→-move; z/x-period; s/d-offset")
+                                       text="F1-help; q-quit; r-reject; a-cancel sel; S-show/hide image; <-/-> -move; z/x-period; s/d-offset")
+        # Selected point label
+        self.selected_point_label = ttk.Label(self.hotkeys_label, text="", foreground="black")
+        self.selected_point_label.pack(side=RIGHT, padx=(15, 0))
         self.hotkeys_label.pack(fill=X, padx=5, pady=3)
         self.master_frame.bind("<Configure>", lambda e: self.hotkeys_label.config(wraplength=e.width - 200))
         bottom.pack(side=BOTTOM, fill=X)
@@ -2026,6 +2043,7 @@ class LightCurveGUI:
             self.current_lc_alias = alias
             self.current_point_index = idx
             self.current_point_band = b
+            self._update_selected_point_label()
             if self.offset_scope_var.get() == 'auto':
                 self.offset_scope_combo.set(b if b else 'ALL')
             self._sync_offset_var_to_scope()
@@ -2053,6 +2071,7 @@ class LightCurveGUI:
         self.plot.selection = {'alias': None, 'index': None}
         self.current_point_index = None
         self.current_point_band = None
+        self._update_selected_point_label()
         self.request_plot_update()
         self._update_asteroid_image()  # Update (clear) image window
 
@@ -2075,10 +2094,31 @@ class LightCurveGUI:
         # Update plot selection and redraw
         self.plot.selection['alias'] = self.current_lc_alias
         self.plot.selection['index'] = self.current_point_index
+        self._update_selected_point_label()
         self.request_plot_update()
 
         # Update the image if the window is open
         self._update_asteroid_image()
+
+    def _update_selected_point_label(self):
+        """Update the selected point footnote label."""
+        if not hasattr(self, 'selected_point_label'):
+            return
+
+        if self.current_lc_alias is None or self.current_point_index is None:
+            self.selected_point_label.config(text="")
+            return
+
+        lc = self.lightcurves.get(self.current_lc_alias)
+        if lc is None or lc.df is None or self.current_point_index >= len(lc.df):
+            self.selected_point_label.config(text="")
+            return
+
+        try:
+            filename = str(lc.df['filename'].iloc[self.current_point_index])
+            self.selected_point_label.config(text=f"Selected point: {filename}")
+        except Exception:
+            self.selected_point_label.config(text="")
 
     def show_asteroid_image(self, event=None):
         """Toggles the visibility of the asteroid image window."""
