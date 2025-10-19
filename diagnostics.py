@@ -1420,14 +1420,16 @@ class Distill_Diagnostics(Diagnostics_Html):
                 img.axes.get_yaxis().set_visible(False)
 
                 # add image filename
-                plt.annotate('{:s}'.format(fitsfilename), (3, 5),
+                fname = plt.annotate('{:s}'.format(fitsfilename), (3, 5),
                              color='white',
-                             fontsize=self.conf.thumb_fontsize)
+                             fontsize=self.conf.thumb_fontsize - 1)
+                fname.set_bbox(dict(facecolor='black', alpha=0.75, edgecolor='white'))
                 # add target name
-                plt.annotate('{:s}'.format(target.replace('_', ' ')),
+                target_name = plt.annotate('{:s}'.format(target.replace('_', ' ')),
                              (3, self.conf.image_size_thumb_px-10),
                              color='white',
                              fontsize=self.conf.thumb_fontsize)
+                target_name.set_bbox(dict(facecolor='black', alpha=0.75, edgecolor='white'))
                 # add scales
                 pixelscales = (np.fabs(w.pixel_scale_matrix[0][0])*3600,
                                np.fabs(w.pixel_scale_matrix[1][1])*3600)
