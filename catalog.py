@@ -1325,7 +1325,7 @@ class catalog(object):
                           + '{:s}').format(self.shape[0], targetfilter))
 
             # transform magnitudes to BVRI, Vega system
-            # using Tonry et al. 2012, ApJ 750
+            # using Kostov & Bonev 2017, # https://www.astro.bas.bg/AIJ/issues/n28/AKostov.pdf
             g = self.data['gp1mag'].data
             e_g = self.data['e_gp1mag'].data
             r = self.data['rp1mag'].data
@@ -1333,14 +1333,14 @@ class catalog(object):
             i = self.data['ip1mag'].data
             e_i = self.data['e_ip1mag'].data
 
-            B = (g + 0.212 + 0.556 * (g - r) + 0.034 * (g - r) ** 2)
-            Berr = np.sqrt(e_g ** 2 + 0.032 ** 2)
-            V = (g + 0.005 - 0.536 * (g - r) + 0.011 * (g - r) ** 2)
-            Verr = np.sqrt(e_g ** 2 + 0.012 ** 2)
-            R = (r - 0.137 - 0.108 * (g - r) - 0.029 * (g - r) ** 2)
-            Rerr = np.sqrt(e_r ** 2 + 0.015 ** 2)
-            I = (i - 0.366 - 0.136 * (g - r) - 0.018 * (g - r) ** 2)
-            Ierr = np.sqrt(e_i ** 2 + 0.017 ** 2)
+            B = (g + 0.199 + 0.540 * (g - r) + 0.016 * (g - r) ** 2)
+            Berr = np.sqrt(e_g ** 2 + 0.056 ** 2)
+            V = (g - 0.020 - 0.498 * (g - r) - 0.008 * (g - r) ** 2)
+            Verr = np.sqrt(e_g ** 2 + 0.032 ** 2)
+            R = (r - 0.163 - 0.086 * (g - r) - 0.061 * (g - r) ** 2)
+            Rerr = np.sqrt(e_r ** 2 + 0.041 ** 2)
+            I = (i - 0.387 - 0.123 * (g - r) - 0.034 * (g - r) ** 2)
+            Ierr = np.sqrt(e_i ** 2 + 0.054 ** 2)
 
             self.data.add_column(Column(data=B, name='_Bmag', unit=u.mag))
             self.data.add_column(Column(data=Berr, name='_e_Bmag',
