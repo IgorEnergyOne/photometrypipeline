@@ -998,6 +998,7 @@ class LightCurveGUI:
 
         # Add a reference for the image window
         self.image_window: Optional[tk.Toplevel] = None
+        self._image_window_geometry: Optional[str] = None
 
         # View state
         self.mode = 'target'  # 'target' | 'instrumental' | 'control' | 'relative'
@@ -2121,26 +2122,65 @@ class LightCurveGUI:
             self.selected_point_label.config(text="")
 
     def show_asteroid_image(self, event=None):
-        """Toggles the visibility of the asteroid image window."""
-        if hasattr(self, 'image_window') and self.image_window and self.image_window.winfo_exists():
-            self._on_image_window_close()
+        """Toggles the visibility of the asteroid image window (remembers last position)."""
+        # If window exists -> toggle show/hide, saving geometry before hiding
+        if getattr(self, "image_window", None) is not None and self.image_window.winfo_exists():
+            try:
+                # if hidden, restore and lift; else save geometry then hide
+                if str(self.image_window.state()) == "withdrawn":
+                    if self._image_window_geometry:
+                        try:
+                            self.image_window.geometry(self._image_window_geometry)
+                        except Exception:
+                            pass
+                    self.image_window.deiconify()
+                    self.image_window.lift()
+                else:
+                    # save last geometry before hiding
+                    try:
+                        self._image_window_geometry = self.image_window.geometry()
+                    except Exception:
+                        pass
+                    self.image_window.withdraw()
+            except Exception:
+                pass
             return
 
-        if Image is None or ImageTk is None:
-            messagebox.showwarning(
-                "Missing Library",
-                "The Pillow library is required to display images.\n"
-                "Please install it using: pip install Pillow",
-                parent=self.root)
-            return
+        # Else create the window and apply last known geometry
+        try:
+            top = tk.Toplevel(self.root)
+            self.image_window = top
+            top.title("Asteroid image")
+            # restore last geometry if any
+            if self._image_window_geometry:
+                try:
+                    top.geometry(self._image_window_geometry)
+                except Exception:
+                    pass
+            # start tracking further moves/resizes
+            self._bind_image_window_position_tracking(top)
+            # ensure we draw the current image into the window
+            if hasattr(self, "_update_asteroid_image"):
+                self._update_asteroid_image()
+        except Exception:
+            pass
 
-        # dont make window active
-        self.image_window = tk.Toplevel(self.root)
-        self.image_window.transient(self.root)
-        self.image_window.attributes("-topmost", False)  # Do not force focus/topmost
-        self.image_window.protocol("WM_DELETE_WINDOW", self._on_image_window_close)
+    def _bind_image_window_position_tracking(self, win: tk.Toplevel) -> None:
+        """Track image window position/size so it can be restored next open."""
 
-        self._update_asteroid_image()
+        def _on_configure(evt=None):
+            try:
+                # Only capture for the top-level itself
+                if evt is None or evt.widget is win:
+                    self._image_window_geometry = win.geometry()
+            except Exception:
+                pass
+
+        try:
+            # store whenever the toplevel moves or resizes
+            win.bind("<Configure>", _on_configure, add="+")
+        except Exception:
+            pass
 
     def _on_image_window_close(self):
         """Cleanly destroys the image window and resets the reference."""
