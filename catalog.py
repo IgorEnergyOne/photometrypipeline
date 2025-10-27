@@ -624,17 +624,22 @@ class catalog(object):
                 return 0
 
             # rename column names using PP conventions
-            self.data.rename_column('recno', 'ident')
+            # Vizier does not give recno column
+            # create ident column from index
+            # todo: check if recno (ident) can be queried somehow
+            # self.data.rename_column('recno', 'ident')
+            idents = np.arange(1, len(self.data) + 1)
+            self.data.add_column(Column(idents, name='ident'), index=0)
             self.data.rename_column('RAJ2000', 'ra_deg')
             self.data.rename_column('DEJ2000', 'dec_deg')
             self.data.rename_column('e_RAJ2000', 'e_ra_deg')
             self.data.rename_column('e_DEJ2000', 'e_dec_deg')
-            self.data.rename_column('g_mag', 'gmag')
-            self.data.rename_column('e_g_mag', 'e_gmag')
-            self.data.rename_column('r_mag', 'rmag')
-            self.data.rename_column('e_r_mag', 'e_rmag')
-            self.data.rename_column('i_mag', 'imag')
-            self.data.rename_column('e_i_mag', 'e_imag')
+            self.data.rename_column("g'mag", 'gmag')
+            self.data.rename_column("e_g'mag", 'e_gmag')
+            self.data.rename_column("r'mag", 'rmag')
+            self.data.rename_column("e_r'mag", 'e_rmag')
+            self.data.rename_column("i'mag", 'imag')
+            self.data.rename_column("e_i'mag", 'e_imag')
 
         elif self.catalogname == 'SDSS-R9':
             vquery = Vizier(columns=['SDSS9', 'RA_ICRS', 'DE_ICRS',
