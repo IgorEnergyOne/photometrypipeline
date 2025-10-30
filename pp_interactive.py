@@ -1720,17 +1720,52 @@ class LightCurveGUI:
             messagebox.showerror("Nothing selected", "No atlas filename provided")
             return
 
-        tmp = 'tmp_atlas.csv'
-        lc.df.to_csv(tmp, header=True, index=False)
-        atlas_cmd = f"pp_atlas -fname_header {fits_filepath} -fname_photo {tmp} -fname_out {file}"
-        try:
-            subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
-        except Exception as e:
-            messagebox.showerror("Atlas save failed", f"Error calling atlas command: {e}")
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        messagebox.showinfo("Saved", f"ATLAS file saved as {file}")
+        # check if multiple filters are present
+        # check which filters are active in the current plot
+        filters = self.selected_bands
+        tmps = []
+        tmp_atls = []
+        if len(filters) > 1:
+            # create temp csvs for every filter and call pp_atlas for each
+            for f in filters:
+                df_filt = lc.df[lc.df['band'] == f]
+                if df_filt.empty:
+                    continue
+                tmpf = f"tmp_atlas_{f}.csv"
+                tmp_atl = f"{tmpf[:-4]}.ATL"
+                tmp_atls.append(tmp_atl)
+                df_filt.to_csv(tmpf, header=True, index=False)
+                tmps.append(tmpf)
+                atlas_cmd = f"pp_atlas -fname_header {fits_filepath} -fname_photo {tmpf} -fname_out {tmpf[:-4]}.ATL"
+                subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
+            # use combine altas to get one altas file
+            atlas_cmd = f"pp_atlas -combine " + " ".join([f"{tmp_file[:-4]}.ATL" for tmp_file in tmps]) + f" -fname_out {file}"
+            try:
+                subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
+            except Exception as e:
+                messagebox.showerror("Atlas save failed", f"Error calling atlas command: {e}")
+            # remove temp atlas files after combining
+            finally:
+                for tmp_atl, tmp_csv in zip(tmp_atls, tmps):
+                    if os.path.exists(tmp_atl):
+                        os.remove(tmp_atl)
+                    if os.path.exists(tmp_csv):
+                        os.remove(tmp_csv)
+        else:
+            tmp = 'tmp_atlas.csv'
+            tmps.append(tmp)
+            lc.df.to_csv(tmp, header=True, index=False)
+            atlas_cmd = f"pp_atlas -fname_header {fits_filepath} -fname_photo {tmp} -fname_out {file}"
+            try:
+                subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
+            except Exception as e:
+                messagebox.showerror("Atlas save failed", f"Error calling atlas command: {e}")
+            finally:
+                # cleanup temp files
+                for tmp in tmps:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+            messagebox.showinfo("Saved", f"ATLAS file saved as {file}")
 
     # ——— LC list operations ———
     def on_lc_select(self, _evt=None):
