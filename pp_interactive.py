@@ -2246,9 +2246,15 @@ class LightCurveGUI:
 
         cwd = os.getcwd()
         if 'filename' in row_data and pd.notna(row_data['filename']):
-            image_name = Path(row_data['filename']).stem
-            image_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb.png')][0]
-            overlay_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb_overlay.png')][0]
+            # if control star mode, look for control star images
+            if self.mode == 'control':
+                image_name = Path(row_data['filename']).stem
+                image_path = [str(path) for path in Path(cwd).glob(f'**/Control_Star*{image_name}_thumb.png')][0]
+                overlay_path = [str(path) for path in Path(cwd).glob(f'**/Control_Star*{image_name}_thumb_overlay.png')][0]
+            else:
+                image_name = Path(row_data['filename']).stem
+                image_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb.png')][0]
+                overlay_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb_overlay.png')][0]
         if not image_path or pd.isna(image_path):
             ttk.Label(self.image_window, text="No image path for this point.").pack(padx=20, pady=20)
             return
@@ -2271,7 +2277,7 @@ class LightCurveGUI:
             overlay = Image.open(full_path_overlay)
             photo = ImageTk.PhotoImage(img)
             img_label = ttk.Label(self.image_window, image=photo)
-            # This is a classic Tkinter gotcha: you must keep a reference to the PhotoImage
+            # Keep a reference to the PhotoImage
             # object, otherwise it gets garbage collected and the image disappears.
             img_label.image = photo
             # add overlay if available (with transparency)
