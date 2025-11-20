@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 import argparse
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Iterable, Set
+from typing import Dict, List, Optional, Tuple, Iterable, Set, Callable
 import subprocess
 
 import numpy as np
@@ -54,33 +54,191 @@ except ImportError:
 # ────────────────────────────── Globals & style ─────────────────────────────
 # Global debug flag
 DEBUG = False
-
-DEFAULT_COLORS = [
-    "red", "orange", "olive", "green", "blue", "purple",
-    "brown", "pink", "gray", "cyan"
-]
-BAND_COLORS = {"U": "indigo", "B": "royalblue", "V": "limegreen", "R": '#7c3150', "I": "dimgray",
-               "g": "#348034", "r": "#944d4d", "i": "#59327d", "z": "#753427"}
-
 TIME_STEP = 0.02  # hours
 DEFAULT_PERIOD = 4.0  # hours
 WINDOW_WIDTH = 1400  # px
 WINDOW_HEIGHT = 720  # pix
-
-SELECTION_MARKER = {'markersize': 5, 'zorder': 20, 'form': 'o', 'color': 'red'}
-
-MARKERS = [
-    ('o', 'circle'), ('s', 'square'), ('p', 'pentagon'), ('x', 'x'), ('D', 'diamond'),
-    ('*', 'star'), ('v', 'triangle_down'), ('^', 'triangle_up'), ('<', 'triangle_left'),
-    ('>', 'triangle_right'), ('+', 'plus'), ('d', 'thin_diamond'),
-]
-
 OFFSET_ALL_KEY = "__ALL__"  # per‑file fallback offset when no per‑band offset is set
 
-# add a set of palette swatches used by the color picker dialog
-PALETTE_SWATCHES = DEFAULT_COLORS + list(dict.fromkeys([v for v in BAND_COLORS.values()])) + [
-    '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
-]
+
+class PlotSettings:
+    """
+    Manages plot settings, constants, and color/palette menus.
+    """
+    DEFAULT_COLORS = [
+        "red", "orange", "olive", "green", "blue", "purple",
+        "brown", "pink", "gray", "cyan"
+    ]
+    BAND_COLORS = {"U": "indigo", "B": "royalblue", "V": "limegreen", "R": '#7c3150', "I": "dimgray",
+                   "g": "#348034", "r": "#944d4d", "i": "#59327d", "z": "#753427"}
+
+    SELECTION_MARKER = {'markersize': 5, 'zorder': 20, 'form': 'o', 'color': 'red'}
+
+    MARKERS = [
+        ('o', 'circle'), ('s', 'square'), ('p', 'pentagon'), ('x', 'x'), ('D', 'diamond'),
+        ('*', 'star'), ('v', 'triangle_down'), ('^', 'triangle_up'), ('<', 'triangle_left'),
+        ('>', 'triangle_right'), ('+', 'plus'), ('d', 'thin_diamond'),
+    ]
+
+    PALETTE_SWATCHES = DEFAULT_COLORS + list(dict.fromkeys([v for v in BAND_COLORS.values()])) + [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+    ]
+
+    def __init__(self, root: tk.Tk, refresh_callback: Callable[[], None], get_bands_callback: Callable[[], List[str]]):
+        self.root = root
+        self.refresh_callback = refresh_callback
+        self.get_bands_callback = get_bands_callback
+
+        self.custom_colors: Dict[str, str] = {}
+        self.flagged_use_filter: bool = False
+
+        self.color_menu: Optional[tk.Menu] = None
+        self.color_menu_btn: Optional[ttk.Menubutton] = None
+
+    def get_color(self, band: Optional[str], idx: int) -> str:
+        """Resolve color for a band, checking custom overrides first."""
+        if band is None:
+            return self.DEFAULT_COLORS[idx % len(self.DEFAULT_COLORS)]
+
+        # Check custom overrides
+        if str(band) in self.custom_colors:
+            return self.custom_colors[str(band)]
+
+        # Check canonical band colors
+        if band in self.BAND_COLORS:
+            return self.BAND_COLORS[band]
+
+        return self.DEFAULT_COLORS[idx % len(self.DEFAULT_COLORS)]
+
+    def build_menu(self, parent=None, pack_btn=True):
+        """Create Colors menubutton (dynamically populated via rebuild_menu)."""
+        master_for_menu = parent if parent is not None else self.root
+        try:
+            if hasattr(master_for_menu, 'add_command') and isinstance(master_for_menu, tk.Menu):
+                menu_master = master_for_menu
+            else:
+                menu_master = self.root
+        except Exception:
+            menu_master = self.root
+
+        self.color_menu = tk.Menu(menu_master, tearoff=0)
+        if pack_btn and parent is not None:
+            self.color_menu_btn = ttk.Menubutton(parent, text="Colors")
+            self.color_menu_btn["menu"] = self.color_menu
+            self.color_menu_btn.pack(side=LEFT, padx=4)
+
+        self.rebuild_menu()
+
+    def rebuild_menu(self):
+        """Populate the Colors menu with per-band entries and special controls."""
+        if not hasattr(self, 'color_menu') or self.color_menu is None:
+            return
+        try:
+            self.color_menu.delete(0, END)
+        except Exception:
+            return
+
+        bands = self.get_bands_callback()
+        if bands:
+            self.color_menu.add_command(label="Apply BAND_COLORS defaults",
+                                        command=lambda: self.apply_default_colors(True))
+            self.color_menu.add_command(label="Apply simple palette defaults",
+                                        command=lambda: self.apply_default_colors(False))
+            self.color_menu.add_separator()
+
+            for b in bands:
+                sub = tk.Menu(self.color_menu, tearoff=0)
+                sub.add_command(label="Pick color...", command=lambda _b=b: self.pick_color_for_band(_b))
+                if b in self.BAND_COLORS:
+                    sub.add_command(label=f"Use canonical ({self.BAND_COLORS[b]})",
+                                    command=lambda _b=b, _c=self.BAND_COLORS[b]: self.apply_color_to_band(_b, _c))
+                sub.add_command(label="Palette...", command=lambda _b=b: self.show_palette_picker(_b))
+                self.color_menu.add_cascade(label=b, menu=sub)
+            self.color_menu.add_separator()
+
+        def _toggle_flagged_use():
+            self.flagged_use_filter = not self.flagged_use_filter
+            self.refresh_callback()
+            self.rebuild_menu()
+
+        chk_label = "Flagged use filter color"
+        if self.flagged_use_filter:
+            self.color_menu.add_command(label=chk_label + " ✓", command=_toggle_flagged_use)
+        else:
+            self.color_menu.add_command(label=chk_label, command=_toggle_flagged_use)
+
+        self.color_menu.add_separator()
+        self.color_menu.add_command(label="Set flagged color...", command=lambda: self.show_palette_picker('flagged'))
+        self.color_menu.add_command(label="Set rejected color...",
+                                    command=lambda: self.show_palette_picker('rejected'))
+
+    def apply_color_to_band(self, band: str, hexcolor: str):
+        if not band:
+            return
+        try:
+            self.custom_colors[str(band)] = str(hexcolor)
+        except Exception:
+            self.custom_colors[str(band)] = hexcolor
+        self.refresh_callback()
+        self.rebuild_menu()
+
+    def apply_default_colors(self, use_band_colors: bool = True):
+        bands = self.get_bands_callback()
+        for i, b in enumerate(bands):
+            if use_band_colors and b in self.BAND_COLORS:
+                self.custom_colors[b] = self.BAND_COLORS[b]
+            else:
+                self.custom_colors[b] = self.DEFAULT_COLORS[i % len(self.DEFAULT_COLORS)]
+        self.refresh_callback()
+        self.rebuild_menu()
+
+    def pick_color_for_band(self, band: str):
+        try:
+            cur = self.custom_colors.get(band, self.BAND_COLORS.get(band, '#000000'))
+            rgb, hx = colorchooser.askcolor(color=cur, parent=self.root, title=f"Choose color for {band}")
+            if hx:
+                self.custom_colors[str(band)] = hx
+                self.refresh_callback()
+                self.rebuild_menu()
+        except Exception:
+            pass
+
+    def show_palette_picker(self, band: Optional[str] = None, title: Optional[str] = None):
+        if title is None:
+            title = f"Choose color for {band}" if band else "Choose color"
+        try:
+            top = tk.Toplevel(self.root)
+            top.transient(self.root)
+            top.title(title)
+            top.resizable(False, False)
+            try:
+                x = self.root.winfo_x() + 120
+                y = self.root.winfo_y() + 120
+                top.geometry(f"+{x}+{y}")
+            except Exception:
+                pass
+
+            frm = ttk.Frame(top, padding=6)
+            frm.pack(fill='both', expand=True)
+
+            cols = 8
+            colors = list(dict.fromkeys(self.PALETTE_SWATCHES))
+            sw_w = 28
+            sw_h = 18
+            for i, c in enumerate(colors):
+                r = i // cols;
+                col = i % cols
+                sw = tk.Canvas(frm, width=sw_w, height=sw_h, highlightthickness=1, bd=0)
+                sw.grid(row=r, column=col, padx=3, pady=3)
+                rect = sw.create_rectangle(0, 0, sw_w, sw_h, fill=c, outline='black')
+                sw.tag_bind(rect, "<Button-1>", lambda e, _c=c: (self.apply_color_to_band(band, _c), top.destroy()))
+                sw.bind("<Button-1>", lambda e, _c=c: (self.apply_color_to_band(band, _c), top.destroy()))
+
+            btn_row = (len(colors) + cols - 1) // cols
+            ttk.Button(frm, text="More...", command=lambda: (self.pick_color_for_band(band), top.destroy())).grid(
+                row=btn_row, column=0, columnspan=cols, pady=(8, 0))
+        except Exception:
+            pass
 
 
 def debug_print(*args, **kwargs):
@@ -221,6 +379,13 @@ class LightCurvePlot:
         self.ylabel = "Magnitude"
         self.title = "Lightcurve"
         self.auto_title = True
+        self.y_limits: Optional[Tuple[float, float]] = None
+        self.y_nticks: Optional[int] = None
+
+        # Asteroid image zoom level
+        self.asteroid_zoom_level = 1.0
+        self._current_asteroid_image_original = None
+        self._current_asteroid_overlay_original = None
 
         self.marker_size = 4.0
         self.marker_style = 'o'
@@ -228,7 +393,7 @@ class LightCurvePlot:
         self.errorbar_capthick = 1.0
         self.errorbar_linewidth = 1.0
 
-        self.available_markers = MARKERS
+        self.available_markers = PlotSettings.MARKERS
         self.marker_dict = {name: marker for marker, name in self.available_markers}
 
         self.valid_color = "blue"
@@ -242,15 +407,15 @@ class LightCurvePlot:
         self._layout_signature: Optional[str] = None
 
         # persistent selection marker
-        (self.sel_artist,) = self.ax.plot([], [], SELECTION_MARKER['form'], color=SELECTION_MARKER['color'],
-                                          markersize=SELECTION_MARKER['markersize'],
-                                          zorder=SELECTION_MARKER['zorder'],
+        (self.sel_artist,) = self.ax.plot([], [], PlotSettings.SELECTION_MARKER['form'], color=PlotSettings.SELECTION_MARKER['color'],
+                                          markersize=PlotSettings.SELECTION_MARKER['markersize'],
+                                          zorder=PlotSettings.SELECTION_MARKER['zorder'],
                                           visible=False,
                                           animated=True)
         # persistent selection text (filename) placed near the marker
         try:
-            self.sel_text = self.ax.text(0, 0, '', color=SELECTION_MARKER['color'], fontsize=9,
-                                         zorder=SELECTION_MARKER['zorder'] + 1, visible=False, animated=True)
+            self.sel_text = self.ax.text(0, 0, '', color=PlotSettings.SELECTION_MARKER['color'], fontsize=9,
+                                         zorder=PlotSettings.SELECTION_MARKER['zorder'] + 1, visible=False, animated=True)
         except Exception:
             self.sel_text = None
 
@@ -296,14 +461,14 @@ class LightCurvePlot:
         self.plotted_handles.clear()
         self.blit.clear()
         # re-create the selection artist on the fresh Axes using SELECTION_MARKER defaults
-        (self.sel_artist,) = self.ax.plot([], [], SELECTION_MARKER.get('form', 'o'),
-                                          color=SELECTION_MARKER.get('color', 'red'),
-                                          markersize=SELECTION_MARKER.get('markersize', 5),
-                                          zorder=SELECTION_MARKER.get('zorder', 20), visible=False,
+        (self.sel_artist,) = self.ax.plot([], [], PlotSettings.SELECTION_MARKER.get('form', 'o'),
+                                          color=PlotSettings.SELECTION_MARKER.get('color', 'red'),
+                                          markersize=PlotSettings.SELECTION_MARKER.get('markersize', 5),
+                                          zorder=PlotSettings.SELECTION_MARKER.get('zorder', 20), visible=False,
                                           animated=True)
         try:
-            self.sel_text = self.ax.text(0, 0, '', color=SELECTION_MARKER.get('color', 'red'), fontsize=9,
-                                         zorder=SELECTION_MARKER.get('zorder', 20) + 1, visible=False, animated=True)
+            self.sel_text = self.ax.text(0, 0, '', color=PlotSettings.SELECTION_MARKER.get('color', 'red'), fontsize=9,
+                                         zorder=PlotSettings.SELECTION_MARKER.get('zorder', 20) + 1, visible=False, animated=True)
         except Exception:
             self.sel_text = None
         # Clear any cached label text object references so they will be recreated
@@ -335,14 +500,53 @@ class LightCurvePlot:
                 self.ax.set_title(self.title)
         # enforce magnitude axis direction exactly once
         lo, hi = self.ax.get_ylim()
+        
+        # Apply manual limits if set
+        if self.y_limits is not None:
+            req_lo, req_hi = self.y_limits
+            self.ax.set_ylim(req_lo, req_hi)
+            lo, hi = self.ax.get_ylim()
+
+        # Apply nticks if set
+        if self.y_nticks is not None and self.y_nticks > 1:
+            from matplotlib.ticker import MaxNLocator
+            self.ax.yaxis.set_major_locator(MaxNLocator(nbins=self.y_nticks))
+        else:
+            # Reset to auto locator if nticks is None or invalid
+            from matplotlib.ticker import AutoLocator
+            self.ax.yaxis.set_major_locator(AutoLocator())
+
+        # Auto-scale logic correction for min extent
+        if self.y_limits is None:
+            # Check extent
+            extent = abs(hi - lo)
+            if extent < 0.2:
+                mid = (hi + lo) / 2.0
+                # Force at least 0.2 extent
+                new_half = 0.1
+                # We want to preserve direction
+                if lo > hi: # currently inverted
+                    self.ax.set_ylim(mid + new_half, mid - new_half)
+                else:
+                    self.ax.set_ylim(mid - new_half, mid + new_half)
+                lo, hi = self.ax.get_ylim()
+
         if lo < hi:
             self.ax.set_ylim(hi, lo)
 
-    @staticmethod
-    def _choose_color_for_band(b: Optional[str], idx: int) -> str:
-        if b in BAND_COLORS:
-            return BAND_COLORS[b]  # stable palette per band
-        return DEFAULT_COLORS[idx % len(DEFAULT_COLORS)]
+    def set_y_limits(self, ymin: Optional[float], ymax: Optional[float], nticks: Optional[int] = None):
+        if ymin is None or ymax is None:
+            self.y_limits = None
+        else:
+            self.y_limits = (ymin, ymax)
+        self.y_nticks = nticks
+
+    def _choose_color_for_band(self, b: Optional[str], idx: int) -> str:
+        # This method is now an instance method to access self.parent_gui.plot_settings
+        if self.parent_gui and hasattr(self.parent_gui, 'plot_settings'):
+             return self.parent_gui.plot_settings.get_color(b, idx)
+        # Fallback if no GUI or settings attached
+        return PlotSettings.DEFAULT_COLORS[idx % len(PlotSettings.DEFAULT_COLORS)]
 
     def _compute_time_x(self, arr_jd: np.ndarray, time_mode: str, period_hours: Optional[float]) -> np.ndarray:
         if arr_jd is None or arr_jd.size == 0:
@@ -536,29 +740,19 @@ class LightCurvePlot:
                                                      offsets.get(alias, {}).get(OFFSET_ALL_KEY, 0.0))
 
                     color = self._choose_color_for_band(b, bidx)
-                    # allow GUI overrides for per-band colors
-                    if self.parent_gui is not None:
-                        try:
-                            gui_colors = getattr(self.parent_gui, 'custom_colors', {})
-                            if b is not None:
-                                color = gui_colors.get(str(b), color)
-                        except Exception:
-                            pass
 
                     # determine flagged/rejected colors for this band (may follow filter color)
-                    if self.parent_gui is not None and getattr(self.parent_gui, 'flagged_use_filter', False):
-                        flagged_color_for_this = color
-                    else:
-                        try:
-                            flagged_color_for_this = getattr(self.parent_gui, 'custom_colors', {}).get('flagged',
-                                                                                                       self.flagged_color)
-                        except Exception:
-                            flagged_color_for_this = self.flagged_color
-                    try:
-                        rejected_color_for_this = getattr(self.parent_gui, 'custom_colors', {}).get('rejected',
-                                                                                                    self.rejected_color)
-                    except Exception:
-                        rejected_color_for_this = self.rejected_color
+                    # determine flagged/rejected colors for this band (may follow filter color)
+                    flagged_color_for_this = self.flagged_color
+                    rejected_color_for_this = self.rejected_color
+
+                    if self.parent_gui and hasattr(self.parent_gui, 'plot_settings'):
+                        settings = self.parent_gui.plot_settings
+                        if settings.flagged_use_filter:
+                            flagged_color_for_this = color
+                        else:
+                            flagged_color_for_this = settings.get_color('flagged', 0)
+                        rejected_color_for_this = settings.get_color('rejected', 0)
 
                     def make_series(m, c):
                         if not np.any(m):
@@ -973,6 +1167,259 @@ class LightCurvePlot:
         return None, None, None
 
 
+# ───────────────────────────── Asteroid Viewer ────────────────────────────
+class AsteroidImageViewer:
+    """
+    Manages the asteroid image window, including loading images,
+    zooming, and persisting window state/zoom level.
+    """
+    def __init__(self, root: tk.Tk, data_provider):
+        """
+        :param root: The main application root window.
+        :param data_provider: An object (LightCurveGUI) that provides access to
+                              current_lc_alias, current_point_index, lightcurves, etc.
+        """
+        self.root = root
+        self.data_provider = data_provider
+
+        # State persistence
+        self.zoom_level = 1.0
+        self.window_geometry = None
+        self.image_window = None
+
+        # Image caching
+        self._current_image_original = None
+        self._current_overlay_original = None
+
+        # Overlay toggle
+        self.show_overlay_var = tk.BooleanVar(value=True)
+
+    def toggle_visibility(self):
+        """Toggles the visibility of the asteroid image window."""
+        if self.image_window is not None and self.image_window.winfo_exists():
+            try:
+                if str(self.image_window.state()) == "withdrawn":
+                    self._restore_window()
+                else:
+                    self._hide_window()
+            except Exception:
+                pass
+        else:
+            self._create_window()
+
+    def _restore_window(self):
+        if self.window_geometry:
+            try:
+                self.image_window.geometry(self.window_geometry)
+            except Exception:
+                pass
+        self.image_window.deiconify()
+        self.image_window.lift()
+        # Keep focus on main window so keys work there (delayed to override window manager)
+        self.root.after(100, lambda: self.root.focus_force())
+
+    def _hide_window(self):
+        try:
+            self.window_geometry = self.image_window.geometry()
+        except Exception:
+            pass
+        self.image_window.withdraw()
+
+    def _create_window(self):
+        try:
+            top = tk.Toplevel(self.root)
+            self.image_window = top
+            top.title("Asteroid image")
+
+            # Keep on top of main window
+            top.transient(self.root)
+
+            if self.window_geometry:
+                try:
+                    top.geometry(self.window_geometry)
+                except Exception:
+                    pass
+
+            self._bind_events(top)
+            self.update_image()
+
+            # Overlay toggle checkbox
+            chk = ttk.Checkbutton(top, text="Toggle Overlay (O)", variable=self.show_overlay_var,
+                                  command=self.refresh_display)
+            chk.pack(side=BOTTOM, pady=5)
+
+            # Return focus to main app so keyboard shortcuts work (delayed)
+            self.root.after(100, lambda: self.root.focus_force())
+        except Exception:
+            pass
+
+    def _bind_events(self, win: tk.Toplevel):
+        # Track geometry
+        def _on_configure(evt=None):
+            try:
+                if evt is None or evt.widget is win:
+                    self.window_geometry = win.geometry()
+            except Exception:
+                pass
+        win.bind("<Configure>", _on_configure, add="+")
+
+        # Zoom
+        win.bind("<MouseWheel>", self._on_zoom)
+        win.bind("<Button-4>", self._on_zoom)
+        win.bind("<Button-5>", self._on_zoom)
+
+        # Hotkey for overlay
+        win.bind("<o>", self._toggle_overlay_hotkey)
+        win.bind("<O>", self._toggle_overlay_hotkey)
+
+        # Cleanup on destroy (if destroyed externally)
+        # Note: We don't strictly need to bind destroy if we check winfo_exists,
+        # but it's good practice to clear the ref.
+        # However, binding <Destroy> can be tricky if it triggers on child widgets.
+        # We'll rely on winfo_exists checks.
+
+    def update_image(self):
+        """Loads and displays the image for the current selection."""
+        if not self.image_window or not self.image_window.winfo_exists():
+            return
+
+        # Clear previous content
+        for widget in self.image_window.winfo_children():
+            widget.destroy()
+
+        alias = self.data_provider.current_lc_alias
+        idx = self.data_provider.current_point_index
+
+        if alias is None or idx is None:
+            ttk.Label(self.image_window, text="No point selected.").pack(padx=20, pady=20)
+            self.image_window.title("Asteroid Image")
+            return
+
+        try:
+            lc = self.data_provider.lightcurves[alias]
+            row_data = lc.df.iloc[idx]
+        except (KeyError, IndexError):
+            ttk.Label(self.image_window, text="Error retrieving data.").pack(padx=20, pady=20)
+            return
+
+        # Locate image
+        cwd = os.getcwd()
+        image_path = None
+        overlay_path = None
+
+        if 'filename' in row_data and pd.notna(row_data['filename']):
+            try:
+                if self.data_provider.mode == 'control':
+                    image_name = Path(row_data['filename']).stem
+                    image_path = [str(path) for path in Path(cwd).glob(f'**/Control_Star*{image_name}_thumb.png')][0]
+                    overlay_path = [str(path) for path in Path(cwd).glob(f'**/Control_Star*{image_name}_thumb_overlay.png')][0]
+                else:
+                    image_name = Path(row_data['filename']).stem
+                    image_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb.png')][0]
+                    overlay_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb_overlay.png')][0]
+            except IndexError:
+                pass
+
+        if not image_path or pd.isna(image_path):
+            ttk.Label(self.image_window, text="No image path found.").pack(padx=20, pady=20)
+            return
+
+        # Resolve absolute path
+        if not os.path.isabs(image_path) and lc.filename:
+            csv_dir = os.path.dirname(lc.filename)
+            full_path = os.path.join(csv_dir, image_path)
+            full_path_overlay = os.path.join(csv_dir, overlay_path) if overlay_path else None
+        else:
+            full_path = image_path
+            full_path_overlay = overlay_path
+
+        if not os.path.exists(full_path):
+            ttk.Label(self.image_window, text=f"File not found:\n{os.path.basename(full_path)}").pack(padx=20, pady=20)
+            return
+
+        # Load images
+        try:
+            img = Image.open(full_path)
+            overlay = None
+            if full_path_overlay and os.path.exists(full_path_overlay):
+                try:
+                    overlay = Image.open(full_path_overlay)
+                except Exception:
+                    pass
+
+            self._current_image_original = img
+            self._current_overlay_original = overlay
+
+            # IMPORTANT: Do NOT reset zoom_level here to persist it across images.
+            # self.zoom_level = 1.0
+
+            self.refresh_display()
+            self.image_window.title(f"Image: {os.path.basename(full_path)}")
+
+        except Exception as e:
+            ttk.Label(self.image_window, text=f"Error loading image:\n{e}").pack(padx=20, pady=20)
+
+    def refresh_display(self):
+        """Resizes and displays the stored image based on current zoom."""
+        if not self.image_window or not self.image_window.winfo_exists():
+            return
+        if self._current_image_original is None:
+            return
+
+        # Find or create label
+        img_label = None
+        for widget in self.image_window.winfo_children():
+            if isinstance(widget, ttk.Label) and hasattr(widget, 'image'):
+                img_label = widget
+                break
+
+        if img_label is None:
+            # Clear anything else (like error messages)
+            for widget in self.image_window.winfo_children():
+                widget.destroy()
+            img_label = ttk.Label(self.image_window)
+            img_label.pack(padx=10, pady=10)
+
+        # Resize
+        orig_w, orig_h = self._current_image_original.size
+        new_w = int(orig_w * self.zoom_level)
+        new_h = int(orig_h * self.zoom_level)
+
+        # Use LANCZOS for quality
+        resized_img = self._current_image_original.resize((new_w, new_h), Image.LANCZOS)
+
+        if self._current_overlay_original and self.show_overlay_var.get():
+            resized_overlay = self._current_overlay_original.resize((new_w, new_h), Image.LANCZOS)
+            resized_img.paste(resized_overlay, (0, 0), resized_overlay)
+
+        photo = ImageTk.PhotoImage(resized_img)
+        img_label.configure(image=photo)
+        img_label.image = photo
+
+    def _on_zoom(self, event):
+        if self._current_image_original is None:
+            return
+
+        scale_factor = 1.1
+        # Windows/MacOS: event.delta, Linux: event.num
+        if event.num == 4 or event.delta > 0:
+            self.zoom_level *= scale_factor
+        elif event.num == 5 or event.delta < 0:
+            self.zoom_level /= scale_factor
+
+        # Clamp
+        if self.zoom_level < 0.1:
+            self.zoom_level = 0.1
+        elif self.zoom_level > 20.0:
+            self.zoom_level = 20.0
+
+        self.refresh_display()
+
+    def _toggle_overlay_hotkey(self, event=None):
+        self.show_overlay_var.set(not self.show_overlay_var.get())
+        self.refresh_display()
+
+
 # ───────────────────────────────── GUI layer ──────────────────────────────
 class LightCurveGUI:
     def __init__(self, root: ttk.Window):
@@ -996,9 +1443,8 @@ class LightCurveGUI:
         self.current_point_index: Optional[int] = None
         self.current_point_band: Optional[str] = None
 
-        # Add a reference for the image window
-        self.image_window: Optional[tk.Toplevel] = None
-        self._image_window_geometry: Optional[str] = None
+        # Asteroid Image Viewer
+        self.asteroid_viewer = AsteroidImageViewer(self.root, self)
 
         # View state
         self.mode = 'target'  # 'target' | 'instrumental' | 'control' | 'relative'
@@ -1016,11 +1462,8 @@ class LightCurveGUI:
         # Step used when nudging vertical offsets with ↑/↓ (mag)
         self.offset_step_var = ttk.DoubleVar(value=0.05)
 
-        # Custom color settings: per-band and special keys 'rejected' and 'flagged'
-        # values are hex color strings, e.g. '#ff0000'
-        self.custom_colors: Dict[str, str] = {}
-        # If True, flagged points use the same color as their filter
-        self.flagged_use_filter: bool = False
+        # Plot Settings
+        self.plot_settings = PlotSettings(self.root, self._refresh_plot_callback, self._get_bands_callback)
 
         # Plot display toggles (exposed via Plot Settings)
         self.show_legend: bool = True
@@ -1045,6 +1488,14 @@ class LightCurveGUI:
         self.root.bind("x", lambda e: self.adjust_rotation_period(+1))
         # Bind Shift+S to show the image for the selected point
         self.root.bind("<S>", self.show_asteroid_image)
+
+    def _refresh_plot_callback(self):
+        if hasattr(self, 'plot') and getattr(self.plot, 'invalidate_layout', None):
+            self.plot.invalidate_layout()
+        self.request_plot_update()
+
+    def _get_bands_callback(self) -> List[str]:
+        return sorted({str(b) for lc in self.lightcurves.values() for b in lc.get_bands()})
 
     # ——— UI construction ———
     # Replace the top layout inside _build_ui()
@@ -1228,21 +1679,21 @@ class LightCurveGUI:
         self.filter_btn.pack(side=LEFT, padx=(10, 0))
 
         # Plot Settings menu (contains Colors, Marker Settings and toggles)
-        # Build the color menu data structure but don't pack its standalone button
-        self._build_color_menu(pack_btn=False)
-
         self.plot_settings_btn = ttk.Menubutton(top, text="Plot Settings")
         self.plot_settings_menu = tk.Menu(self.plot_settings_btn, tearoff=0)
-        # cascade the existing color_menu into Plot Settings
-        # (color_menu is populated by _rebuild_color_menu)
-        # Recreate the color menu so its master is the plot_settings_menu (this fixes
-        # cases where a menu cascaded from another Menu is not responsive to the mouse).
+
+        # Build the color menu via PlotSettings
         try:
-            self._build_color_menu(parent=self.plot_settings_menu, pack_btn=False)
-            self.plot_settings_menu.add_cascade(label="Colors", menu=self.color_menu)
+            self.plot_settings.build_menu(parent=self.plot_settings_menu, pack_btn=False)
+            self.plot_settings_menu.add_cascade(label="Colors", menu=self.plot_settings.color_menu)
         except Exception:
-            # fallback: simple entry that opens the color dialog via existing button if needed
-            self.plot_settings_menu.add_command(label="Colors...", command=lambda: self._build_color_menu(parent=top))
+            pass
+        
+        self.plot_settings_btn["menu"] = self.plot_settings_menu
+        self.plot_settings_btn.pack(side=LEFT, padx=(10, 0))
+
+
+
 
         # Marker settings entry
         self.plot_settings_menu.add_command(label="Marker Settings...", command=self.show_marker_settings)
@@ -1345,6 +1796,83 @@ class LightCurveGUI:
         bottom.pack(side=BOTTOM, fill=X)
         rot.pack(side=LEFT)
 
+    def open_y_scale_dialog(self):
+        """Open a custom dialog to set Y-axis Min, Max, and Nticks."""
+        if not hasattr(self, 'plot'):
+            return
+
+        # Get current values
+        try:
+            lo, hi = self.plot.ax.get_ylim()
+            # Inverted check: usually lo > hi for magnitudes
+            cur_min = min(lo, hi)
+            cur_max = max(lo, hi)
+        except Exception:
+            cur_min, cur_max = 0.0, 1.0
+        
+        cur_nticks = self.plot.y_nticks if self.plot.y_nticks else ""
+
+        # Create dialog
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Y-Axis Settings")
+        dlg.transient(self.root)
+        dlg.resizable(False, False)
+        
+        # Center dialog
+        try:
+            x = self.root.winfo_x() + 150
+            y = self.root.winfo_y() + 150
+            dlg.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+
+        frm = ttk.Frame(dlg, padding=10)
+        frm.pack(fill=BOTH, expand=True)
+
+        # Min
+        ttk.Label(frm, text="Min:").grid(row=0, column=0, sticky='e', padx=5, pady=5)
+        min_var = ttk.StringVar(value=f"{cur_min:.3f}")
+        ttk.Entry(frm, textvariable=min_var, width=10).grid(row=0, column=1, padx=5, pady=5)
+
+        # Max
+        ttk.Label(frm, text="Max:").grid(row=1, column=0, sticky='e', padx=5, pady=5)
+        max_var = ttk.StringVar(value=f"{cur_max:.3f}")
+        ttk.Entry(frm, textvariable=max_var, width=10).grid(row=1, column=1, padx=5, pady=5)
+
+        # Nticks
+        ttk.Label(frm, text="Ticks (optional):").grid(row=2, column=0, sticky='e', padx=5, pady=5)
+        nticks_var = ttk.StringVar(value=str(cur_nticks))
+        ttk.Entry(frm, textvariable=nticks_var, width=10).grid(row=2, column=1, padx=5, pady=5)
+
+        def apply():
+            try:
+                v_min = float(min_var.get())
+                v_max = float(max_var.get())
+                
+                nt_str = nticks_var.get().strip()
+                nt = int(nt_str) if nt_str else None
+                
+                # Apply
+                self.plot.set_y_limits(min(v_min, v_max), max(v_min, v_max), nt)
+                self._refresh_plot_callback()
+                dlg.destroy()
+            except ValueError:
+                messagebox.showerror("Invalid Input", "Please enter valid numbers.", parent=dlg)
+
+        def auto():
+            self.plot.set_y_limits(None, None, None)
+            self._refresh_plot_callback()
+            dlg.destroy()
+
+        btn_frm = ttk.Frame(frm)
+        btn_frm.grid(row=3, column=0, columnspan=2, pady=(10, 0))
+        
+        ttk.Button(btn_frm, text="Auto / Reset", command=auto).pack(side=LEFT, padx=5)
+        ttk.Button(btn_frm, text="Apply", command=apply, style="Accent.TButton").pack(side=LEFT, padx=5)
+
+        dlg.bind("<Return>", lambda e: apply())
+        dlg.bind("<Escape>", lambda e: dlg.destroy())
+
     # Helpers for collapsing/expanding
     def _place_left_sash(self, xpx: int):
         try:
@@ -1388,189 +1916,8 @@ class LightCurveGUI:
         self.save_menu_btn["menu"] = self.save_menu
         self.save_menu_btn.pack(side=LEFT, padx=4)
 
-    def _build_color_menu(self, parent=None, pack_btn=True):
-        """Create Colors menubutton (dynamically populated via _rebuild_color_menu).
-
-        The menu should be created with a concrete master that matches where it will be
-        cascaded (e.g. into another Menu). If `parent` is provided and is a Menu,
-        use it as the master so mouse navigation works correctly when cascaded.
-        """
-        # create the Menu instance for colors. When cascaded into another Menu it's
-        # important the Menu's master is that Menu (or the root) so mouse events are
-        # handled correctly. Use `parent` as the master when provided.
-        master_for_menu = parent if parent is not None else self.root
-        # If parent is a ttk widget (like a Frame) fall back to root
-        try:
-            if hasattr(master_for_menu, 'add_command') and isinstance(master_for_menu, tk.Menu):
-                menu_master = master_for_menu
-            else:
-                menu_master = self.root
-        except Exception:
-            menu_master = self.root
-        self.color_menu = tk.Menu(menu_master, tearoff=0)
-        if pack_btn and parent is not None:
-            self.color_menu_btn = ttk.Menubutton(parent, text="Colors")
-            self.color_menu_btn["menu"] = self.color_menu
-            self.color_menu_btn.pack(side=LEFT, padx=4)
-        # initial populate
-        self._rebuild_color_menu()
-
-    def _apply_color_to_band(self, band: str, hexcolor: str):
-        """Apply a color string to a given band and refresh the plot/menu."""
-        if not band:
-            return
-        try:
-            self.custom_colors[str(band)] = str(hexcolor)
-        except Exception:
-            self.custom_colors[str(band)] = hexcolor
-        if hasattr(self, 'plot') and getattr(self.plot, 'invalidate_layout', None):
-            self.plot.invalidate_layout()
-        self.request_plot_update()
-        self._rebuild_color_menu()
-
-    def _apply_default_colors(self, use_band_colors: bool = True):
-        """Apply a sensible default mapping for all currently known bands.
-        If use_band_colors is True, prefer the BAND_COLORS mapping; otherwise
-        use the DEFAULT_COLORS circular palette.
-        """
-        bands = sorted({str(b) for lc in self.lightcurves.values() for b in lc.get_bands()})
-        for i, b in enumerate(bands):
-            if use_band_colors and b in BAND_COLORS:
-                self.custom_colors[b] = BAND_COLORS[b]
-            else:
-                self.custom_colors[b] = DEFAULT_COLORS[i % len(DEFAULT_COLORS)]
-        if hasattr(self, 'plot') and getattr(self.plot, 'invalidate_layout', None):
-            self.plot.invalidate_layout()
-        self.request_plot_update()
-        self._rebuild_color_menu()
-
-    def _rebuild_color_menu(self):
-        """Populate the Colors menu with per-band entries and special controls."""
-        # ensure menu exists
-        if not hasattr(self, 'color_menu'):
-            return
-        try:
-            self.color_menu.delete(0, END)
-        except Exception:
-            return
-
-        # per-band color entries
-        bands = sorted({str(b) for lc in self.lightcurves.values() for b in lc.get_bands()})
-        if bands:
-            # helpful top-level actions
-            self.color_menu.add_command(label="Apply BAND_COLORS defaults",
-                                        command=lambda: self._apply_default_colors(True))
-            self.color_menu.add_command(label="Apply simple palette defaults",
-                                        command=lambda: self._apply_default_colors(False))
-            self.color_menu.add_separator()
-
-            # For each band provide a submenu with explicit choices: pick custom color or use defaults
-            for b in bands:
-                sub = tk.Menu(self.color_menu, tearoff=0)
-                sub.add_command(label="Pick color...", command=lambda _b=b: self._pick_color_for_band(_b))
-                # offer the canonical band color if known
-                if b in BAND_COLORS:
-                    sub.add_command(label=f"Use canonical ({BAND_COLORS[b]})",
-                                    command=lambda _b=b, _c=BAND_COLORS[b]: self._apply_color_to_band(_b, _c))
-                # Palette quick-picker (opens a small swatch dialog)
-                sub.add_command(label="Palette...", command=lambda _b=b: self._show_palette_picker(_b))
-                self.color_menu.add_cascade(label=b, menu=sub)
-            self.color_menu.add_separator()
-
-        # flagged behavior toggle
-        def _toggle_flagged_use():
-            self.flagged_use_filter = not self.flagged_use_filter
-            # force full rebuild so colors update immediately
-            if hasattr(self, 'plot') and getattr(self.plot, 'invalidate_layout', None):
-                self.plot.invalidate_layout()
-            # update menu check mark
-            self._rebuild_color_menu()
-            self.request_plot_update()
-
-        # add checkbutton-like entry for flagged use
-        chk_label = "Flagged use filter color"
-        # show as checked if True
-        if self.flagged_use_filter:
-            self.color_menu.add_command(label=chk_label + " ✓", command=_toggle_flagged_use)
-        else:
-            self.color_menu.add_command(label=chk_label, command=_toggle_flagged_use)
-
-        # explicit color pickers for flagged/rejected
-        self.color_menu.add_separator()
-        # use palette picker for special keys as well
-        self.color_menu.add_command(label="Set flagged color...", command=lambda: self._show_palette_picker('flagged'))
-        self.color_menu.add_command(label="Set rejected color...",
-                                    command=lambda: self._show_palette_picker('rejected'))
-
-    def _pick_color_for_band(self, band: str):
-        try:
-            cur = self.custom_colors.get(band, BAND_COLORS.get(band, '#000000'))
-            rgb, hx = colorchooser.askcolor(color=cur, parent=self.root, title=f"Choose color for {band}")
-            if hx:
-                self.custom_colors[str(band)] = hx
-                # force full rebuild so new color is applied to existing artists
-                if hasattr(self, 'plot') and getattr(self.plot, 'invalidate_layout', None):
-                    self.plot.invalidate_layout()
-                self.request_plot_update()
-                # rebuild menu to show changes if needed
-                self._rebuild_color_menu()
-        except Exception:
-            pass
-
-    def _show_palette_picker(self, band: Optional[str] = None, title: Optional[str] = None):
-        """Open a small dialog showing a grid of palette swatches.
-
-        Clicking a swatch applies the color to the given `band` (or to special
-        keys like 'flagged'/'rejected' when passed) and closes the dialog.
-        """
-        if title is None:
-            title = f"Choose color for {band}" if band else "Choose color"
-        try:
-            top = tk.Toplevel(self.root)
-            top.transient(self.root)
-            top.title(title)
-            top.resizable(False, False)
-            # place near main window
-            try:
-                x = self.root.winfo_x() + 120
-                y = self.root.winfo_y() + 120
-                top.geometry(f"+{x}+{y}")
-            except Exception:
-                pass
-
-            frm = ttk.Frame(top, padding=6)
-            frm.pack(fill='both', expand=True)
-
-            # show swatches in a configurable grid
-            cols = 8
-            colors = list(dict.fromkeys(PALETTE_SWATCHES))
-            # Use a Canvas rectangle for each swatch instead of tk.Button.
-            # Themed buttons may ignore bg colors on some platforms/themes
-            # and appear as gray; drawing a filled rectangle on a Canvas
-            # reliably shows the intended color.
-            sw_w = 28
-            sw_h = 18
-            for i, c in enumerate(colors):
-                r = i // cols;
-                col = i % cols
-                sw = tk.Canvas(frm, width=sw_w, height=sw_h, highlightthickness=1, bd=0)
-                sw.grid(row=r, column=col, padx=3, pady=3)
-                # draw filled rectangle showing the color
-                rect = sw.create_rectangle(0, 0, sw_w, sw_h, fill=c, outline='black')
-                # bind clicks on the rectangle and the canvas to apply color
-                sw.tag_bind(rect, "<Button-1>", lambda e, _c=c: (self._apply_color_to_band(band, _c), top.destroy()))
-                sw.bind("<Button-1>", lambda e, _c=c: (self._apply_color_to_band(band, _c), top.destroy()))
-
-            # provide a button to open the standard colorchooser as well
-            btn_row = (len(colors) + cols - 1) // cols
-            ttk.Button(frm, text="More...", command=lambda: (self._pick_color_for_band(band), top.destroy())).grid(
-                row=btn_row, column=0, columnspan=cols, pady=(8, 0))
-        except Exception:
-            pass
 
     def show_help(self):
-        ### MODIFIED ###
-        # Updated help text with 'S' key functionality
         msg = (
             "Hotkeys & Controls\n"
             "--------------------\n"
@@ -1578,6 +1925,7 @@ class LightCurveGUI:
             "r              Toggle rejection for selected point\n"
             "a              Cancel/clear selection\n"
             "S              Show / Hide image for selected point\n"
+            "o              Toggle overlay of the image\n"
             "<- / ->        Move selected point left/right\n"
             "s / d           Change vertical offset\n"
             "z / x          Decrease / Increase rotation period\n"
@@ -1983,25 +2331,25 @@ class LightCurveGUI:
           - self.selected_bands == set([...]) → only those bands are shown
           - self.selected_bands == set()      → show NONE (useful for 'Select None')
         """
-        # 1) Collect all bands present across loaded LCs, as strings
+        # 1 Collect all bands present across loaded LCs, as strings
         bands: list[str] = sorted({str(b) for lc in self.lightcurves.values() for b in lc.get_bands()})
 
-        # 2) Default to ALL bands selected if nothing chosen yet
+        # 2 Default to ALL bands selected if nothing chosen yet
         if not getattr(self, "selected_bands", None):
             # if it's empty (or missing), pick 'all'
             self.selected_bands = set(bands)
 
-        # 3) Drop any previously selected band that no longer exists
+        # 3 Drop any previously selected band that no longer exists
         self.selected_bands = {b for b in self.selected_bands if b in bands}
 
         # If we dropped everything (e.g., re-opened different files), fall back to ALL
         if not self.selected_bands and bands:
             self.selected_bands = set(bands)
 
-        # 4) Rebuild the BooleanVars for each band
+        # 4 Rebuild the BooleanVars for each band
         self.band_vars = {b: tk.BooleanVar(value=(b in self.selected_bands)) for b in bands}
 
-        # 5) Rebuild the menu UI
+        # 5 Rebuild the menu UI
         self.filter_menu.delete(0, END)
 
         def set_all(val: bool):
@@ -2017,7 +2365,7 @@ class LightCurveGUI:
             self.filter_menu.add_checkbutton(label=b, variable=self.band_vars[b],
                                              command=self._on_band_menu_changed)
 
-        # 6) Update button text + redraw
+        # 6 Update button text + redraw
         self._update_filter_btn_text()
         self.request_plot_update()
 
@@ -2086,7 +2434,7 @@ class LightCurveGUI:
             self.plot.selection = {'alias': alias, 'index': idx}
 
         self.request_plot_update()
-        self._update_asteroid_image()  # Update image on any click
+        self.asteroid_viewer.update_image()  # Update image on any click
 
     def toggle_rejection(self):
         if self.current_lc_alias is None or self.current_point_index is None:
@@ -2109,7 +2457,7 @@ class LightCurveGUI:
         self.current_point_band = None
         self._update_selected_point_label()
         self.request_plot_update()
-        self._update_asteroid_image()  # Update (clear) image window
+        self.asteroid_viewer.update_image()  # Update (clear) image window
 
     def move_point(self, direction: int):
         """Move selection to the next/previous point using arrow keys."""
@@ -2134,7 +2482,7 @@ class LightCurveGUI:
         self.request_plot_update()
 
         # Update the image if the window is open
-        self._update_asteroid_image()
+        self.asteroid_viewer.update_image()
 
     def _update_selected_point_label(self):
         """Update the selected point footnote label."""
@@ -2157,140 +2505,7 @@ class LightCurveGUI:
             self.selected_point_label.config(text="")
 
     def show_asteroid_image(self, event=None):
-        """Toggles the visibility of the asteroid image window (remembers last position)."""
-        # If window exists -> toggle show/hide, saving geometry before hiding
-        if getattr(self, "image_window", None) is not None and self.image_window.winfo_exists():
-            try:
-                # if hidden, restore and lift; else save geometry then hide
-                if str(self.image_window.state()) == "withdrawn":
-                    if self._image_window_geometry:
-                        try:
-                            self.image_window.geometry(self._image_window_geometry)
-                        except Exception:
-                            pass
-                    self.image_window.deiconify()
-                    self.image_window.lift()
-                else:
-                    # save last geometry before hiding
-                    try:
-                        self._image_window_geometry = self.image_window.geometry()
-                    except Exception:
-                        pass
-                    self.image_window.withdraw()
-            except Exception:
-                pass
-            return
-
-        # Else create the window and apply last known geometry
-        try:
-            top = tk.Toplevel(self.root)
-            self.image_window = top
-            top.title("Asteroid image")
-            # restore last geometry if any
-            if self._image_window_geometry:
-                try:
-                    top.geometry(self._image_window_geometry)
-                except Exception:
-                    pass
-            # start tracking further moves/resizes
-            self._bind_image_window_position_tracking(top)
-            # ensure we draw the current image into the window
-            if hasattr(self, "_update_asteroid_image"):
-                self._update_asteroid_image()
-        except Exception:
-            pass
-
-    def _bind_image_window_position_tracking(self, win: tk.Toplevel) -> None:
-        """Track image window position/size so it can be restored next open."""
-
-        def _on_configure(evt=None):
-            try:
-                # Only capture for the top-level itself
-                if evt is None or evt.widget is win:
-                    self._image_window_geometry = win.geometry()
-            except Exception:
-                pass
-
-        try:
-            # store whenever the toplevel moves or resizes
-            win.bind("<Configure>", _on_configure, add="+")
-        except Exception:
-            pass
-
-    def _on_image_window_close(self):
-        """Cleanly destroys the image window and resets the reference."""
-        if hasattr(self, 'image_window') and self.image_window:
-            self.image_window.destroy()
-            self.image_window = None
-
-    def _update_asteroid_image(self):
-        """Loads and displays the image for the current selection in the existing window."""
-        if not hasattr(self, 'image_window') or not self.image_window or not self.image_window.winfo_exists():
-            return
-
-        # Clear any previous content
-        for widget in self.image_window.winfo_children():
-            widget.destroy()
-
-        if self.current_lc_alias is None or self.current_point_index is None:
-            ttk.Label(self.image_window, text="No point selected.").pack(padx=20, pady=20)
-            self.image_window.title("Asteroid Image")
-            return
-
-        try:
-            lc = self.lightcurves[self.current_lc_alias]
-            row_data = lc.df.iloc[self.current_point_index]
-        except (KeyError, IndexError):
-            ttk.Label(self.image_window, text="Error retrieving data for point.").pack(padx=20, pady=20)
-            return
-
-        cwd = os.getcwd()
-        if 'filename' in row_data and pd.notna(row_data['filename']):
-            # if control star mode, look for control star images
-            if self.mode == 'control':
-                image_name = Path(row_data['filename']).stem
-                image_path = [str(path) for path in Path(cwd).glob(f'**/Control_Star*{image_name}_thumb.png')][0]
-                overlay_path = [str(path) for path in Path(cwd).glob(f'**/Control_Star*{image_name}_thumb_overlay.png')][0]
-            else:
-                image_name = Path(row_data['filename']).stem
-                image_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb.png')][0]
-                overlay_path = [str(path) for path in Path(cwd).glob(f'**/*__{image_name}_thumb_overlay.png')][0]
-        if not image_path or pd.isna(image_path):
-            ttk.Label(self.image_window, text="No image path for this point.").pack(padx=20, pady=20)
-            return
-
-        if not os.path.isabs(image_path) and lc.filename:
-            csv_directory = os.path.dirname(lc.filename)
-            full_path = os.path.join(csv_directory, image_path)
-            full_path_overlay = os.path.join(csv_directory, overlay_path)
-        else:
-            full_path = image_path
-            full_path_overlay = overlay_path
-
-        if not os.path.exists(full_path):
-            ttk.Label(self.image_window, text=f"Image file not found:\n{os.path.basename(full_path)}",
-                      wraplength=300).pack(padx=20, pady=20)
-            return
-
-        try:
-            img = Image.open(full_path)
-            overlay = Image.open(full_path_overlay)
-            photo = ImageTk.PhotoImage(img)
-            img_label = ttk.Label(self.image_window, image=photo)
-            # Keep a reference to the PhotoImage
-            # object, otherwise it gets garbage collected and the image disappears.
-            img_label.image = photo
-            # add overlay if available (with transparency)
-            if overlay:
-                overlay = overlay.resize(img.size)
-                img.paste(overlay, (0, 0), overlay)
-                photo_with_overlay = ImageTk.PhotoImage(img)
-                img_label.configure(image=photo_with_overlay)
-                img_label.image = photo_with_overlay
-            img_label.pack(padx=10, pady=10)
-            self.image_window.title(f"Image: {os.path.basename(full_path)}")
-        except Exception as e:
-            ttk.Label(self.image_window, text=f"Error loading image:\n{e}", wraplength=300).pack(padx=20, pady=20)
+        self.asteroid_viewer.toggle_visibility()
 
     # ——— Rotation period ———
     def adjust_rotation_period(self, delta: float):
@@ -2341,11 +2556,8 @@ class LightCurveGUI:
                 if new is None: return
                 plot.xlabel = new
             elif artist is getattr(plot, 'ylabel_text', None):
-                cur = getattr(plot, 'ylabel', '')
-                new = simpledialog.askstring("Edit Y label", "Enter new Y axis label:", initialvalue=cur,
-                                             parent=self.root)
-                if new is None: return
-                plot.ylabel = new
+                self.open_y_scale_dialog()
+                return
             else:
                 return
 
