@@ -58,7 +58,7 @@ def combine_csv_files(path_core_dir: str,
     if append:
         combined_data.to_csv(out_file_path, mode='a', header=False, index=False)
     else:
-        combined_data.to_csv(out_file_path, index=False)
+        combined_data.to_csv(out_file_path, mode='w', index=False)
 
 
 if __name__ == '__main__':

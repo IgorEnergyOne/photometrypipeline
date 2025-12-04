@@ -267,6 +267,58 @@ class catalog(object):
             if not use_all_stars:
                 self.data = self.data[self.data['e_rp1mag'] <= 0.03]
 
+
+        elif self.catalogname == 'PANSTARRS_KB':
+
+            vquery = Vizier(columns=['objID', 'RAJ2000', 'DEJ2000',
+                                     'e_RAJ2000', 'e_DEJ2000',
+                                     'gmag', 'e_gmag',
+                                     'rmag', 'e_rmag',
+                                     'imag', 'e_imag',
+                                     'zmag', 'e_zmag',
+                                     'ymag', 'e_ymag'],
+                            column_filters={"rmag":
+                                            ("<{:f}".format(max_mag))},
+                            row_limit=max_sources,
+                            timeout=300)
+
+            try:
+                self.data = vquery.query_region(field,
+                                                radius=rad_deg * u.deg,
+                                                catalog="II/349/ps1",
+                                                cache=False)[0]
+            except IndexError:
+                if self.display:
+                    print('no data available from {:s}'.format(
+                        self.catalogname))
+                logging.error('no data available from {:s}'.format(
+                    self.catalogname))
+                return 0
+
+            # rename column names using PP conventions
+            self.data.rename_column('objID', 'ident')
+            self.data.rename_column('RAJ2000', 'ra_deg')
+            self.data.rename_column('DEJ2000', 'dec_deg')
+            self.data.rename_column('e_RAJ2000', 'e_ra_deg')
+            self.data['e_ra_deg'].convert_unit_to(u.deg)
+            self.data.rename_column('e_DEJ2000', 'e_dec_deg')
+            self.data['e_dec_deg'].convert_unit_to(u.deg)
+            self.data.rename_column('gmag', 'gp1mag')
+            self.data.rename_column('e_gmag', 'e_gp1mag')
+            self.data.rename_column('rmag', 'rp1mag')
+            self.data.rename_column('e_rmag', 'e_rp1mag')
+            self.data.rename_column('imag', 'ip1mag')
+            self.data.rename_column('e_imag', 'e_ip1mag')
+            self.data.rename_column('zmag', 'zp1mag')
+            self.data.rename_column('e_zmag', 'e_zp1mag')
+            self.data.rename_column('ymag', 'yp1mag')
+            self.data.rename_column('e_ymag', 'e_yp1mag')
+            self.data['mag'] = self.data['rp1mag']  # use rmag for astrometry
+
+            # clip self.data to enforce magnitude error limits
+            if not use_all_stars:
+                self.data = self.data[self.data['e_rp1mag'] <= 0.03]
+
         # --------------------------------------------------------------------
         # use astroquery vizier query for SkyMapper
         elif self.catalogname == 'SkyMapper':
@@ -525,7 +577,7 @@ class catalog(object):
                 self.data = self.data[qmask]
 
             # rename column names using PP conventions
-            self.data.rename_column('_2MASS', 'ident')
+            self.data.rename_column('2MASS', 'ident')
             self.data.rename_column('RAJ2000', 'ra_deg')
             self.data.rename_column('DEJ2000', 'dec_deg')
             self.data.rename_column('Kmag', 'Ksmag')
@@ -756,6 +808,42 @@ class catalog(object):
             # make sure our RA/DEC errors have units
             self.data['e_ra_deg'] = self.data['e_ra_deg'] * u.arcsec
             self.data['e_dec_deg'] = self.data['e_dec_deg'] * u.arcsec
+
+        elif self.catalogname == 'SDSS-R16':
+            vquery = Vizier(columns=['objID', 'RA_ICRS', 'DE_ICRS',
+                                     'e_RA_ICRS',
+                                     'e_DE_ICRS', 'umag', 'e_umag',
+                                     'gmag', 'e_gmag', 'rmag', 'e_rmag',
+                                     'imag', 'e_imag', 'zmag', 'e_zmag'],
+                            column_filters={"gmag":
+                                                ("<{:f}".format(max_mag))},
+                            row_limit=max_sources)
+            try:
+                self.data = vquery.query_region(field,
+                                                radius=rad_deg * u.deg,
+                                                catalog="V/154/sdss16",
+                                                cache=False)[0]
+            except IndexError:
+                if self.display:
+                    print('no data available from {:s}'.format(
+                        self.catalogname))
+                logging.error('no data available from {:s}'.format(
+                    self.catalogname))
+                return 0
+
+            # rename column names using PP conventions
+            self.data.rename_column('SDSS16', 'ident')
+            self.data.rename_column('RA_ICRS', 'ra_deg')
+            self.data.rename_column('DE_ICRS', 'dec_deg')
+            self.data.rename_column('e_RA_ICRS', 'e_ra_deg')
+            self.data.rename_column('e_DE_ICRS', 'e_dec_deg')
+
+            # perform correction to AB system for SDSS
+            # http://www.sdss3.org/dr8/algorithms/fluxcal.php#SDSStoAB
+            self.data['umag'] -= 0.04
+            self.data['zmag'] += 0.02
+
+            self.data['mag'] = self.data['rmag']  # use rmag for astrometry
 
         else:
             if self.display:
@@ -1323,7 +1411,7 @@ class catalog(object):
             return self.shape[0]
 
         # PANSTARRS to BVRI
-        elif ('PANSTARRS' in self.catalogname and
+        elif ('PANSTARRS_KB' in self.catalogname and
               targetfilter in ['B', 'V', 'R', 'I']):
 
             logging.info(('trying to transform {:d} PANSTARRS sources to '
@@ -1346,6 +1434,55 @@ class catalog(object):
             Rerr = np.sqrt(e_r ** 2 + 0.041 ** 2)
             I = (i - 0.387 - 0.123 * (g - r) - 0.034 * (g - r) ** 2)
             Ierr = np.sqrt(e_i ** 2 + 0.054 ** 2)
+
+            self.data.add_column(Column(data=B, name='_Bmag', unit=u.mag))
+            self.data.add_column(Column(data=Berr, name='_e_Bmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=V, name='_Vmag', unit=u.mag))
+            self.data.add_column(Column(data=Verr, name='_e_Vmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=R, name='_Rmag', unit=u.mag))
+            self.data.add_column(Column(data=Rerr, name='_e_Rmag',
+                                        unit=u.mag))
+            self.data.add_column(Column(data=I, name='_Imag', unit=u.mag))
+            self.data.add_column(Column(data=Ierr, name='_e_Imag',
+                                        unit=u.mag))
+
+            if '_transformed' not in self.catalogname:
+                self.catalogname += '_transformed'
+                self.history += ', {:d} transformed to {:s} (Vega)'.format(
+                    self.shape[0], targetfilter)
+                self.magsystem = 'Vega'
+
+            logging.info(('{:d} sources sucessfully transformed '
+                          'to {:s}').format(self.shape[0], targetfilter))
+
+            return self.shape[0]
+
+
+        elif ('PANSTARRS' in self.catalogname and
+              targetfilter in ['B', 'V', 'R', 'I']):
+
+            logging.info(('trying to transform {:d} PANSTARRS sources to '
+                          + '{:s}').format(self.shape[0], targetfilter))
+
+            # transform magnitudes to BVRI, Vega system
+            # using Tonry et al. 2012, ApJ 750
+            g = self.data['gp1mag'].data
+            e_g = self.data['e_gp1mag'].data
+            r = self.data['rp1mag'].data
+            e_r = self.data['e_rp1mag'].data
+            i = self.data['ip1mag'].data
+            e_i = self.data['e_ip1mag'].data
+
+            B = (g + 0.212 + 0.556 * (g - r) + 0.034 * (g - r) ** 2)
+            Berr = np.sqrt(e_g ** 2 + 0.032 ** 2)
+            V = (g + 0.005 - 0.536 * (g - r) + 0.011 * (g - r) ** 2)
+            Verr = np.sqrt(e_g ** 2 + 0.012 ** 2)
+            R = (r - 0.137 - 0.108 * (g - r) - 0.029 * (g - r) ** 2)
+            Rerr = np.sqrt(e_r ** 2 + 0.015 ** 2)
+            I = (i - 0.366 - 0.136 * (g - r) - 0.018 * (g - r) ** 2)
+            Ierr = np.sqrt(e_i ** 2 + 0.017 ** 2)
 
             self.data.add_column(Column(data=B, name='_Bmag', unit=u.mag))
             self.data.add_column(Column(data=Berr, name='_e_Bmag',

@@ -152,6 +152,7 @@ allcatalogs_magsys = {'URAT-1': 'Vega',
                       'GAIA': 'Vega',
                       'GAIA3': 'Vega',
                       'PANSTARRS': 'AB',
+                      'PANSTARRS_KB': 'AB',
                       'TGAS': 'Vega',
                       'SkyMapper': 'AB',
                       'USNO-B1': 'Vega'}
@@ -190,6 +191,7 @@ minstars = 0.5
 # solar color margin
 # solar color filtering allows for color indices
 # [color-_pp_conf.solcol -- color+_pp_conf.solcol]
+# default is 0.2 (in sloan ugriz g-r (sun=0.44) and r-i (sun=0.11) colors)
 solcol = 0.2
 
 

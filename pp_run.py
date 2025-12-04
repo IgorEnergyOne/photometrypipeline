@@ -506,7 +506,7 @@ if __name__ == '__main__':
                                         "'p 3 2 -15'     -> pill aperture, length=3, width=2, theta=-15\n",
                         default=None)
     parser.add_argument('-photo_catalog', help='which photometric catalog to use',
-                        choices=['2MASS', 'URAT-1', 'SDSS-R9', 'APASS9', 'PANSTARRS', 'SkyMapper', 'GAIA', 'GAIA3'],
+                        choices=['2MASS', 'URAT-1', 'SDSS-R9', 'SDSS-R16', 'APASS9', 'PANSTARRS', 'PANSTARRS_KB', 'SkyMapper', 'GAIA', 'GAIA3'],
                         default=None)
     parser.add_argument('-astro_catalog', help='which astrometric catalog to use',
                         choices=['GAIA', 'GAIA3', 'USNO-B1', 'TGAS', '2MASS', 'URAT-1', 'SDSS-R9', 'SDSS-R13'],
