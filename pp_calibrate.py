@@ -221,6 +221,119 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                     (catalogname, n_sources))
     return None
 
+def spatially_uniform_sample(x, y, n_samples=300, n_grid=10):
+    """
+    Select ~n_samples points uniformly distributed across the image.
+
+    Parameters
+    ----------
+    x, y : arrays
+        Coordinates of stars on the image.
+    n_samples : int
+        Total number of stars desired.
+    n_grid : int
+        Number of grid divisions per axis (image is divided into n_grid x n_grid cells).
+
+    Returns
+    -------
+    idx : array
+        Indices of selected stars in the input arrays.
+    """
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    # Define grid edges
+    x_edges = np.linspace(x.min(), x.max(), n_grid + 1)
+    y_edges = np.linspace(y.min(), y.max(), n_grid + 1)
+
+    # how many per cell (rough target)
+    per_cell = int(n_samples / (n_grid * n_grid)) + 1
+    selected = []
+
+    for i in range(n_grid):
+        for j in range(n_grid):
+            # find stars in this cell
+            mask = (x >= x_edges[i]) & (x < x_edges[i + 1]) & \
+                   (y >= y_edges[j]) & (y < y_edges[j + 1])
+            candidates = np.where(mask)[0]
+
+            if len(candidates) > 0:
+                k = min(per_cell, len(candidates))
+                choice = np.random.choice(candidates, k, replace=False)
+                selected.extend(choice)
+
+    selected = np.array(selected)
+
+    # If we overshot, randomly trim down to n_samples
+    if len(selected) > n_samples:
+        selected = np.random.choice(selected, n_samples, replace=False)
+
+    return selected
+
+
+def hollow_square_sample(x, y, n_samples=300, n_shells=8):
+    """
+    Select ~n_samples stars distributed in hollow square shells
+    (center to edges of the image).
+
+    Parameters
+    ----------
+    x, y : arrays
+        Coordinates of stars on the image.
+    n_samples : int
+        Total number of stars desired.
+    n_shells : int
+        Number of concentric square shells.
+
+    Returns
+    -------
+    idx : array
+        Indices of selected stars in the input arrays.
+    """
+    x = np.asarray(x)
+    y = np.asarray(y)
+
+    # Image center
+    x_center = 0.5 * (x.min() + x.max())
+    y_center = 0.5 * (y.min() + y.max())
+
+    # Maximum half-size (distance to furthest edge)
+    max_half_size = max(x.max() - x_center, y.max() - y_center)
+
+    # Define shell boundaries (half-widths)
+    edges = np.linspace(0, max_half_size, n_shells + 1)
+
+    # how many per shell (rough target)
+    per_shell = int(n_samples / n_shells) + 1
+    selected = []
+
+    for i in range(n_shells):
+        inner = edges[i]
+        outer = edges[i + 1]
+
+        # mask stars inside outer square
+        in_outer = ((np.abs(x - x_center) <= outer) &
+                    (np.abs(y - y_center) <= outer))
+        # mask stars outside inner square
+        out_inner = ((np.abs(x - x_center) > inner) |
+                     (np.abs(y - y_center) > inner))
+        mask = in_outer & out_inner
+        candidates = np.where(mask)[0]
+
+        if len(candidates) > 0:
+            k = min(per_shell, len(candidates))
+            choice = np.random.choice(candidates, k, replace=False)
+            selected.extend(choice)
+
+    selected = np.array(selected)
+
+    # Trim to exactly n_samples if we overshot
+    if len(selected) > n_samples:
+        selected = np.random.choice(selected, n_samples, replace=False)
+
+    return selected
+
+
 
 def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars_external,
                       use_all_stars=False,
@@ -263,6 +376,8 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
         cat.reject_sources_other_than(cat.data['MAG_'+ phot_mode] != 99)
         cat.reject_sources_other_than(cat.data['MAGERR_'
                                                + phot_mode] != 99)
+        # cat.reject_sources_other_than(cat.data['MAGERR_'
+        #                                        + phot_mode] <= 0.01)
         cat.reject_sources_with(np.isnan(
             cat.data['MAG_'+ phot_mode]))
         cat.reject_sources_with(np.isnan(cat.data['MAGERR_' +
@@ -299,6 +414,18 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
             logging.info(f'Length after/before rejection in {search_rad:.2f} deg radius: {len(cat.data)}/{len_before} ({cat.catalogname})')
             print(f'Length after/before rejection in {search_rad:.2f} deg radius: {len(cat.data)}/{len_before}')
 
+        # TODO downsample catalog to uniformly cover the image
+        # idx = spatially_uniform_sample(cat.data['XWIN_IMAGE'], cat.data['YWIN_IMAGE'],
+        #                                n_samples=len(ref_cat.data), n_grid=20)
+
+        # or use hollow square sampling
+
+        # sample_size = int(min(1e5, len(cat.data)))
+        # idx = hollow_square_sample(cat.data['XWIN_IMAGE'], cat.data['YWIN_IMAGE'],
+        #                             n_samples=sample_size, n_shells=5)
+
+        # cat.data = cat.data[idx]
+
         # add idx columns to both catalogs
         if 'idx' not in ref_cat.fields:
             ref_cat.add_field('idx',
@@ -328,9 +455,9 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
         logging.info('{:d} sources matched within {:.2f} arcsec'.format(
             len(match[0][0]), _pp_conf.pos_epsilon))
 
-        # artificially blow up incredibly small ref_cat uncertainties
-        for i in np.where(match[0][1] < 0.01):
-            match[0][1][i] = 0.01
+        # # artificially blow up incredibly small ref_cat uncertainties
+        # for i in np.where(match[0][1] < 0.01):
+        #     match[0][1][i] = 0.01
 
         residuals = match[0][0]-match[1][0]  # ref - instr
         residuals_sig = match[0][1]**2+match[1][1]**2
@@ -363,23 +490,18 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
                                              'success': False})
                 continue
 
-        # if minstars is a fraction (0.0-1.0), use minstars*len(match[0][0])
+        # if minstars is a fraction, use minstars*len(match[0][0])
         if minstars_external < 1:
             minstars = int(minstars_external*len(match[0][0]))
+            # if there is a small number of reference stars, use all of them
+            if minstars < 20:
+                minstars = len(match[0][0])
         else:
             minstars = int(minstars_external)
 
-
-        # if maxstars is a fraction (0.0-1.0), use maxstars*len(match[0][0])
-        if maxstars_external <= 1:
-            maxstars = int(maxstars_external*len(match[0][0]))
-        else:
-            maxstars = int(maxstars_external)
-
-        # if number of stars is larger than maxstars, use maxstars
-        # default was 100
-        if minstars > maxstars:
-            minstars = maxstars
+        # max 300 minstars
+        if minstars > 300:
+            minstars = 300
 
         # perform clipping to reject one outlier at a time
         zeropoint = 25  # initialize zeropoint
@@ -389,6 +511,7 @@ def derive_zeropoints(ref_cat, catalogs, filtername, minstars_external, maxstars
             # fchi2 = lambda zp: np.sum((zp-residuals)**2) # unweighted
 
             minchi2 = minimize(fchi2, zeropoint, method='Nelder-Mead')
+            # print(len(residuals), minchi2.fun/(len(residuals)-2), minchi2.x[0])
             red_chi2 = minchi2.fun/(len(residuals)-2)
             # reduced chi2: chi2/(N-observations-N_fit_variables-1)
             zeropoint = minchi2.x[0]
@@ -715,14 +838,10 @@ def calibrate(filenames, minstars, maxstars, manfilter, manualcatalog,
                                 minstars, maxstars,
                                 use_all_stars=use_all_stars,
                                 display=display,
+                                phot_mode=phot_mode,
                                 diagnostics=diagnostics,
                                 radius_coeff=radius_coeff)
 
-    # zp_data content
-    #
-    # derive_zeropoints.output
-    #
-    ###
 
     # update diagnostics website
     diag.add_calibration(zp_data)

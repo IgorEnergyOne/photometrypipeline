@@ -43,7 +43,16 @@ import pp_extract
 from catalog import *
 from toolbox import *
 from diagnostics import photometry as diag
-from photutils_apertures import PillBoxAperture
+from photutils_apertures import PillBoxAperture, PillBoxAnnulus
+from photutils.centroids import centroid_sources, centroid_2dg
+from photutils.aperture import CircularAperture, CircularAnnulus, EllipticalAperture, EllipticalAnnulus, ApertureStats, aperture_photometry
+from photutils.segmentation import detect_sources, deblend_sources, SourceCatalog
+from astropy.convolution import Gaussian2DKernel, convolve
+from astropy.stats import gaussian_fwhm_to_sigma, SigmaClip
+from photutils.background import MedianBackground, StdBackgroundRMS, Background2D
+from astropy.table import Table
+from astropy.coordinates import SkyCoord
+import astropy.units as u
 
 # setup logging
 logging.basicConfig(filename=_pp_conf.log_filename,
@@ -433,9 +442,60 @@ def photometry(filenames, sex_snr, source_minarea, source_maxarea, aprad,
     else:
         return None
 
-def target_photometry(filenames, telescope, aperture: str = None):
+def deblend_asteroid(data, x_ast, y_ast, deblend_patch_size=30):
+    """Procedure to deblend asteroid source using photutils"""
+    y_int, x_int = int(y_ast), int(x_ast)
+    # Ensure patch is within image bounds
+    y_start = max(0, y_int - deblend_patch_size)
+    y_end = min(data.shape[0], y_int + deblend_patch_size)
+    x_start = max(0, x_int - deblend_patch_size)
+    x_end = min(data.shape[1], x_int + deblend_patch_size)
+    
+    patch_data_deblend = data[y_start:y_end, x_start:x_end]
+    
+    # Simple background estimation for threshold
+    # sigma_clip = SigmaClip(sigma=3.0, maxiters=10)
+    threshold = MedianBackground().calc_background(patch_data_deblend) + \
+                3.0 * StdBackgroundRMS().calc_background_rms(patch_data_deblend)
+    
+    # Detect sources
+    sigma = 3.0 * gaussian_fwhm_to_sigma  # FWHM = 3.0
+    kernel = Gaussian2DKernel(sigma, x_size=3, y_size=3)
+    kernel.normalize()
+    convolved_data = convolve(patch_data_deblend, kernel)
+    segm = detect_sources(convolved_data, threshold, npixels=5)
+    
+    if segm is not None:
+        # Deblend
+        segm_deblend = deblend_sources(patch_data_deblend, segm, npixels=5,
+                                       nlevels=32, contrast=0.001)
+        
+        # Find the source closest to the center of the patch
+        cat = SourceCatalog(patch_data_deblend, segm_deblend)
+        tbl = cat.to_table()
+        
+        # Center of the patch in patch coordinates
+        cx = x_ast - x_start
+        cy = y_ast - y_start
+        
+        dists = np.sqrt((tbl['xcentroid'] - cx)**2 + (tbl['ycentroid'] - cy)**2)
+        min_idx = np.argmin(dists)
+        
+        # Update x_ast, y_ast with the refined deblended position
+        # Convert back to full image coordinates
+        dx = tbl['xcentroid'][min_idx] - cx
+        dy = tbl['ycentroid'][min_idx] - cy
+        
+        x_ast_new = x_ast + dx
+        y_ast_new = y_ast + dy
+        
+        logging.info(f"Deblended position: x={x_ast_new}, y={y_ast_new} (shift: dx={dx:.2f}, dy={dy:.2f})")
+        return x_ast_new, y_ast_new
+    else:
+        logging.warning("Deblending failed: No sources detected in patch.")
+        return x_ast, y_ast
 
-
+def target_photometry(filenames, telescope, aperture: str = None, phot_mode: str='APER'):
     # parse aperture string
     aper_params = parse_aperture_string(aperture)
     # get telescope photometry parameters
@@ -467,21 +527,34 @@ def target_photometry(filenames, telescope, aperture: str = None):
             if dec_string[0].find('-') > -1:
                 dec_deg = -1 * dec_deg
 
+        patch = 20
         ast_coord = SkyCoord(ra_deg*u.deg, dec_deg*u.deg)
-        # get the asteroid coordinates on the image
+        # get the asteroid coordinates on the image from ldac
         idx_ast, sep_ast = find_asteroid_ldac(table, ast_coord)
         x_ast, y_ast = table['XWIN_IMAGE'][idx_ast], table['YWIN_IMAGE'][idx_ast]
 
+        # get the source extractor flag for the asteroid
+        flag_ast = table['FLAGS'][idx_ast]
+        if flag_ast & 2: # the source was deblended by sextractor, thus need to deblend it again with photutils
+            logging.info("Asteroid source is blended (FLAG & 2). Attempting to deblend...")
+            x_ast, y_ast = deblend_asteroid(data, x_ast, y_ast, deblend_patch_size=patch)
+            
+
+        # refine asteroid centroid using photutils
+        x_ast, y_ast = centroid_sources(data, x_ast, y_ast, box_size=21,
+                                centroid_func=centroid_2dg)
+        x_ast, y_ast = x_ast[0], y_ast[0]
+        logging.info(f"Refined asteroid centroid: x={x_ast}, y={y_ast}")
+        logging.info(f"Difference from LDAC position: dx={x_ast - table['XWIN_IMAGE'][idx_ast]} px, "
+                     f"dy={y_ast - table['YWIN_IMAGE'][idx_ast]} px")
+
         # get the patch of the field where the asteroid is located
-        patch = 20
         xmin = int(x_ast - patch)
         ymin = int(y_ast - patch)
         patch_data = data[int(y_ast) - patch:int(y_ast) + patch,
                      int(x_ast) - patch:int(x_ast) + patch]
 
         # estimate the background
-        from astropy.stats import SigmaClip
-        from photutils.background import Background2D, MedianBackground
         sigma_clip = SigmaClip(sigma=3.0)
         bkg_estimator = MedianBackground()
         try:
@@ -494,25 +567,49 @@ def target_photometry(filenames, telescope, aperture: str = None):
                                sigma_clip=sigma_clip, bkg_estimator=bkg_estimator, exclude_percentile=50)
         bkg_value = bkg.background
 
+        position = (x_ast - xmin, y_ast - ymin)
         # create an aperture
         if aper_params['type'] == 'circular':
-            aperture = CircularAperture((x_ast - xmin, y_ast - ymin), r=aper_params['radius'])
+            # create circular aperture
+            aperture = CircularAperture(position, r=aper_params['radius'])
+            # create circular annulus for background estimation
+            annulus_aperture = CircularAnnulus(position,
+                                               r_in=aper_params['radius'] + 5,
+                                               r_out=aper_params['radius'] + 10)
         elif aper_params['type'] == 'elliptical':
-            aperture = EllipticalAperture((x_ast - xmin, y_ast - ymin),
+            aperture = EllipticalAperture(position,
                                           a=aper_params['a'],
                                           b=aper_params['b'],
                                           theta=aper_params['theta'] * u.deg)
+            # create elliptical annulus for background estimation
+            annulus_aperture = EllipticalAnnulus(position,
+                                                 a_in=aper_params['a'] + 5,
+                                                 a_out=aper_params['a'] + 10,
+                                                 b_in=aper_params['b'] + 5,
+                                                 b_out=aper_params['b'] + 10,
+                                                 theta=aper_params['theta'] * u.deg)
+
         elif aper_params['type'] == 'pill':
             aperture = PillBoxAperture(positions=(x_ast - xmin, y_ast - ymin),
                                        w=aper_params['width'],
                                        h=aper_params['height'],
                                        theta=aper_params['theta'] * u.deg)
+            annulus_aperture = PillBoxAnnulus(positions=(x_ast - xmin, y_ast - ymin),
+                                             w_in=aper_params['width'] + 5,
+                                             w_out=aper_params['width'] + 10,
+                                             h_in=aper_params['height'] + 5,
+                                             h_out=aper_params['height'] + 10,
+                                             theta=aper_params['theta'] * u.deg)
         else:
             raise ValueError('Unknown aperture type %s' % aper_params['type'])
         # perform aperture photometry and subtract background
-        phot = aperture_photometry(patch_data - bkg_value, aperture, method='exact', subpixels=5)
+        aperstats = ApertureStats(patch_data, annulus_aperture)
+        bkg_mean = aperstats.mean
+        logging.info(f'Annulus background: {bkg_mean:.2f},  mean background {bkg_value.mean():2f}')
+        phot = aperture_photometry(patch_data - bkg_mean, aperture, method='exact', subpixels=5)
         flux_ast = phot['aperture_sum'][0]
-        m_inst = -2.5 * np.log10(flux_ast)
+        # TODO magnitude for other sources depends on zeropoint set in the sextractor configuration files
+        m_inst = - 2.5 * np.log10(flux_ast) # + smthas zeropoint offset (like sextractor does)
         target_m_insts.append(m_inst)
 
 
@@ -520,18 +617,21 @@ def target_photometry(filenames, telescope, aperture: str = None):
         with fits.open(ldac_fname, mode='update', memmap=False) as hdul:
             cat_hdu = hdul["LDAC_OBJECTS"]  # binary table HDU
             table = Table(cat_hdu.data)  # Astropy Table view
+            table['XWIN_IMAGE'][idx_ast] = x_ast
+            table['YWIN_IMAGE'][idx_ast] = y_ast
+            logging.info(f'Injecting target photometry into LDAC: MAG={m_inst:2f}, FLUX={flux_ast:2f}')
             if aper_params['type'] == 'circular':
-                table['MAG_APER'][idx_ast] = m_inst
-                table['FLUX_APER'][idx_ast] = flux_ast
+                table[f'MAG_{phot_mode}'][idx_ast] = m_inst
+                table[f'FLUX_{phot_mode}'][idx_ast] = flux_ast
             elif aper_params['type'] == 'elliptical':
-                table['MAG_AUTO'][idx_ast] = m_inst
-                table['FLUX_AUTO'][idx_ast] = flux_ast
+                table[f'MAG_{phot_mode}'][idx_ast] = m_inst
+                table[f'FLUX_{phot_mode}'][idx_ast] = flux_ast
                 table['A_IMAGE'][idx_ast] = aper_params['a']
                 table['B_IMAGE'][idx_ast] = aper_params['b']
                 table['THETA_IMAGE'][idx_ast] = aper_params['theta']
             elif aper_params['type'] == 'pill':
-                table['MAG_AUTO'][idx_ast] = m_inst
-                table['FLUX_AUTO'][idx_ast] = flux_ast
+                table[f'MAG_{phot_mode}'][idx_ast] = m_inst
+                table[f'FLUX_{phot_mode}'][idx_ast] = flux_ast
                 table['A_IMAGE'][idx_ast] = aper_params['width']
                 table['B_IMAGE'][idx_ast] = aper_params['height']
                 table['THETA_IMAGE'][idx_ast] = aper_params['theta']

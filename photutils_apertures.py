@@ -402,52 +402,65 @@ class PillBoxMaskMixin:
         counterparts are always made by ``np.atleast_2d(self.position)``, so
         their results are always in the ``N x 2`` shape.
         """
+
+
+        # positions only accepted in the shape of (N, 2), so shape[0]
+        # gives the number of positions:
+        pos = np.atleast_2d(self.positions)
+
         if hasattr(self, 'a'):
             w = self.w - self.a - self.b
             a = self.a
             b = self.b
             h = self.h
             theta = self.theta
+
+            self.offset = np.array([w*np.cos(theta)/2, w*np.sin(theta)/2])
+            offsets = np.repeat(np.array([self.offset, ]), pos.shape[0], 0)
+
+            self._ap_rect = RectangularAperture(positions=pos, w=w, h=h, theta=theta)
+            self._ap_el_1 = EllipticalAperture(positions=pos - offsets, a=a, b=b, theta=theta)
+            self._ap_el_2 = EllipticalAperture(positions=pos + offsets, a=a, b=b, theta=theta)
+
         elif hasattr(self, 'a_in'):  # annulus
-            w = self.w - self.a_out - self.b_out
+            w = self.w_out - self.a_out - self.b_out
             a = self.a_out
             b = self.b_out
             h = self.h_out
             theta = self.theta
-        else:
-            raise ValueError('Cannot determine the aperture shape.')
 
-        # positions only accepted in the shape of (N, 2), so shape[0]
-        # gives the number of positions:
-        pos = np.atleast_2d(self.positions)
-        self.offset = np.array([w*np.cos(theta)/2, w*np.sin(theta)/2])
-        offsets = np.repeat(np.array([self.offset, ]), pos.shape[0], 0)
+            # We don't set self.offset here because PillBoxAnnulus has it as a property
+            offset_val = np.array([w*np.cos(theta)/2, w*np.sin(theta)/2])
+            offsets = np.repeat(np.array([offset_val, ]), pos.shape[0], 0)
 
-        # aperture elements for aperture,
-        # OUTER aperture elements for annulus:
-        self._ap_rect = RectangularAperture(positions=pos, w=w, h=h, theta=theta)
-        self._ap_el_1 = EllipticalAperture(positions=pos - offsets, a=a, b=b, theta=theta)
-        self._ap_el_2 = EllipticalAperture(positions=pos + offsets, a=a, b=b, theta=theta)
+            self._ap_rect = RectangularAperture(positions=pos, w=w, h=h, theta=theta)
+            self._ap_el_1 = EllipticalAperture(positions=pos - offsets, a=a, b=b, theta=theta)
+            self._ap_el_2 = EllipticalAperture(positions=pos + offsets, a=a, b=b, theta=theta)
 
-        if hasattr(self, 'a_in'):  # inner components of annulus
+            w_in = self.w_in - self.a_in - self.b_in
+            offset_val_in = np.array([w_in*np.cos(theta)/2, w_in*np.sin(theta)/2])
+            offsets_in = np.repeat(np.array([offset_val_in, ]), pos.shape[0], 0)
+
             self._ap_rect_in = RectangularAperture(
                 positions=pos,
-                w=self.w,
+                w=w_in,
                 h=self.h_in,
                 theta=self.theta
             )
             self._ap_el_1_in = EllipticalAperture(
-                positions=pos - offsets,
+                positions=pos - offsets_in,
                 a=self.a_in,
                 b=self.b_in,
                 theta=self.theta
             )
             self._ap_el_2_in = EllipticalAperture(
-                positions=pos + offsets,
+                positions=pos + offsets_in,
                 a=self.a_in,
                 b=self.b_in,
                 theta=self.theta
             )
+        else:
+            raise ValueError('Cannot determine the aperture shape.')
 
     @staticmethod
     def _prepare_mask(bbox, ap_r, ap_1, ap_2, method, subpixels, min_mask=0):
@@ -786,101 +799,146 @@ class PillBoxAperture(PillBoxMaskMixin, PixelAperture):
         return SkyPillBoxAperture(**sky_params)
 
 
+import numpy as np
+import matplotlib.patches as mpatches
+from photutils.aperture import PixelAperture
+from photutils.aperture.attributes import PixelPositions, PositiveScalar, ScalarAngleOrValue
+
+
+# Assuming PillBoxMaskMixin is defined elsewhere or imported
+# from your_module import PillBoxMaskMixin
+
 class PillBoxAnnulus(PillBoxMaskMixin, PixelAperture):
     """
-    """
-    _params = ('positions', 'w', 'a_in', 'a_out', 'b_out', 'theta')
-    positions = PixelPositions('The center pixel position(s).')
-    w = PositiveScalar(f"The {_PBSTRS['w']} in pixels.")
-    a_in = PositiveScalar(f"The inner {_PBSTRS['a']} in pixels.")
-    a_out = PositiveScalar(f"The outer {_PBSTRS['a']} in pixels.")
-    b_out = PositiveScalar(f"The outer {_PBSTRS['b']} in pixels.")
-    theta = ScalarAngleOrValue(_PBSTRS['theta_pix'])
+    A Pillbox (Stadium) Annulus defined by total widths and heights.
 
-    def __init__(self, positions, w, a_in, a_out, b_out, theta=0.):
+    The shape is defined as a central rectangle with semicircular end caps.
+    """
+    _params = ('positions', 'w_in', 'w_out', 'h_in', 'h_out', 'theta')
+    positions = PixelPositions('The center pixel position(s).')
+    w_in = PositiveScalar("The inner total width in pixels.")
+    w_out = PositiveScalar("The outer total width in pixels.")
+    h_in = PositiveScalar("The inner total height in pixels.")
+    h_out = PositiveScalar("The outer total height in pixels.")
+    theta = ScalarAngleOrValue("The position angle in radians.")
+
+    def __init__(self, positions, w_in, w_out, h_in, h_out, theta=0.):
         self.positions = positions
-        self.w = w
-        self.a_out = a_out
-        self.a_in = a_in
-        self.b_out = b_out
-        self.b_in = self.b_out * self.a_in / self.a_out
-        self.h_out = self.b_out*2
-        self.h_in = self.b_in*2
+        self.w_in = w_in
+        self.w_out = w_out
+        self.h_in = h_in
+        self.h_out = h_out
         self.theta = theta
+
+        # --- Internal Geometry Calculations ---
+
+        # 1. Calculate semi-axes (assuming semicircular caps: a = b = h/2)
+        self.b_out = self.h_out / 2.0
+        self.a_out = self.b_out
+        self.b_in = self.h_in / 2.0
+        self.a_in = self.b_in
+
+        # 2. Calculate the length of the rectangular sections
+        # Rect Length = Total Width - Total Height (2 * radius)
+        # We clamp to 0 to prevent negative lengths if Width < Height
+        self.w_rect_out = max(0, self.w_out - self.h_out)
+        self.w_rect_in = max(0, self.w_in - self.h_in)
         self._set_aperture_elements
 
     @property
+    def offset(self):
+        """
+        Calculates the offset vector for the OUTER shape.
+        Used by _xy_extents and Mixins to determine bounding boxes.
+        The offset is half the length of the rectangular section.
+        """
+        # Half of the rectangular length
+        halflen = self.w_rect_out / 2.0
+        return np.array([halflen * np.cos(self.theta),
+                         halflen * np.sin(self.theta)])
+
+    @property
     def _xy_extents(self):
-        return np.abs(self.offset) + self._ap_el_1._xy_extents
+        # Calculates the extent based on the OUTER dimensions.
+        # Extent = Offset + Radius of the end cap (a_out) along axes
+        # Note: This is a simplification. For precise extents of rotated ellipses,
+        # photutils usually relies on EllipticalAperture logic.
+        # Here we approximate using the bounding box logic relative to rotation.
 
-    # def bounding_boxes(self):
-    #     """
-    #     A list of minimal bounding boxes (`~photutils.BoundingBox`), one
-    #     for each position, enclosing the exact elliptical apertures.
-    #     """
-    #     bboxes_rect = self._ap_rect.bounding_boxes
-    #     bboxes_el_1 = self._ap_el_1.bounding_boxes
-    #     bboxes_el_2 = self._ap_el_2.bounding_boxes
-    #     bboxes = []
-    #     for bb_r, bb_1, bb_2 in zip(bboxes_rect, bboxes_el_1, bboxes_el_2):
-    #         bboxes.append( (bb_r) | (bb_1) | (bb_2) )
+        # Project the semi-major/minor axes to x/y
+        sin_t = np.sin(self.theta)
+        cos_t = np.cos(self.theta)
 
-    #     if self.isscalar:
-    #         return bboxes[0]
-    #     else:
-    #         return bboxes
+        # Extent contribution from the ellipse cap
+        x_radius = np.sqrt((self.a_out * cos_t) ** 2 + (self.b_out * sin_t) ** 2)
+        y_radius = np.sqrt((self.a_out * sin_t) ** 2 + (self.b_out * cos_t) ** 2)
+
+        return np.abs(self.offset) + np.array([x_radius, y_radius])
 
     @property
     def area(self):
-        return (self.w * (self.h_out - self.h_in)
-                + np.pi * (self.a_out * self.b_out - self.a_in * self.b_in))
+        """
+        Area = Area of Outer Pillbox - Area of Inner Pillbox.
+        Area of Pillbox = (Rect Length * Height) + (pi * a * b)
+        """
+        area_out = (self.w_rect_out * self.h_out) + (np.pi * self.a_out * self.b_out)
+        area_in = (self.w_rect_in * self.h_in) + (np.pi * self.a_in * self.b_in)
+        return area_out - area_in
 
     def _to_patch(self, origin=(0, 0), indices=None, **kwargs):
-        import matplotlib.patches as mpatches
-
         # xy_positions is already atleast_2d'ed.
         xy_positions, patch_kwargs = self._define_patch_params(origin=origin, **kwargs)
-        # There used to be `indices=indices` in this function, but it gives an
-        # error (AttributeError: 'PathPatch' object has no property 'indices').
-        # Without this, it works perfectly. I am not sure what happened...
-        # -2022-04-25 23:26:12 (KST: GMT+09:00) ysBach
 
         patches = []
-        theta_deg = self.theta * 180. / np.pi
+        theta_deg = np.degrees(self.theta)
+
+        # Pre-calculate offset vectors for inner and outer shapes
+        # (They might differ if w_rect_in != w_rect_out)
+        cos_t = np.cos(self.theta)
+        sin_t = np.sin(self.theta)
+
+        off_val_out = self.w_rect_out / 2.0
+        offset_vec_out = np.array([off_val_out * cos_t, off_val_out * sin_t])
+
+        off_val_in = self.w_rect_in / 2.0
+        offset_vec_in = np.array([off_val_in * cos_t, off_val_in * sin_t])
 
         for xy_position in xy_positions:
-            # The ellipse on the "right" whan theta = 0
+            # --- INNER SHAPE ---
+            # The ellipse on the "right"
             ellipse_1_in = mpatches.Ellipse(
-                xy_position + self.offset,
-                2.*self.a_in,
-                2.*self.b_in,
-                theta_deg
+                xy_position + offset_vec_in,
+                2. * self.a_in,
+                2. * self.b_in,
+                angle=theta_deg
             )
-            # The ellipse on the "left" whan theta = 0
+            # The ellipse on the "left"
             ellipse_2_in = mpatches.Ellipse(
-                xy_position - self.offset,
-                2.*self.a_in,
-                2.*self.b_in,
-                theta_deg
+                xy_position - offset_vec_in,
+                2. * self.a_in,
+                2. * self.b_in,
+                angle=theta_deg
             )
             p_inner = self._pill_patches(ellipse_1_in, ellipse_2_in)
 
-            # The ellipse on the "right" whan theta = 0
+            # --- OUTER SHAPE ---
+            # The ellipse on the "right"
             ellipse_1_out = mpatches.Ellipse(
-                xy_position + self.offset,
-                2.*self.a_out,
-                2.*self.b_out,
-                theta_deg
+                xy_position + offset_vec_out,
+                2. * self.a_out,
+                2. * self.b_out,
+                angle=theta_deg
             )
-            # The ellipse on the "left" whan theta = 0
+            # The ellipse on the "left"
             ellipse_2_out = mpatches.Ellipse(
-                xy_position - self.offset,
-                2.*self.a_out,
-                2.*self.b_out,
-                theta_deg
+                xy_position - offset_vec_out,
+                2. * self.a_out,
+                2. * self.b_out,
+                angle=theta_deg
             )
             p_outer = self._pill_patches(ellipse_1_out, ellipse_2_out)
 
+            # Combine into annulus path
             p = self._make_annulus_path(p_inner, p_outer)
             patches.append(mpatches.PathPatch(p, **patch_kwargs))
 

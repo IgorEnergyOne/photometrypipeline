@@ -356,11 +356,6 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
     if _pp_conf.use_diagnostics_summary:
         diag.insert_into_summary(summary_message)
 
-    # perform photometry on target with custom aperture
-    if manual_aperture:
-        target_data = pp_photometry.target_photometry(filenames,
-                                                      telescope=telescope, aperture=manual_aperture)
-
     # run photometric calibration
     if auto:
         minstars = _pp_conf.minstars
@@ -378,6 +373,12 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
         use_all_stars = cal_use_all_stars
         radius_coeff = cal_radius_coeff
 
+    # perform photometry on target with custom aperture
+    if manual_aperture:
+        target_data = pp_photometry.target_photometry(filenames,
+                                                      telescope=telescope, aperture=manual_aperture,
+                                                      phot_mode=phot_mode)
+
     print('\n----- run photometric calibration (pp_calibrate.calibrate)\n')
 
     while True:
@@ -392,6 +393,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
                                              display=True,
                                              diagnostics=True,
                                              instrumental=report_instrumental,
+                                             phot_mode=phot_mode,
                                              use_all_stars=use_all_stars,
                                              radius_coeff=radius_coeff)
 
@@ -427,6 +429,7 @@ def run_the_pipeline(filenames, man_targetname, man_filtername, select_filter,
     # add information to summary website, if requested
     if _pp_conf.use_diagnostics_summary:
         diag.insert_into_summary(summary_message)
+
 
     # distill photometry results
     print('\n----- distill photometry results (pp_distill.distill)\n')

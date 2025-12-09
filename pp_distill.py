@@ -600,9 +600,9 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         filtername = cat.filtername
 
         # identify magnitudes
-        mag_keys = ['MAG_APER', 'MAGERR_APER']
+        mag_keys = [f'MAG_{phot_mode}', f'MAGERR_{phot_mode}']
         # aperture parameter keys
-        aper_param_keys = [ 'A_IMAGE', 'B_IMAGE', 'THETA_IMAGE']
+        aper_param_keys = ['A_IMAGE', 'B_IMAGE', 'THETA_IMAGE']
         if filtername is not None:
             for key in cat.fields:
                 if filtername+'mag' in key:
@@ -632,11 +632,14 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
             extract_this_catalog=['ra_deg', 'dec_deg', 'ident'],
             extract_other_catalog=extract_other_catalog+mag_keys+aper_param_keys,
             tolerance=None)
+
         for i in range(len(match[0][0])):
             # derive calibrated magnitudes, if available
             try:
                 cal_mag = match[1][len(extract_other_catalog)+2][i]
                 cal_magerr = match[1][len(extract_other_catalog)+3][i]
+                # print(len(extract_other_catalog))
+                # print([f"{idx}, {match[1][j].name}: {float(match[1][j][i])}" for idx, j in enumerate(range(len(match[1])))])
             except IndexError:
                 # use instrumental magnitudes
                 cal_mag = match[1][len(extract_other_catalog)][i]
