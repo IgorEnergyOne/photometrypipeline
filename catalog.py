@@ -1052,23 +1052,6 @@ class catalog(object):
         from copy import deepcopy
         write_table = deepcopy(self.data)
 
-        # rename Johnson filternames to avoid collisions with SDSS
-        for filtername in ['B', 'V', 'R', 'I']:
-            if '_' + filtername + 'mag' in list(write_table.columns):
-                write_table.rename_column(
-                    '_{:s}mag'.format(filtername),
-                    '_{:s}Johnsonmag'.format(filtername))
-                write_table.rename_column(
-                    '_e_{:s}mag'.format(filtername),
-                    '_e_{:s}Johnsonmag'.format(filtername))
-            elif filtername + 'mag' in list(write_table.columns):
-                write_table.rename_column(
-                    '{:s}mag'.format(filtername),
-                    '{:s}Johnsonmag'.format(filtername))
-                write_table.rename_column(
-                    'e_{:s}mag'.format(filtername),
-                    'e_{:s}Johnsonmag'.format(filtername))
-
         # create header and write to database
         header = Table([[self.catalogname], [self.origin], [self.history],
                         [self.magsys], [self.obstime[0]], [self.obstime[1]],
@@ -1079,7 +1062,30 @@ class catalog(object):
         header.to_pandas().to_sql('header', db_conn, index=False)
 
         # write data to database
-        write_table.to_pandas().to_sql('data', db_conn, index=False)
+        # rename pandas columns instead of astropy table columns
+        # to avoid issues with SQL table creation
+        write_table_pd = write_table.to_pandas()
+        # rename Johnson filternames to avoid collisions with SDSS
+        for filtername in ['B', 'V', 'R', 'I']:
+
+            if '_' + filtername + 'mag' in list(write_table_pd.columns):
+                write_table_pd.rename(columns={f'_{filtername}mag': f'_{filtername}Johnsonmag',
+                                               f'_e_{filtername}mag': f'_e_{filtername}Johnsonmag'}, inplace=True)
+
+            elif filtername + 'mag' in list(write_table_pd.columns):
+                write_table_pd.rename(columns={f'{filtername}mag': f'{filtername}Johnsonmag',
+                                               f'e_{filtername}mag': f'e_{filtername}Johnsonmag'}, inplace=True)
+        # rename GAIA G filter to avoid collision with SDSS G
+        if '_Gmag' in list(write_table_pd.columns):
+            write_table_pd.rename(columns={'_Gmag': '_GaiaGmag',
+                                           '_e_Gmag': '_e_GaiaGmag'}, inplace=True)
+        elif 'Gmag' in list(write_table_pd.columns):
+            write_table_pd.rename(columns={'Gmag': 'GaiaGmag',
+                                           'e_Gmag': 'e_GaiaGmag'}, inplace=True)
+
+
+        write_table_pd.to_sql('data', db_conn, index=False)
+
 
         db_conn.commit()
 

@@ -1608,11 +1608,19 @@ class Distill_Diagnostics(Diagnostics_Html):
 
             try:
                 for overlay, thumb, tmp_name in zip(overlays, thumbs, tmps):
-                    overlay = subprocess.Popen(
-                        [f'{imagemagick_cmd}', '-composite', '-gravity', 'center',
-                         ('{:s}'.format(thumb)),
-                         ('{:s}'.format(overlay)),
-                         ('{:s}'.format(tmp_name))])
+                    if imagemagick_cmd == 'magick':
+                        overlay = subprocess.Popen(
+                            [f'{imagemagick_cmd}',
+                             ('{:s}'.format(thumb)),
+                             ('{:s}'.format(overlay)),
+                             '-gravity', 'center', '-composite',
+                             ('{:s}'.format(tmp_name))])
+                    else:
+                        overlay = subprocess.Popen(
+                            [f'{imagemagick_cmd}', '-composite', '-gravity', 'center',
+                             ('{:s}'.format(thumb)),
+                             ('{:s}'.format(overlay)),
+                             ('{:s}'.format(tmp_name))])
                     overlay.wait()
                 convert = subprocess.Popen(
                     [f'{imagemagick_cmd}', '-delay', '50',
