@@ -20,6 +20,7 @@ Hotkeys:
 from __future__ import annotations
 
 import os
+import re
 import argparse
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Iterable, Set, Callable
@@ -89,7 +90,7 @@ class PlotSettings:
         self.refresh_callback = refresh_callback
         self.get_bands_callback = get_bands_callback
 
-        self.custom_colors: Dict[str, str] = {}
+        self.custom_colors: Dict[str, str] = {'flagged': 'orange', 'rejected': 'red'}
         self.flagged_use_filter: bool = False
 
         self.color_menu: Optional[tk.Menu] = None
@@ -168,7 +169,8 @@ class PlotSettings:
             self.color_menu.add_command(label=chk_label, command=_toggle_flagged_use)
 
         self.color_menu.add_separator()
-        self.color_menu.add_command(label="Set flagged color...", command=lambda: self.show_palette_picker('flagged'))
+        self.color_menu.add_command(label="Set flagged color...",
+                                    command=lambda: self.show_palette_picker('flagged'))
         self.color_menu.add_command(label="Set rejected color...",
                                     command=lambda: self.show_palette_picker('rejected'))
 
@@ -248,13 +250,22 @@ def debug_print(*args, **kwargs):
 
 
 def next_version(path: str) -> str:
+    """Generate the next version of a file by incrementing the counter in the filename."""
     base, ext = os.path.splitext(path)
-    i = 1
-    candidate = f"{base}_{i}{ext}"
-    while os.path.exists(candidate):
-        i += 1
-        candidate = f"{base}_{i}{ext}"
-    return candidate
+    # Check for existing regex pattern _(\d+)$ at the end of base
+    match = re.search(r'_(\d+)$', base)
+    if match:
+        counter = int(match.group(1))
+        prefix = base[:match.start()]
+    else:
+        counter = 1
+        prefix = base
+
+    while True:
+        candidate = f"{prefix}_{counter}{ext}"
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
 
 # ────────────────────────────── Data layer ──────────────────────────────
 class LightCurveData:
@@ -290,6 +301,7 @@ class LightCurveData:
             self.df['filename'] = os.path.basename(self.filename) if self.filename else "lightcurve.csv"
 
     def _fill_arrays_cache(self):
+        """Fill the cached numpy arrays for fast plotting."""
         assert self.df is not None
         df = self.df
         self.arr['jd'] = df.get('julian_date', pd.Series(dtype=float)).to_numpy(dtype=float, copy=False)
@@ -305,14 +317,15 @@ class LightCurveData:
         self.arr['flags'] = df.get('sextractor_flags', pd.Series(dtype=int)).to_numpy(dtype=int, copy=False)
         self.arr['rejected'] = df.get('rejected', pd.Series(dtype=bool)).to_numpy(dtype=bool, copy=False)
 
-    # ——— helpers ———
     def toggle_rejection(self, index: int) -> None:
+        """Toggle the rejection flag for a given index."""
         if self.df is None:
             return
         self.df.loc[index, 'rejected'] = not bool(self.df.loc[index, 'rejected'])
         self.arr['rejected'] = self.df['rejected'].to_numpy(dtype=bool, copy=False)
 
     def get_bands(self) -> List[str]:
+        """Get the unique bands (photometric filters) in the dataset."""
         if self.df is None or 'band' not in self.df.columns:
             return []
         vals = self.df['band'].dropna().astype(str).str.strip().unique().tolist()
@@ -332,6 +345,7 @@ class BlitManager:
         self.cid_draw = canvas.mpl_connect("draw_event", self._on_draw)
 
     def add_artists(self, artists: Iterable[matplotlib.artist.Artist]):
+        """Add artists to the blitting manager."""
         for a in artists:
             if a is None:
                 continue
@@ -370,6 +384,7 @@ class BlitManager:
 
 
 class LightCurvePlot:
+    """Lightcurve plotter with zooming and blitting."""
     def __init__(self, fig: matplotlib.figure.Figure, ax: matplotlib.axes.Axes, canvas: FigureCanvasTkAgg):
         self.fig = fig
         self.ax = ax
@@ -381,6 +396,10 @@ class LightCurvePlot:
         self.auto_title = True
         self.y_limits: Optional[Tuple[float, float]] = None
         self.y_nticks: Optional[int] = None
+        
+        # User-defined zoom state (persistent across updates)
+        self.user_xlim: Optional[Tuple[float, float]] = None
+        self.user_ylim: Optional[Tuple[float, float]] = None
 
         # Asteroid image zoom level
         self.asteroid_zoom_level = 1.0
@@ -422,7 +441,6 @@ class LightCurvePlot:
         self.blit = BlitManager(self.canvas, self.ax)
         self._register_blit_artists()
 
-    # —— helpers ———
     def _register_blit_artists(self):
         artists: List[matplotlib.artist.Artist] = [self.sel_artist]
         if getattr(self, 'sel_text', None) is not None:
@@ -613,9 +631,17 @@ class LightCurvePlot:
             grid_flag = int(bool(getattr(self.parent_gui, 'show_grid', True)))
         except Exception:
             grid_flag = 1
+        try:
+            colors_flag = int(bool(getattr(self.parent_gui.show_colors_on_plot_var, 'get', lambda: False)()))
+        except Exception:
+            colors_flag = 0
+        try:
+            colors_loc = str(getattr(self.parent_gui.color_legend_loc_var, 'get', lambda: "upper left")())
+        except Exception:
+            colors_loc = "upper left"
 
         signature = (f"{visible_aliases}|{mode}|{time_mode}{rp}|{errorbar_type}"
-                     f"|{selected_band}|rej={int(bool(show_rejected))}|legend={legend_flag}|grid={grid_flag}"
+                     f"|{selected_band}|rej={int(bool(show_rejected))}|legend={legend_flag}|grid={grid_flag}|colors={colors_flag}|loc={colors_loc}"
                      f"|{self.marker_style}|{self.marker_size}|{self.valid_color}|{offsets_data}")
         return signature
 
@@ -742,7 +768,6 @@ class LightCurvePlot:
                     color = self._choose_color_for_band(b, bidx)
 
                     # determine flagged/rejected colors for this band (may follow filter color)
-                    # determine flagged/rejected colors for this band (may follow filter color)
                     flagged_color_for_this = self.flagged_color
                     rejected_color_for_this = self.rejected_color
 
@@ -822,6 +847,32 @@ class LightCurvePlot:
                         self.ax.legend(title='Lightcurves', fontsize='small')
                     except Exception:
                         pass
+
+            # ─── Draw Color Info on Plot ───
+            if self.parent_gui and getattr(self.parent_gui.show_colors_on_plot_var, 'get', lambda: False)():
+                info_lines = []
+                # Only show for visible aliases
+                vis_aliases = [a for a in lc_dict.keys() if visible.get(a, True)]
+                
+                # Check calculated colors
+                if hasattr(self.parent_gui, 'calculated_colors'):
+                    for alias in vis_aliases:
+                        colors = self.parent_gui.calculated_colors.get(alias, {})
+                        if colors:
+                            for name, (val, err) in colors.items():
+                                info_lines.append(f"  {name}: {val:.3f} ± {err:.3f}")
+                
+                if info_lines:
+                    import matplotlib.offsetbox as offsetbox
+                    loc_val = "upper left"
+                    if self.parent_gui:
+                        loc_val = self.parent_gui.color_legend_loc_var.get()
+                    
+                    text_str = "\n".join(info_lines)
+                    at = offsetbox.AnchoredText(text_str, loc=loc_val, frameon=True, prop=dict(fontsize=9))
+                    at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
+                    at.patch.set_alpha(0.7)
+                    self.ax.add_artist(at)
 
             if self.auto_title:
                 vis_aliases = [a for a in lc_dict.keys() if visible.get(a, True)]
@@ -1248,8 +1299,21 @@ class AsteroidImageViewer:
                                   command=self.refresh_display)
             chk.pack(side=BOTTOM, pady=5)
 
-            # Return focus to main app so keyboard shortcuts work (delayed)
-            self.root.after(100, lambda: self.root.focus_force())
+            # 1. Immediate request
+            self.root.focus_set()
+            
+            # 2. When the new window is actually mapped/shown, force focus back
+            def return_focus(event=None):
+                self.root.focus_force()
+                # Unbind to avoid repeated calls
+                top.unbind("<Map>")
+            
+            top.bind("<Map>", return_focus)
+            
+            # 3. Fail-safe delayed triggers
+            self.root.after(50, lambda: self.root.focus_force())
+            self.root.after(200, lambda: self.root.focus_force())
+
         except Exception:
             pass
 
@@ -1459,6 +1523,13 @@ class LightCurveGUI:
         # Offset control scope (which band to nudge when ↑/↓)
         self.offset_scope_var = ttk.StringVar(value='auto')  # 'auto', 'ALL', or specific band label
 
+        # Legend position
+        self.color_legend_loc_var = ttk.StringVar(value='upper left')
+
+        # Alignment controls
+        self.align_reference_var = ttk.StringVar(value='')
+        self.calculated_colors: Dict[str, Dict[str, Tuple[float, float]]] = {}  # alias -> { 'R-V': (val, err) }
+
         # Step used when nudging vertical offsets with ↑/↓ (mag)
         self.offset_step_var = ttk.DoubleVar(value=0.05)
 
@@ -1504,82 +1575,20 @@ class LightCurveGUI:
         master.pack(fill=BOTH, expand=True)
         self.master_frame = master
 
-        # Create a persistent bottom control strip here and pack it before the
-        # paned window. Packing it early ensures the paned window expands only
-        # into the space above this strip and the bottom controls remain visible
-        # when the main window is resized smaller.
+        # Create a persistent bottom control strip
+        self.bottom_control = ttk.Frame(self.master_frame)
+        self.bottom_control.pack(side=BOTTOM, fill=X)
         try:
-            self.bottom_control = ttk.Frame(self.master_frame)
-            self.bottom_control.pack(side=BOTTOM, fill=X)
-            # reserve a small fixed height and prevent children from shrinking it
             self.bottom_control.pack_propagate(False)
-            self.bottom_control.configure(height=56)
+            self.bottom_control.configure(height=72)
         except Exception:
-            # fallback: if anything goes wrong, don't block UI construction
-            self.bottom_control = ttk.Frame(self.master_frame)
+            pass
 
-        # Left toggle bar (thin vertical strip with a button centered vertically)
-        left_bar = ttk.Frame(master, width=16)
-        left_bar.pack(side=LEFT, fill=Y)
-        left_bar.pack_propagate(False)  # keep it thin
+        # Main content area
+        self.center_pane = ttk.Frame(master)
+        self.center_pane.pack(side=TOP, fill=BOTH, expand=True)
 
-        # Paned window (fills the rest)
-        self.paned_window = tk.PanedWindow(master, orient=HORIZONTAL)
-        self.paned_window.pack(side=LEFT, fill=BOTH, expand=True)
-
-        # Left pane (list)
-        self.left_pane = ttk.Frame(self.paned_window, padding=6, width=self.LEFT_DEFAULT_WIDTH)
-        self.paned_window.add(self.left_pane, minsize=self.LEFT_MINSIZE)  # prevent full collapse when expanded
-
-        ttk.Label(self.left_pane, text="Lightcurves", font=("TkDefaultFont", 11, "bold")).pack(anchor='w')
-        self.lc_listbox = tk.Listbox(self.left_pane, height=20, width=24)
-        self.lc_listbox.pack(fill=BOTH, expand=True, pady=(1, 1))
-        self.lc_listbox.bind("<<ListboxSelect>>", self.on_lc_select)
-
-        lbtns = ttk.Frame(self.left_pane)
-        lbtns.pack(fill=X, pady=(4, 2))
-        ttk.Button(lbtns, text="Rename", command=self.rename_lc).pack(side=LEFT, expand=True, fill=X, padx=2)
-        ttk.Button(lbtns, text="Hide/Show", command=self.toggle_visibility).pack(side=LEFT, expand=True, fill=X, padx=2)
-        ttk.Button(lbtns, text="Remove", command=self.remove_lc).pack(side=LEFT, expand=True, fill=X, padx=2)
-
-        ttk.Label(self.left_pane, text="Vertical Offset (mag):").pack(anchor='w', pady=(6, 0))
-        self.offset_var = ttk.DoubleVar(value=0.0)
-        self.offset_entry_var = ttk.StringVar(value=f"{0.0:.3f}")
-        self.offset_slider = ttk.Scale(self.left_pane, from_=-5.0, to=+5.0, variable=self.offset_var,
-                                       orient=HORIZONTAL, command=lambda v: self.on_offset_change(v))
-        self.offset_slider.pack(fill=X, pady=4)
-        off_row = ttk.Frame(self.left_pane)
-        off_row.pack(fill=X)
-        ttk.Entry(off_row, textvariable=self.offset_entry_var, width=10).pack(side=LEFT)
-        ttk.Label(off_row, text=" Offset for:").pack(side=LEFT, padx=(8, 2))
-        self.offset_scope_combo = ttk.Combobox(off_row, textvariable=self.offset_scope_var, state='readonly', width=14)
-        self.offset_scope_combo.pack(side=LEFT)
-        self.offset_scope_combo['values'] = ['auto', 'ALL']
-        self.offset_scope_combo.set('auto')
-
-        # Offset step input
-        step_row = ttk.Frame(self.left_pane)
-        step_row.pack(fill=X, pady=(6, 0))
-        ttk.Label(step_row, text="Step (mag):").pack(side=LEFT)
-        ttk.Entry(step_row, textvariable=self.offset_step_var, width=8).pack(side=LEFT, padx=(6, 0))
-
-        # Center pane (plot + controls)
-        self.center_pane = ttk.Frame(self.paned_window)
-        self.paned_window.add(self.center_pane)
-
-        # Initial sash position = default left width
-        self.root.after(0, lambda: self._place_left_sash(self.LEFT_DEFAULT_WIDTH))
-
-        # Toggle button in the thin left bar
-        self._left_toggle_btn = ttk.Button(
-            left_bar, text="◀", width=2, command=self.toggle_left_pane, cursor="hand2"
-        )
-        # center vertically in the bar
-        self._left_toggle_btn.pack(expand=True)
-
-        # Top controls container: use a FlowFrame that automatically wraps
-        # child widgets into multiple rows when the width is constrained.
-        # The LabelFrame provides a visible contour.
+        # Top controls
         top_frame = ttk.LabelFrame(self.center_pane, text='Controls', padding=0)
         top_frame.pack(side=TOP, fill=X, padx=6, pady=(6, 0))
 
@@ -1593,7 +1602,6 @@ class LightCurveGUI:
                 self.bind('<Configure>', self._on_configure)
 
             def _on_configure(self, event=None):
-                # avoid re-entrant layouts
                 if self._in_layout:
                     return
                 self._in_layout = True
@@ -1604,8 +1612,6 @@ class LightCurveGUI:
                     self._in_layout = False
 
             def _do_layout(self, width):
-                # Place children in rows, wrapping when needed. Convert any
-                # packed children to grid so we can control positions.
                 x = 0
                 row = 0
                 col = 0
@@ -1615,14 +1621,11 @@ class LightCurveGUI:
                     except Exception:
                         pass
                     reqw = child.winfo_reqwidth()
-                    # if child is managed by pack, forget it so we can grid it
                     try:
                         if child.winfo_manager() == 'pack':
                             child.pack_forget()
                     except Exception:
                         pass
-                    # wrap to next row when exceeding width (leave at least one
-                    # widget per row)
                     if col > 0 and (x + reqw > max(10, width)):
                         row += 1
                         col = 0
@@ -1640,16 +1643,14 @@ class LightCurveGUI:
         ttk.Button(top, text="Open CSV", command=self.open_csv).pack(side=LEFT, padx=4)
         self._build_save_menu(top)
 
-        # photometry mode selector
         ttk.Label(top, text="Mode:").pack(side=LEFT, padx=(10, 0))
         self.mode_var = ttk.StringVar(value=self.mode)
         photo_mode_select = ttk.Combobox(top, textvariable=self.mode_var,
                                          values=['target', 'instrumental', 'relative', 'control'],
                                          state='readonly', width=14)
         photo_mode_select.pack(side=LEFT)
-
-        # errorbars mode selector
         self.mode_var.trace_add('write', lambda *_: self.set_mode())
+
         ttk.Label(top, text="Error Bars:").pack(side=LEFT, padx=(10, 0))
         self.errorbar_var = ttk.StringVar(value=self.errorbar_type)
         error_mode_select = ttk.Combobox(top, textvariable=self.errorbar_var,
@@ -1658,7 +1659,6 @@ class LightCurveGUI:
         error_mode_select.pack(side=LEFT)
         self.errorbar_var.trace_add('write', lambda *_: self.set_errorbar_type())
 
-        # time mode selector
         ttk.Label(top, text="Time Axis:").pack(side=LEFT, padx=(10, 0))
         self.time_var = ttk.StringVar(value=self.time_mode)
         time_mode_select = ttk.Combobox(top, textvariable=self.time_var,
@@ -1667,39 +1667,26 @@ class LightCurveGUI:
         time_mode_select.pack(side=LEFT)
         self.time_var.trace_add('write', lambda *_: self.set_time_mode())
 
-        # rejection toggle
-        # Keep the state variable but move the visible control into the Plot Settings menu
         self.toggle_rejected_var = ttk.BooleanVar(value=self.show_rejected)
-        # NOTE: the checkbox UI for this variable is now available under Plot Settings -> Show Rejected
 
-        # filter selection menu
         self.filter_btn = ttk.Menubutton(top, text="Filters: All")
         self.filter_menu = tk.Menu(self.filter_btn, tearoff=0)
         self.filter_btn["menu"] = self.filter_menu
         self.filter_btn.pack(side=LEFT, padx=(10, 0))
 
-        # Plot Settings menu (contains Colors, Marker Settings and toggles)
         self.plot_settings_btn = ttk.Menubutton(top, text="Plot Settings")
         self.plot_settings_menu = tk.Menu(self.plot_settings_btn, tearoff=0)
-
-        # Build the color menu via PlotSettings
         try:
             self.plot_settings.build_menu(parent=self.plot_settings_menu, pack_btn=False)
             self.plot_settings_menu.add_cascade(label="Colors", menu=self.plot_settings.color_menu)
         except Exception:
             pass
-        
         self.plot_settings_btn["menu"] = self.plot_settings_menu
         self.plot_settings_btn.pack(side=LEFT, padx=(10, 0))
 
-
-
-
-        # Marker settings entry
         self.plot_settings_menu.add_command(label="Marker Settings...", command=self.show_marker_settings)
         self.plot_settings_menu.add_separator()
 
-        # Legend and Grid toggles
         self.show_legend_var = ttk.BooleanVar(value=self.show_legend)
         self.show_grid_var = ttk.BooleanVar(value=self.show_grid)
 
@@ -1711,33 +1698,125 @@ class LightCurveGUI:
             self.show_grid = bool(self.show_grid_var.get())
             self.request_plot_update()
 
-        # add checkbuttons to the menu
         self.plot_settings_menu.add_checkbutton(label="Show Legend", variable=self.show_legend_var,
                                                 command=_on_toggle_legend)
         self.plot_settings_menu.add_checkbutton(label="Show Grid", variable=self.show_grid_var,
                                                 command=_on_toggle_grid)
-        # Show Rejected toggle moved into this menu (uses the existing toggle_rejected_var)
         self.plot_settings_menu.add_checkbutton(label="Show Rejected", variable=self.toggle_rejected_var,
                                                 command=self.set_show_rejected)
 
-        self.plot_settings_btn["menu"] = self.plot_settings_menu
-        self.plot_settings_btn.pack(side=LEFT, padx=4)
-
-        # color settings menu
-        # self._build_color_menu(top)
-
-        # Marker settings
-        # ttk.Button(top, text="Marker Settings", command=self.show_marker_settings).pack(side=LEFT,
-        #                                                                                 padx=(8, 0))
-        # Help button
         ttk.Button(top, text="Help (F1)", command=self.show_help).pack(side=LEFT, padx=(10, 0))
         self.root.bind("<F1>", lambda e: self.show_help())
 
-        # Ensure FlowFrame performs initial layout once widgets are created
         try:
             self.root.after(0, lambda: top._on_configure(None))
         except Exception:
             pass
+
+        # Wrapper for side-by-side collapsible menus
+        self.menus_wrapper = ttk.Frame(self.center_pane)
+        self.menus_wrapper.pack(side=TOP, fill=X, padx=6, pady=(4, 0))
+
+        # Collapsible Alignment / Colors Frame
+        self.align_container = ttk.Frame(self.menus_wrapper)
+        self.align_container.pack(side=LEFT, anchor='n', padx=(0, 10))
+        
+        # Header (Toggle Button + Label look)
+        self.align_visible = tk.BooleanVar(value=False)
+        
+        header_frame = ttk.Frame(self.align_container)
+        header_frame.pack(side=TOP, fill=X)
+        
+        self.toggle_btn = ttk.Button(header_frame, text="[ + ] Alignment & Colors", command=self.toggle_align_frame, style='Link.TButton')
+        self.toggle_btn.pack(side=LEFT, anchor='w')
+        
+        # Inner Frame for Content
+        self.align_inner = ttk.Frame(self.align_container, padding=6, borderwidth=1, relief="groove")
+        # Initially HIDDEN
+        
+        # Use align_inner as parent for all prev widgets
+        align_frame = self.align_inner
+        
+        # Merged Row: Alignment & Colors + Manual Offsets
+        
+        # 1. Alignment controls
+        ttk.Label(align_frame, text="Ref Filter:").pack(side=LEFT, padx=(0, 5))
+        self.align_ref_combo = ttk.Combobox(align_frame, textvariable=self.align_reference_var, 
+                                            state='readonly', width=5)
+        self.align_ref_combo.pack(side=LEFT, padx=(0, 5))
+        
+        ttk.Button(align_frame, text="Auto-Align", command=self.auto_align_bands).pack(side=LEFT, padx=5)
+        ttk.Button(align_frame, text="Colors", command=self.show_colors_dialog).pack(side=LEFT, padx=5)
+        
+        self.show_colors_on_plot_var = tk.BooleanVar(value=False)
+        def _toggle_colors_on_plot():
+            self.request_plot_update()
+            
+        ttk.Checkbutton(align_frame, text="Show", variable=self.show_colors_on_plot_var, 
+                        command=_toggle_colors_on_plot).pack(side=LEFT, padx=(5, 2))
+                        
+        loc_vals = ['upper left', 'upper right', 'lower left', 'lower right', 'center']
+        ttk.Combobox(align_frame, textvariable=self.color_legend_loc_var, values=loc_vals, 
+                     state='readonly', width=10).pack(side=LEFT, padx=(0, 10))
+        def _on_loc_change(*_):
+            self.request_plot_update()
+        self.color_legend_loc_var.trace_add('write', _on_loc_change)
+
+        # 2. Manual Offsets (Inline)
+        ttk.Separator(align_frame, orient=VERTICAL).pack(side=LEFT, fill=Y, padx=5, pady=2)
+        
+        ttk.Label(align_frame, text="Offset:").pack(side=LEFT, padx=(5, 0))
+        self.offset_var = ttk.DoubleVar(value=0.0)
+        self.offset_entry_var = ttk.StringVar(value=f"{0.0:.3f}")
+        
+        # Compact slider
+        self.offset_slider = ttk.Scale(align_frame, from_=-5.0, to=+5.0, variable=self.offset_var,
+                                       orient=HORIZONTAL, length=80, command=lambda v: self.on_offset_change(v))
+        self.offset_slider.pack(side=LEFT, padx=3)
+        
+        ttk.Entry(align_frame, textvariable=self.offset_entry_var, width=6).pack(side=LEFT)
+        
+        self.offset_scope_var = ttk.StringVar(value='auto')
+        self.offset_scope_combo = ttk.Combobox(align_frame, textvariable=self.offset_scope_var, state='readonly', width=6)
+        self.offset_scope_combo.pack(side=LEFT, padx=3)
+        self.offset_scope_combo['values'] = ['auto', 'ALL']
+        self.offset_scope_combo.set('auto')
+        
+        ttk.Label(align_frame, text="Step:").pack(side=LEFT, padx=(5,0))
+        self.offset_step_var = ttk.DoubleVar(value=0.05)
+        ttk.Entry(align_frame, textvariable=self.offset_step_var, width=5).pack(side=LEFT)
+
+        # Collapsible Rotation Period Frame
+        self.period_container = ttk.Frame(self.menus_wrapper)
+        self.period_container.pack(side=LEFT, anchor='n')
+        
+        # Header (Toggle Button + Label look)
+        self.period_visible = tk.BooleanVar(value=False)
+        
+        p_header_frame = ttk.Frame(self.period_container)
+        p_header_frame.pack(side=TOP, fill=X)
+        
+        self.period_toggle_btn = ttk.Button(p_header_frame, text="[ + ] Rotation Period", command=self.toggle_period_frame, style='Link.TButton')
+        self.period_toggle_btn.pack(side=LEFT, anchor='w')
+        
+        # Inner Frame for Content
+        self.period_inner = ttk.Frame(self.period_container, padding=6, borderwidth=1, relief="groove")
+        # Initially HIDDEN
+        
+        # Period controls
+        rot = self.period_inner
+        ttk.Label(rot, text="Period:").pack(side=LEFT, padx=(0, 0))
+        self.rotation_period_var = ttk.StringVar(value=f"{DEFAULT_PERIOD:.3f}")
+        ttk.Scale(rot, from_=0.1, to=50.0, variable=self.rotation_period_var,
+                  orient=HORIZONTAL, length=120, command=lambda _v: self.update_rotation_period()).pack(side=LEFT, padx=3)
+        
+        e = ttk.Entry(rot, textvariable=self.rotation_period_var, width=7)
+        e.pack(side=LEFT, padx=3)
+        e.bind("<Return>", lambda _e: self.update_rotation_period())
+        
+        ttk.Label(rot, text="Step:").pack(side=LEFT, padx=(5, 0))
+        self.rotation_step_var = ttk.DoubleVar(value=TIME_STEP)
+        ttk.Entry(rot, textvariable=self.rotation_step_var, width=5).pack(side=LEFT)
 
         # Plot area
         plot_frame = ttk.Frame(self.center_pane)
@@ -1749,55 +1828,36 @@ class LightCurveGUI:
         self.plot = LightCurvePlot(self.fig, self.ax, self.canvas)
         self.plot.selection = {'alias': None, 'index': None}
         self.canvas.mpl_connect("button_press_event", self.on_click)
-        # allow clicking on the title/axis labels to edit them
         try:
             self.canvas.mpl_connect("pick_event", self.on_pick_label)
         except Exception:
             pass
+        self.plot.parent_gui = self
 
-        # FlowFrame will automatically reflow children as the window is resized.
-        # No explicit height/clip management is needed.
-
+        # Bottom controls
         bottom = ttk.Frame(self.bottom_control)
         bottom.pack(side=BOTTOM, fill=X)
-        # Ensure the bottom control strip remains visible even when the window
-        # is resized to be very small vertically. Reserve a small fixed height
-        # so the plot area cannot consume the entire center pane height.
-        # pack_propagate(False) makes the requested height honored by the packer.
         try:
             bottom.pack_propagate(False)
-            bottom.configure(height=56)  # small fixed minimum height in pixels
+            bottom.configure(height=60)
         except Exception:
             pass
+        
+        # Container for controls line
+        ctrl = ttk.Frame(bottom)
+        ctrl.pack(side=TOP, fill=X, pady=(2, 0))
+        # Note: Period controls moved to top collapsible menu
 
-        rot = ttk.Frame(bottom)
-
-        ttk.Label(rot, text="Rotation period (h):").pack(side=LEFT, padx=5)
-        self.rotation_period_var = ttk.StringVar(value=f"{DEFAULT_PERIOD:.3f}")
-        ttk.Scale(rot, from_=0.1, to=50.0, variable=self.rotation_period_var,
-                  orient=HORIZONTAL, command=lambda _v: self.update_rotation_period()).pack(side=LEFT, fill=X,
-                                                                                            expand=True)
-        e = ttk.Entry(rot, textvariable=self.rotation_period_var, width=8);
-        e.pack(side=LEFT, padx=5)
-        e.bind("<Return>", lambda _e: self.update_rotation_period())
-        ttk.Label(rot, text="Step (h):").pack(side=LEFT, padx=(12, 3))
-        self.rotation_step_var = ttk.DoubleVar(value=TIME_STEP)
-        ttk.Entry(rot, textvariable=self.rotation_step_var, width=6).pack(side=LEFT)
-
-        ### MODIFIED ###
-        # Updated hotkey label to include 'S' for showing the image
+        # Hotkeys Label
         self.hotkeys_label = ttk.Label(bottom,
                                        text="F1-help; q-quit; r-reject; a-cancel sel; S-show/hide image; <-/-> -move; z/x-period; s/d-offset")
-        # Selected point label
         self.selected_point_label = ttk.Label(self.hotkeys_label, text="", foreground="black")
         self.selected_point_label.pack(side=RIGHT, padx=(15, 0))
-        self.hotkeys_label.pack(fill=X, padx=5, pady=3)
+        self.hotkeys_label.pack(side=BOTTOM, fill=X, padx=5, pady=(2, 2))
         self.master_frame.bind("<Configure>", lambda e: self.hotkeys_label.config(wraplength=e.width - 200))
-        bottom.pack(side=BOTTOM, fill=X)
-        rot.pack(side=LEFT)
 
     def open_y_scale_dialog(self):
-        """Open a custom dialog to set Y-axis Min, Max, and Nticks."""
+        """Open a custom dialog to set Y-axis Min, Max, Nticks, and Label."""
         if not hasattr(self, 'plot'):
             return
 
@@ -1811,6 +1871,7 @@ class LightCurveGUI:
             cur_min, cur_max = 0.0, 1.0
         
         cur_nticks = self.plot.y_nticks if self.plot.y_nticks else ""
+        cur_label = getattr(self.plot, 'ylabel', 'Magnitude')
 
         # Create dialog
         dlg = tk.Toplevel(self.root)
@@ -1829,20 +1890,25 @@ class LightCurveGUI:
         frm = ttk.Frame(dlg, padding=10)
         frm.pack(fill=BOTH, expand=True)
 
+        # Label
+        ttk.Label(frm, text="Label:").grid(row=0, column=0, sticky='e', padx=5, pady=5)
+        label_var = ttk.StringVar(value=cur_label)
+        ttk.Entry(frm, textvariable=label_var, width=15).grid(row=0, column=1, padx=5, pady=5)
+
         # Min
-        ttk.Label(frm, text="Min:").grid(row=0, column=0, sticky='e', padx=5, pady=5)
+        ttk.Label(frm, text="Min:").grid(row=1, column=0, sticky='e', padx=5, pady=5)
         min_var = ttk.StringVar(value=f"{cur_min:.3f}")
-        ttk.Entry(frm, textvariable=min_var, width=10).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Entry(frm, textvariable=min_var, width=10).grid(row=1, column=1, padx=5, pady=5)
 
         # Max
-        ttk.Label(frm, text="Max:").grid(row=1, column=0, sticky='e', padx=5, pady=5)
+        ttk.Label(frm, text="Max:").grid(row=2, column=0, sticky='e', padx=5, pady=5)
         max_var = ttk.StringVar(value=f"{cur_max:.3f}")
-        ttk.Entry(frm, textvariable=max_var, width=10).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Entry(frm, textvariable=max_var, width=10).grid(row=2, column=1, padx=5, pady=5)
 
         # Nticks
-        ttk.Label(frm, text="Ticks (optional):").grid(row=2, column=0, sticky='e', padx=5, pady=5)
+        ttk.Label(frm, text="Ticks (optional):").grid(row=3, column=0, sticky='e', padx=5, pady=5)
         nticks_var = ttk.StringVar(value=str(cur_nticks))
-        ttk.Entry(frm, textvariable=nticks_var, width=10).grid(row=2, column=1, padx=5, pady=5)
+        ttk.Entry(frm, textvariable=nticks_var, width=10).grid(row=3, column=1, padx=5, pady=5)
 
         def apply():
             try:
@@ -1851,6 +1917,8 @@ class LightCurveGUI:
                 
                 nt_str = nticks_var.get().strip()
                 nt = int(nt_str) if nt_str else None
+
+                self.plot.ylabel = label_var.get()
                 
                 # Apply
                 self.plot.set_y_limits(min(v_min, v_max), max(v_min, v_max), nt)
@@ -1860,12 +1928,13 @@ class LightCurveGUI:
                 messagebox.showerror("Invalid Input", "Please enter valid numbers.", parent=dlg)
 
         def auto():
+            self.plot.ylabel = label_var.get()
             self.plot.set_y_limits(None, None, None)
             self._refresh_plot_callback()
             dlg.destroy()
 
         btn_frm = ttk.Frame(frm)
-        btn_frm.grid(row=3, column=0, columnspan=2, pady=(10, 0))
+        btn_frm.grid(row=4, column=0, columnspan=2, pady=(10, 0))
         
         ttk.Button(btn_frm, text="Auto / Reset", command=auto).pack(side=LEFT, padx=5)
         ttk.Button(btn_frm, text="Apply", command=apply, style="Accent.TButton").pack(side=LEFT, padx=5)
@@ -1874,42 +1943,11 @@ class LightCurveGUI:
         dlg.bind("<Escape>", lambda e: dlg.destroy())
 
     # Helpers for collapsing/expanding
-    def _place_left_sash(self, xpx: int):
-        try:
-            self.paned_window.sash_place(0, int(max(0, xpx)), 1)
-        except Exception:
-            pass
 
-    def toggle_left_pane(self):
-        if not hasattr(self, "paned_window") or not hasattr(self, "left_pane"):
-            return
-        if not self._left_collapsed:
-            # save current width and collapse
-            try:
-                sx, _sy = self.paned_window.sash_coord(0)
-                self._left_saved_width = max(int(sx), self.LEFT_MINSIZE)
-            except Exception:
-                self._left_saved_width = max(self.LEFT_DEFAULT_WIDTH, self.LEFT_MINSIZE)
-            try:
-                self.paned_window.paneconfigure(self.left_pane, minsize=0)
-            except Exception:
-                pass
-            self._place_left_sash(1)
-            self._left_collapsed = True
-            self._left_toggle_btn.config(text="show")
-        else:
-            # expand to saved width
-            try:
-                self.paned_window.paneconfigure(self.left_pane, minsize=self.LEFT_MINSIZE)
-            except Exception:
-                pass
-            self._place_left_sash(self._left_saved_width or self.LEFT_DEFAULT_WIDTH)
-            self._left_collapsed = False
-            self._left_toggle_btn.config(text="hide")
 
     def _build_save_menu(self, parent):
         self.save_menu_btn = ttk.Menubutton(parent, text="Save")
-        self.save_menu = tk.Menu(self.save_menu_btn, tearoff=0)
+        self.save_menu = tk.Menu(self.save_menu_btn, tearoff=0, font=("TkDefaultFont", 10))
         self.save_menu.add_command(label="Save CSV", command=self.save_csv)
         self.save_menu.add_command(label="Save Plot", command=self.save_plot)
         self.save_menu.add_command(label="Save Atlas", command=self.save_atlas)
@@ -1933,13 +1971,13 @@ class LightCurveGUI:
             "Mouse:\n"
             "Click on a point to select it.\n"
             "\n"
-            "Panels & Options:\n"
-            "- Left panel is resizable.\n"
+            "Options:\n"
             "- Mode: target / instrumental / control.\n"
             "- Error Bars: calibrated / instrumental / none.\n"
             "- Time Axis: minutes / JD / MJD / rotation phase.\n"
             "- Rotation Step (h): sets increment used by z/x.\n"
             "- Offset Step (mag): sets increment used by s/d.\n"
+
         )
 
         top = tk.Toplevel(self.root)
@@ -1960,13 +1998,6 @@ class LightCurveGUI:
         if len(self.lightcurves) == 1:
             alias = next(iter(self.lightcurves))
             self.current_lc_alias = alias
-            # mirror selection in listbox
-            for i in range(self.lc_listbox.size()):
-                if self.lc_listbox.get(i) == alias:
-                    self.lc_listbox.selection_clear(0, END)
-                    self.lc_listbox.selection_set(i)
-                    self.lc_listbox.activate(i)
-                    break
             return alias
         return None
 
@@ -1975,35 +2006,42 @@ class LightCurveGUI:
         files = filedialog.askopenfilenames(initialdir=os.getcwd(), filetypes=[("CSV Files", "*.csv")])
         if not files:
             return
-        for f in files:
-            try:
-                lc = LightCurveData(f)
-            except Exception as e:
-                messagebox.showerror("Load error", f"Failed to load {f}: {e}")
-                continue
-            alias = self._unique_alias(os.path.basename(f))
-            self.lightcurves[alias] = lc
-            self.lc_visible[alias] = True
-            # initialize per‑file offsets map
-            bands = lc.get_bands()
-            self.lc_offsets[alias] = {OFFSET_ALL_KEY: 0.0}
-            for b in bands:
-                self.lc_offsets[alias][b] = 0.0
-            self.lc_listbox.insert(END, alias)
-        # after populating self.lightcurves and inserting into self.lc_listbox ...
+        
+        # Single-file mode: clear existing data
+        self.lightcurves.clear()
+        self.lc_visible.clear()
+        self.lc_offsets.clear()
+        
+        # Load only the first selected file
+        f = files[0]
+        try:
+            lc = LightCurveData(f)
+        except Exception as e:
+            messagebox.showerror("Load error", f"Failed to load {f}: {e}")
+            return
+            
+        alias = self._unique_alias(os.path.basename(f))
+        self.lightcurves[alias] = lc
+        self.lc_visible[alias] = True
+        
+        # initialize per‑file offsets map
+        bands = lc.get_bands()
+        self.lc_offsets[alias] = {OFFSET_ALL_KEY: 0.0}
+        for b in bands:
+            self.lc_offsets[alias][b] = 0.0
+            
+        # Select this lightcurve
+        self.current_lc_alias = alias
+        
         self._rebuild_band_menu() if hasattr(self, "_rebuild_band_menu") else None
-        self._refresh_offset_scope_choices() if hasattr(self, "_refresh_offset_scope_choices") else None
+        
+        # Sync offset UI
+        self._sync_offset_var_to_scope()
+        self._refresh_offset_scope_choices()
+
         # also refresh color menu to show newly available bands
         self._rebuild_color_menu() if hasattr(self, "_rebuild_color_menu") else None
-
-        # Auto-select when there is exactly one file
-        if len(self.lightcurves) == 1:
-            self.lc_listbox.selection_clear(0, END)
-            self.lc_listbox.selection_set(0)
-            self.lc_listbox.activate(0)
-            # ensure current_lc_alias and offset_var are synced
-            self.on_lc_select(None)
-
+        
         self.request_plot_update()
 
     def _unique_alias(self, base: str) -> str:
@@ -2039,7 +2077,9 @@ class LightCurveGUI:
         if not self.lightcurves:
             messagebox.showerror("Nothing to save", "No data to save.")
             return
-        default_png = "plot.png"
+        # name the same as input csv file
+        lc = self.lightcurves.get(self.current_lc_alias)
+        default_png = Path(lc.filename).stem + ".png" if lc.filename else "lightcurve.png"
         file = filedialog.asksaveasfilename(initialfile=default_png, defaultextension=".png",
                                             filetypes=[("PNG Files", "*.png")])
         if not file:
@@ -2069,8 +2109,8 @@ class LightCurveGUI:
             return
 
         # check if multiple filters are present
-        # check which filters are active in the current plot
-        filters = self.selected_bands
+        # Save all bands present in the file, not just the selected ones
+        filters = lc.get_bands()
         tmps = []
         tmp_atls = []
         if len(filters) > 1:
@@ -2115,21 +2155,236 @@ class LightCurveGUI:
                         os.remove(tmp)
             messagebox.showinfo("Saved", f"ATLAS file saved as {file}")
 
-    # ——— LC list operations ———
-    def on_lc_select(self, _evt=None):
-        sel = self.lc_listbox.curselection()
-        if not sel:
-            self.current_lc_alias = None
-            self.current_point_index = None
-            self.current_point_band = None
-            self.offset_var.set(0.0)
+    # ——— Alignment & Colors ———
+    def _update_align_ref_choices(self):
+        """Update the reference band combobox based on available bands."""
+        if not self.lightcurves:
+            self.align_ref_combo['values'] = []
             return
-        alias = self.lc_listbox.get(sel[0])
-        self.current_lc_alias = alias
-        # show relevant offset for current scope
-        self._sync_offset_var_to_scope()
-        self._refresh_offset_scope_choices()
+            
+        # Collect bands from the current alias, or all aliases
+        alias = self.current_lc_alias
+        if alias and alias in self.lightcurves:
+            bands = self.lightcurves[alias].get_bands()
+        else:
+            bands = sorted({str(b) for lc in self.lightcurves.values() for b in lc.get_bands()})
+            
+        self.align_ref_combo['values'] = bands
+        if bands and self.align_reference_var.get() not in bands:
+            self.align_reference_var.set(bands[0])
+
+    def auto_align_bands(self):
+        """Align other bands to the reference band using linear interpolation."""
+        alias = self._ensure_active_alias()
+        if not alias:
+            messagebox.showwarning("No Data", "No lightcurve loaded/selected.")
+            return
+
+        ref_band = self.align_reference_var.get()
+        if not ref_band:
+            messagebox.showwarning("No Reference", "Please select a Reference Band.")
+            return
+
+        lc = self.lightcurves[alias]
+        df = lc.df
+        if df is None or df.empty:
+            return
+
+        # Prepare storage for colors
+        # Only rewrite if we align properly
+        if alias not in self.calculated_colors:
+            self.calculated_colors[alias] = {}
+        # clear this alias's colors because we are re-aligning
+        self.calculated_colors[alias] = {}
+        
+        jd_all = lc.arr['jd']
+        mag_all = lc.arr['mag']
+        sig_all = lc.arr['sig']
+        band_all = lc.arr['band'].astype(str)
+        
+        ref_mask = (band_all == ref_band)
+        if not np.any(ref_mask):
+            messagebox.showwarning("Error", f"Reference band {ref_band} has no data.")
+            return
+
+        # Sort reference data by time
+        ref_idx = np.argsort(jd_all[ref_mask])
+        ref_t = jd_all[ref_mask][ref_idx]
+        ref_m = mag_all[ref_mask][ref_idx]
+        ref_e = sig_all[ref_mask][ref_idx]
+
+        # Which bands to align? All others.
+        other_bands = [b for b in lc.get_bands() if b != ref_band]
+        
+        aligned_count = 0
+        
+        for b in other_bands:
+            b_mask = (band_all == b)
+            if not np.any(b_mask):
+                continue
+                
+            b_t = jd_all[b_mask]
+            b_m = mag_all[b_mask]
+            b_e = sig_all[b_mask]
+            
+            # Interpolate Ref Magnitude at B times
+            # Note: numpy.interp returns flat extrapolation at textremes. 
+            # We should mask points outside the reference range to avoid bad alignment
+            # unless the user accepts extrapolation. For safety, we mask.
+            
+            # Also, if we are in 'rotation_phase' mode, we should perhaps align in phase space?
+            # But the user might not have a period set.
+            # Let's check if 'time_mode' is rotation_phase.
+            
+            # Decided: Use JD (Time) for alignment as it's the physical observation time.
+            # If the user took data sequentially (R, V, R, V...), interpolation in time is correct.
+            
+            ref_m_interp = np.interp(b_t, ref_t, ref_m, left=np.nan, right=np.nan)
+            
+            # Calculate differences (residuals)
+            # We want to align B to Ref.
+            # If B + Offset = Ref, then Offset = Ref - B.
+            # Ref - B is also the color index (Ref-B).
+            
+            diff = ref_m_interp - b_m
+            
+            # Propagate errors: 
+            # Sig_Diff^2 = Sig_B^2 + Sig_Ref_Interp^2
+            # Interpolated error is roughly linear Interp of error? Or just take nearest?
+            # A simple approx is sqrt(sig_b^2 + mean(sig_ref)^2). 
+            # Or interpolate variance? 
+            # Let's interp variance for better estimate.
+            ref_var = ref_e**2
+            ref_var_interp = np.interp(b_t, ref_t, ref_var, left=np.nan, right=np.nan)
+            
+            var_diff = b_e**2 + ref_var_interp
+            
+            # Mask NaNs (points outside Ref range)
+            valid = np.isfinite(diff) & np.isfinite(var_diff)
+            
+            if np.sum(valid) < 2:
+                # Not enough overlapping data points
+                continue
+                
+            # Weighted Mean
+            d = diff[valid]
+            v = var_diff[valid]
+            weights = 1.0 / v
+            
+            w_mean = np.sum(d * weights) / np.sum(weights)
+            w_err = np.sqrt(1.0 / np.sum(weights))
+            
+            # Also calculate StdDev of residuals to see if there is intrinsic variation
+            # (e.g. color change during rotation)
+            std_dev = np.std(d)
+            
+            # Use the larger of w_err or std_dev/sqrt(N)? 
+            # Standard error of weighted mean is w_err.
+            
+            # Set offset
+            # We want B + Offset = Ref => Offset as computed.
+            # But wait, logic in plotting is: Y_plot = Ybase + off
+            # So if we set off = w_mean, Y_plot = B + (Ref - B) = Ref. Correct.
+            
+            # Store offset
+            self.lc_offsets[alias][b] = round(w_mean, 4)
+            
+            # Store Color Info
+            # Color Indicies are usually M_band1 - M_band2.
+            # Here we have Offset = Ref - B. 
+            # So the color is (Ref - B).
+            color_name = f"{ref_band}-{b}"
+            self.calculated_colors[alias][color_name] = (w_mean, w_err)
+            
+            aligned_count += 1
+            
+        # Ensure Ref band offset is 0 
+        self.lc_offsets[alias][ref_band] = 0.0
+        self.lc_offsets[alias][OFFSET_ALL_KEY] = 0.0
+        
+        # Refresh
         self.request_plot_update()
+        self._sync_offset_var_to_scope()
+        
+        msg = f"Aligned {aligned_count} filters to {ref_band}."
+        if aligned_count > 0:
+            msg += "\nColors have been calculated (View Colors)."
+        messagebox.showinfo("Alignment", msg)
+
+    def show_colors_dialog(self):
+        alias = self.current_lc_alias
+        if not alias or alias not in self.calculated_colors or not self.calculated_colors[alias]:
+            messagebox.showinfo("Colors", "No calculated colors available.\nRun 'Auto-Align' first.")
+            return
+            
+        colors = self.calculated_colors[alias]
+        
+        dlg = tk.Toplevel(self.root)
+        dlg.title(f"Color Indices: {alias}")
+        dlg.transient(self.root)
+        
+        try:
+            dlg.geometry(f"+{self.root.winfo_x()+100}+{self.root.winfo_y()+100}")
+        except:
+            pass
+            
+        # Table
+        cols = ("Color", "Value", "Error")
+        tree = ttk.Treeview(dlg, columns=cols, show='headings', height=len(colors)+2)
+        for c in cols:
+            tree.heading(c, text=c)
+            tree.column(c, width=100, anchor='center')
+        tree.pack(fill=BOTH, expand=True, padx=10, pady=10)
+        
+        for name, (val, err) in colors.items():
+            tree.insert("", END, values=(name, f"{val:.4f}", f"{err:.4f}"))
+            
+        # Buttons
+        btn_frame = ttk.Frame(dlg)
+        btn_frame.pack(fill=X, pady=10)
+        
+        def save_colors():
+            fname = filedialog.asksaveasfilename(defaultextension=".txt", 
+                                                 initialfile=f"{Path(self.lightcurves[alias].filename).stem}_colors.txt",
+                                                 filetypes=[("Text Files", "*.txt")])
+            if fname:
+                try:
+                    with open(fname, 'w') as f:
+                        f.write(f"# Color indices for {alias}\n")
+                        f.write(f"# Computed relative to reference filter \n")
+                        f.write(f"Color | Value | Error\n")
+                        for name, (val, err) in colors.items():
+                            f.write(f"{name} | {val:.6f} | {err:.6f}\n")
+                    messagebox.showinfo("Saved", f"Colors saved to {fname}")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to save: {e}")
+
+        ttk.Button(btn_frame, text="Save to File", command=save_colors).pack(side=LEFT, padx=20)
+        ttk.Button(btn_frame, text="Close", command=dlg.destroy).pack(side=RIGHT, padx=20)
+
+    def toggle_align_frame(self):
+        is_vis = self.align_visible.get()
+        new_vis = not is_vis
+        self.align_visible.set(new_vis)
+        
+        if new_vis:
+            self.toggle_btn.config(text="[ - ] Alignment & Colors")
+            self.align_inner.pack(side=TOP, fill=X)
+        else:
+            self.toggle_btn.config(text="[ + ] Alignment & Colors")
+            self.align_inner.pack_forget()
+
+    def toggle_period_frame(self):
+        is_vis = self.period_visible.get()
+        new_vis = not is_vis
+        self.period_visible.set(new_vis)
+        
+        if new_vis:
+            self.period_toggle_btn.config(text="[ - ] Rotation Period")
+            self.period_inner.pack(side=TOP, fill=X)
+        else:
+            self.period_toggle_btn.config(text="[ + ] Rotation Period")
+            self.period_inner.pack_forget()
 
     def on_offset_change(self, value):
         if not self._ensure_active_alias():
@@ -2158,6 +2413,10 @@ class LightCurveGUI:
         except Exception:
             pass
         self.request_plot_update()
+        
+        # Sync with calculated colors if exists
+        self._sync_manual_offset_to_colors(band_key, v)
+
         # draw immediately (fast blit)
         if hasattr(self.plot, "blit"):
             self.plot.blit.quick_redraw()
@@ -2186,60 +2445,39 @@ class LightCurveGUI:
         except Exception:
             pass
         self.request_plot_update()
+        
+        # Sync with calculated colors if exists
+        self._sync_manual_offset_to_colors(band_key, newv)
+
         if hasattr(self.plot, "blit"):
             self.plot.blit.quick_redraw()
 
-    def rename_lc(self):
-        sel = self.lc_listbox.curselection()
-        if not sel:
-            messagebox.showerror("No selection", "Please select a lightcurve to rename.")
-            return
-        old_alias = self.lc_listbox.get(sel[0])
-        new = simpledialog.askstring("Rename lightcurve", "New name:", initialvalue=old_alias)
-        if not new or new == old_alias:
-            return
-        if new in self.lightcurves:
-            messagebox.showerror("Name conflict", "A lightcurve with that name already exists.")
-            return
-        self.lightcurves[new] = self.lightcurves.pop(old_alias)
-        self.lc_visible[new] = self.lc_visible.pop(old_alias)
-        self.lc_offsets[new] = self.lc_offsets.pop(old_alias)
-        self.lc_listbox.delete(sel[0])
-        self.lc_listbox.insert(sel[0], new)
-        self.lc_listbox.selection_set(sel[0])
-        self.current_lc_alias = new
-        self.request_plot_update()
 
-    def toggle_visibility(self):
-        if not self.current_lc_alias:
-            messagebox.showerror("No selection", "Select a lightcurve to hide/show.")
+    def _sync_manual_offset_to_colors(self, band, offset_val):
+        """Update the calculated color value for a band if the user manually changes its offset."""
+        alias = self.current_lc_alias
+        if not alias or alias not in self.calculated_colors:
             return
-        a = self.current_lc_alias
-        self.lc_visible[a] = not self.lc_visible.get(a, True)
-        self._rebuild_listbox_display()
-        self.request_plot_update()
+            
+        # need to find which color corresponds to this band.
+        # Exception: if band is the Reference itself? Usually Ref offset is 0.
+        
+        suffix = f"-{band}"
+        
+        # If we have a direct match (Ref-B), update it.
+        # Note: offsets are stored as simple floats.
+        for color_name in self.calculated_colors[alias]:
+            if color_name.endswith(suffix):
+                # This color is Ref-Band
+                # The value should be the offset.
+                old_val, err = self.calculated_colors[alias][color_name]
+                self.calculated_colors[alias][color_name] = (offset_val, err)
+                # Force plot info update (since color value changed txt)
+                # But request_plot_update was already called. 
+                # layout_sig includes loc/flags but might not include color VALUES if they are just text.
+                # However, the plot logic rebuilds the text box every update() call.
+                return
 
-    def remove_lc(self):
-        if not self.current_lc_alias:
-            messagebox.showerror("No selection", "Select a lightcurve to remove.")
-            return
-        a = self.current_lc_alias
-        if not messagebox.askyesno("Confirm", f"Remove {a}?"):
-            return
-        self.lightcurves.pop(a, None)
-        self.lc_visible.pop(a, None)
-        self.lc_offsets.pop(a, None)
-        self._rebuild_listbox_display()
-        self.current_lc_alias = None
-        self.current_point_index = None
-        self.current_point_band = None
-        self.request_plot_update()
-
-    def _rebuild_listbox_display(self):
-        self.lc_listbox.delete(0, END)
-        for a, lc in self.lightcurves.items():
-            label = a + ("" if self.lc_visible.get(a, True) else " [hidden]")
-            self.lc_listbox.insert(END, label)
 
     # ——— Offsets ———
     def _refresh_offset_scope_choices(self):
@@ -2367,6 +2605,7 @@ class LightCurveGUI:
 
         # 6 Update button text + redraw
         self._update_filter_btn_text()
+        self._update_align_ref_choices()
         self.request_plot_update()
 
     def _update_filter_btn_text(self):
