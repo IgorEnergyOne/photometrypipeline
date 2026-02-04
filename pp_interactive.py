@@ -1705,6 +1705,7 @@ class LightCurveGUI:
         self.plot_settings_menu.add_checkbutton(label="Show Rejected", variable=self.toggle_rejected_var,
                                                 command=self.set_show_rejected)
 
+        ttk.Button(top, text="Rename Rejected", command=self.rename_rejected_files).pack(side=LEFT, padx=(10, 0))
         ttk.Button(top, text="Help (F1)", command=self.show_help).pack(side=LEFT, padx=(10, 0))
         self.root.bind("<F1>", lambda e: self.show_help())
 
@@ -2155,6 +2156,143 @@ class LightCurveGUI:
                         os.remove(tmp)
             messagebox.showinfo("Saved", f"ATLAS file saved as {file}")
 
+    def rename_rejected_files(self):
+        """
+        Renames files associated with rejected points to have a '._fits' extension,
+        and ensures accepted points have a '.fits' extension.
+        Searches for files in subdirectories relative to the CSV file location.
+        """
+        if not self.current_lc_alias:
+            messagebox.showwarning("No Data", "No lightcurve loaded.")
+            return
+
+        lc = self.lightcurves[self.current_lc_alias]
+        if lc.df is None or lc.df.empty:
+            messagebox.showwarning("No Data", "Lightcurve has no data.")
+            return
+
+        if 'filename' not in lc.df.columns:
+            messagebox.showwarning("Missing Data", "Dataframe is missing 'filename' column.")
+            return
+
+        # Confirm action
+        if not messagebox.askyesno("Rename Files",
+                                   "This operation will rename files on disk based on their rejection status:\n"
+                                   "- Rejected points -> ._fits\n"
+                                   "- Accepted points -> .fits\n\n"
+                                   "The program will search for files matching the basenames in subdirectories (recursive) and extensions will be changed.\n"
+                                   "Continue?"):
+            return
+
+        # Determine search root
+        search_root = os.path.dirname(os.path.abspath(lc.filename)) if lc.filename else os.getcwd()
+
+        # Only interested in extensions .fits, ._fits, .fts, ._fts
+        relevant_exts = {'.fits', '._fits', '.fts', '._fts'}
+        file_map = {}  # stem -> { ext -> [full_paths] }
+
+        # Show busy cursor
+        self.root.config(cursor="watch")
+        self.root.update_idletasks()
+
+        try:
+            # 1. Index all files in subdirectories
+            for root, dirs, files in os.walk(search_root):
+                for name in files:
+                    # check extension
+                    p = Path(name)
+                    ext = p.suffix
+                    stem = p.stem
+                    
+                    if ext in relevant_exts:
+                        if stem not in file_map:
+                            file_map[stem] = {}
+                        if ext not in file_map[stem]:
+                            file_map[stem][ext] = []
+                        file_map[stem][ext].append(os.path.join(root, name))
+
+            renamed_count = 0
+            errors = 0
+
+            # 2. Iterate through DataFrame
+            for idx, row in lc.df.iterrows():
+                fname = str(row['filename'])
+                is_rejected = bool(row['rejected'])
+
+                stem = Path(fname).stem
+                
+                # If the file described in DF is not found in scan, skip
+                if stem not in file_map:
+                    continue
+
+                variants = file_map[stem]
+                
+                # Check for existence of valid vs rejected variants
+                # Prioritize .fits over .fts, ._fits over ._fts
+                found_valid_list = variants.get('.fits', []) + variants.get('.fts', [])
+                found_rejected_list = variants.get('._fits', []) + variants.get('._fts', [])
+
+                if is_rejected:
+                    # Ensure file is named ._fits
+                    # If have valid files, rename them to ._fits
+                    for old_path in found_valid_list:
+                        dir_name = os.path.dirname(old_path)
+                        name = os.path.basename(old_path)
+                        
+                        if name.endswith('.fits'):
+                            new_name = name.replace('.fits', '._fits')
+                        elif name.endswith('.fts'):
+                             new_name = name.replace('.fts', '._fts')
+                        else:
+                             new_name = name + "._fits"
+                        
+                        new_path = os.path.join(dir_name, new_name)
+                        try:
+                            if os.path.exists(new_path):
+                                print(f"Target {new_path} exists. Skipping rename of {old_path}")
+                                continue
+                            os.rename(old_path, new_path)
+                            renamed_count += 1
+                        except OSError as e:
+                            print(f"Error renaming {old_path}: {e}")
+                            errors += 1
+                    
+                else:
+                    # Ensure file is named .fits 
+                    # If there are rejected files, rename them to .fits
+                    for old_path in found_rejected_list:
+                        dir_name = os.path.dirname(old_path)
+                        name = os.path.basename(old_path)
+                        
+                        if name.endswith('._fits'):
+                            new_name = name.replace('._fits', '.fits')
+                        elif name.endswith('._fts'):
+                             new_name = name.replace('._fts', '.fts')
+                        else:
+                             base, ext = os.path.splitext(name)
+                             if ext.startswith('._'):
+                                 new_name = base + '.' + ext[2:]
+                             else:
+                                 new_name = base + '.fits'
+                        
+                        new_path = os.path.join(dir_name, new_name)
+                        try:
+                            if os.path.exists(new_path):
+                                print(f"Target {new_path} exists. Skipping rename of {old_path}")
+                                continue
+                            os.rename(old_path, new_path)
+                            renamed_count += 1
+                        except OSError as e:
+                            print(f"Error renaming {old_path}: {e}")
+                            errors += 1
+
+            messagebox.showinfo("Rename Complete", f"Renamed {renamed_count} files.\nErrors: {errors}")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred during renaming: {e}")
+        finally:
+            self.root.config(cursor="")
+
     # ——— Alignment & Colors ———
     def _update_align_ref_choices(self):
         """Update the reference band combobox based on available bands."""
@@ -2227,32 +2365,19 @@ class LightCurveGUI:
             b_m = mag_all[b_mask]
             b_e = sig_all[b_mask]
             
-            # Interpolate Ref Magnitude at B times
-            # Note: numpy.interp returns flat extrapolation at textremes. 
-            # We should mask points outside the reference range to avoid bad alignment
-            # unless the user accepts extrapolation. For safety, we mask.
             
-            # Also, if we are in 'rotation_phase' mode, we should perhaps align in phase space?
-            # But the user might not have a period set.
-            # Let's check if 'time_mode' is rotation_phase.
-            
-            # Decided: Use JD (Time) for alignment as it's the physical observation time.
+            # Use JD (Time) for alignment
             # If the user took data sequentially (R, V, R, V...), interpolation in time is correct.
             
             ref_m_interp = np.interp(b_t, ref_t, ref_m, left=np.nan, right=np.nan)
             
             # Calculate differences (residuals)
-            # We want to align B to Ref.
             # If B + Offset = Ref, then Offset = Ref - B.
             # Ref - B is also the color index (Ref-B).
             
             diff = ref_m_interp - b_m
             
             # Propagate errors: 
-            # Sig_Diff^2 = Sig_B^2 + Sig_Ref_Interp^2
-            # Interpolated error is roughly linear Interp of error? Or just take nearest?
-            # A simple approx is sqrt(sig_b^2 + mean(sig_ref)^2). 
-            # Or interpolate variance? 
             # Let's interp variance for better estimate.
             ref_var = ref_e**2
             ref_var_interp = np.interp(b_t, ref_t, ref_var, left=np.nan, right=np.nan)

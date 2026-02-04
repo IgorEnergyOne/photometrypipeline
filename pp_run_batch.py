@@ -9,6 +9,8 @@ import pandas as pd
 from toolbox import lister
 
 
+import sys
+
 def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = False):
     """
     wrapper around pp_run for processing of multiple directories in single run
@@ -17,6 +19,7 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
     :param by_filter: create separate csv and atlas files for each filter present
     :return:
     """
+    has_error = False
     with open(fname) as f:
         lines = f.readlines()
         # remove empty lines
@@ -47,9 +50,11 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
                 # compile the command to run pipeline
                 command = " ".join(line.rsplit(' ')[:-1]) + ' *.fit*'
                 try:
-                    subprocess.call(['/bin/sh', '-i', '-c', command])
+                    # check_call raises CalledProcessError on non-zero exit code
+                    subprocess.check_call(['/bin/sh', '-i', '-c', command])
                 except Exception as e:
                     print(f'Error in {dir_path}, exception: {e}')
+                    has_error = True
                     continue
         # change cwd one level up to the base directory
         prnt = Path(paths[0]).parent
@@ -58,10 +63,14 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
         if len(paths) == 1:
             paths = [paths[0], '']
         # try to combine data to one csv and atlas, build photometry curve
-        subprocess.call(
-            ['/bin/sh', '-i', '-c', f'pp_combine_csv -dirs_pattern {",".join(str(path) for path in paths)}'])
-        atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in paths)}"
-        subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
+        try:
+            subprocess.check_call(
+                ['/bin/sh', '-i', '-c', f'pp_combine_csv -dirs_pattern {",".join(str(path) for path in paths)}'])
+            atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in paths)}"
+            subprocess.check_call(['/bin/sh', '-i', '-c', atlas_cmd])
+        except Exception as e:
+            print(f"Error in post-processing combination: {e}")
+            has_error = True
 
         if by_filter:
             # group directories by photometry filters
@@ -86,32 +95,115 @@ def pipeline_batch(fname: str, skip_pipeline: bool = False, by_filter: bool = Fa
                 if len(filter_paths) == 1:
                     filter_paths = [filter_paths[0], '']
 
-                csv_filename = f'combined_results_{filter_name}.csv'
-                # Combine CSV for this filter
-                subprocess.call(['/bin/sh', '-i', '-c',
-                                 f'pp_combine_csv -dirs_pattern {",".join(str(p) for p in filter_paths)} -out_path {csv_filename}'])
+                try:
+                    csv_filename = f'combined_results_{filter_name}.csv'
+                    # Combine CSV for this filter
+                    subprocess.check_call(['/bin/sh', '-i', '-c',
+                                     f'pp_combine_csv -dirs_pattern {",".join(str(p) for p in filter_paths)} -out_path {csv_filename}'])
 
-                # Create atlas file for this filter
-                if Path(csv_filename).exists():
-                    atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in filter_paths)} -fname_out combined_atlas_{filter_name}.ATL"
-                    subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
-                    try:
-                        target_name = photo_data["target"].iloc[0].replace(' ', '_')
-                        # strip name of any special characters
-                        target_name = target_name.replace('(', '').replace(')', '')
-                    except KeyError:
-                        target_name = f'Asteroid'
-                    lightcurve_cmd = f'pp_lightcurve ' \
-                                     f'-file_path {csv_filename} ' \
-                                     f'-target_name "{target_name} ({filter_name} filter)" ' \
-                                     f'-save_name lightcurve_{target_name}_{filter_name}.png ' \
-                                     f'-plot_flagged'
-                    subprocess.call(['/bin/sh', '-i', '-c', lightcurve_cmd])
+                    # Create atlas file for this filter
+                    if Path(csv_filename).exists():
+                        atlas_cmd = f"pp_atlas -combine {' '.join(str(p) for p in filter_paths)} -fname_out combined_atlas_{filter_name}.ATL"
+                        subprocess.check_call(['/bin/sh', '-i', '-c', atlas_cmd])
+                        try:
+                            target_name = photo_data["target"].iloc[0].replace(' ', '_')
+                            # strip name of any special characters
+                            target_name = target_name.replace('(', '').replace(')', '')
+                        except KeyError:
+                            target_name = f'Asteroid'
+                        lightcurve_cmd = f'pp_lightcurve ' \
+                                         f'-file_path {csv_filename} ' \
+                                         f'-target_name "{target_name} ({filter_name} filter)" ' \
+                                         f'-save_name lightcurve_{target_name}_{filter_name}.png ' \
+                                         f'-plot_flagged'
+                        subprocess.check_call(['/bin/sh', '-i', '-c', lightcurve_cmd])
+                except Exception as e:
+                    print(f"Error processing filter {filter_name}: {e}")
+                    has_error = True
 
     except Exception as e:
         print(f'Error in {dir_path}, exception: {e}')
         if e is KeyboardInterrupt:
             print("The script was interrupted by the user. Aborting...")
+        has_error = True
+    
+    if has_error:
+        print("Batch processing completed with errors.")
+        sys.exit(1)
+
+
+def meta_batch(fname: str):
+    """
+    Process a list of batch queues.
+    :param fname: path to the meta-queue file containing list of queue files and optional args
+    """
+    with open(fname) as f:
+        lines = [line.strip() for line in f.readlines() if line.strip()]
+    # remove lines starting with '!' ( means skip pipeline processing for the directory)
+    lines = [line for line in lines if not line.startswith('!')]
+
+
+    print(f"Starting Meta-Batch processing with {len(lines)} queues.")
+
+    successful_batches = 0
+    failed_batches = []
+
+    for line in tqdm(lines, desc='Meta Batch', unit='queue'):
+        # format: /path/to/queue.txt [args...]
+        parts = line.split()
+        if not parts:
+            continue
+        
+        queue_file = parts[0]
+        extra_args = parts[1:]
+        
+        # change directory to where the queue file resides.
+        
+        qpath = Path(queue_file)
+        if not qpath.is_absolute():
+            # If relative path, assume it is CWD from queue batch file
+            qpath = Path(os.getcwd()) / qpath
+
+        # If the file exists, we use its parent as the working directory
+        if not qpath.exists():
+            print(f"Warning: Queue file {qpath} not found. Skipping.")
+            failed_batches.append(f"{qpath} (File not found)")
+            continue
+
+        work_dir = qpath.parent
+        queue_filename_only = qpath.name
+        
+        cmd = ['pp_run_batch', '-file', queue_filename_only] + extra_args
+        
+        print(f"\n>>> Launching batch: {queue_filename_only}")
+        print(f"    In Directory: {work_dir}")
+        print(f"    Command: {' '.join(cmd)}")
+        
+        try:
+            # Run subprocess in the separate directory
+            # check=True will raise CalledProcessError if return code != 0
+            subprocess.check_call([str(c) for c in cmd], cwd=work_dir)
+            successful_batches += 1
+        except Exception as e:
+            print(f"Error executing batch {qpath}: {e}")
+            failed_batches.append(f"{qpath} ({str(e)})")
+            if isinstance(e, KeyboardInterrupt):
+                raise e
+
+    print("\n" + "="*40)
+    print("Meta-Batch Processing Summary")
+    print("="*40)
+    print(f"Total Batches: {len(lines)}")
+    print(f"Successful:    {successful_batches}")
+    print(f"Failed:        {len(failed_batches)}")
+    
+    if failed_batches:
+        print("\nFailed Batches:")
+        for fb in failed_batches:
+            print(f"  - {fb}")
+    print("="*40 + "\n")
+
+
 
 if __name__ == '__main__':
     core_path = os.getcwd()
@@ -125,8 +217,16 @@ if __name__ == '__main__':
     parser.add_argument('-by_filter',
                         help='perform creation of atlas and lightcurve files for each filter',
                         default=False, action='store_true')
+    parser.add_argument('-meta',
+                        help='run in meta-batch mode (file argument is a list of queues)',
+                        default=False, action='store_true')
     args = parser.parse_args()
     filename = str(args.file)
     skip_pipeline = args.skip_pipeline
     by_filter = args.by_filter
-    pipeline_batch(filename, skip_pipeline, by_filter)
+    is_meta = args.meta
+
+    if is_meta:
+        meta_batch(filename)
+    else:
+        pipeline_batch(filename, skip_pipeline, by_filter)
