@@ -20,8 +20,9 @@ Photometry Pipeline Configuation File
 # along with this program.  If not, see
 # <http://www.gnu.org/licenses/>.
 
-# telescope/instrument configurations
-# MYTELESCOPE setup parameters
+import os
+
+rootpath = os.environ.get('PHOTPIPEDIR')
 
 # Abastumani AC-32 with PL4240 camera
 AC32_param = {
@@ -139,8 +140,8 @@ AC32_oldcam_param = {
 
     # scamp settings
     'scamp-config-file': rootpath + '/setup/AC32.scamp',
-    'reg_max_mag': 18.5,  # 19
-    'reg_search_radius': 1.0,  # deg
+    'reg_max_mag': 16.5,  # 19
+    'reg_search_radius': 0.5,  # deg
     'source_tolerance': 'high',
 
     # swarp settings
@@ -571,12 +572,12 @@ AZT22_param = {
     'source_snr': 7,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
     'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
-    'sex-config-file': rootpath + '/setup/AC32.sex',
+    'sex-config-file': rootpath + '/setup/AZT22.sex',
     'mask_file': {},
     #                        mask files as a function of x,y binning
 
     # scamp settings
-    'scamp-config-file': rootpath + '/setup/AC32.scamp',
+    'scamp-config-file': rootpath + '/setup/AZT22.scamp',
     'reg_max_mag': 22.,  # 19
     'reg_search_radius': 1.0,  # deg
     'source_tolerance': 'high',
@@ -587,7 +588,7 @@ AZT22_param = {
                       'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
     #                         keywords to be copied in image
     #                         combination using swarp
-    'swarp-config-file': rootpath + '/setup/AC32.swarp',
+    'swarp-config-file': rootpath + '/setup/AZT22.swarp',
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA'],
@@ -634,12 +635,12 @@ AZT22_unfilled_param = {
     'source_snr': 7,  # default sextractor source snr for registration
     'aprad_default': 5,  # default aperture radius in px
     'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
-    'sex-config-file': rootpath + '/setup/AC32.sex',
+    'sex-config-file': rootpath + '/setup/AZT22.sex',
     'mask_file': {},
     #                        mask files as a function of x,y binning
 
     # scamp settings
-    'scamp-config-file': rootpath + '/setup/AC32.scamp',
+    'scamp-config-file': rootpath + '/setup/AZT22.scamp',
     'reg_max_mag': 22.,  # 19
     'reg_search_radius': 1.0,  # deg
     'source_tolerance': 'high',
@@ -651,6 +652,69 @@ AZT22_unfilled_param = {
     #                         keywords to be copied in image
     #                         combination using swarp
     'swarp-config-file': rootpath + '/setup/AC32.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
+# AZT-22 with SI600 4096x4096 CCD (SNUCAM)
+AZT22_si600cam = {
+    'telescope_instrument': 'AZT-22/SI600 CCD',  # telescope/instrument name
+    'telescope_keyword': 'AZT-22/SI600 CCD',  # telescope/instrument keyword
+    'observatory_code': '188',  # MPC observatory code (186?)
+    'secpix': (0.266, 0.266),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'UTDATE|UTSTART',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Clear': None},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/AZT22.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/AZT22.scamp',
+    'reg_max_mag': 22.,  # 19
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/AZT22.swarp',
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA'],
@@ -1243,6 +1307,69 @@ TianShan_param = {
     'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
+
+Banon_param = {
+    'telescope_instrument': 'ASCOM_QHYCCD-Cameras-Capture',  # telescope/instrument name
+    'telescope_keyword': 'ODK16 f/6.8',  # telescope/instrument keyword
+    'observatory_code': 'K19',  # MPC observatory code
+    'secpix': (0.8597, 0.8597),  # pixel size (arcsec) before binning
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('BINX', 'BINY'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    #'date_keyword': 'DATE|TIME-OBS',  # obs date/time
+   'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'JD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTERS',  # filter keyword
+    'filter_translations': {'rpr': 'r'},
+    # filtername translation dictionary
+    'exptime': 'EXPOSURE',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    # 'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+
+    'sex-config-file': rootpath + '/setup/BanonODK16.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/BanonODK16.scamp',
+    'reg_max_mag': 17.0,
+    'reg_search_radius': 0.5,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    # 'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+    #                   'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+    #                   'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    # #                         keywords to be copied in image
+    # #                         combination using swarp
+    # 'swarp-config-file': rootpath + '/setup/AC32.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
 vatt4k_param = {
     'telescope_instrument': 'VATT/VATT4k',  # telescope/instrument name
     'telescope_keyword': 'VATT4K',  # telescope/instrument keyword
@@ -1305,6 +1432,74 @@ vatt4k_param = {
     # default catalog settings
     'astrometry_catalogs': ['GAIA'],
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9']
+}
+
+
+D500_param = {
+    'telescope_instrument': 'D500',  # telescope/instrument name
+    'telescope_keyword': 'D500',  # telescope/instrument keyword
+    'observatory_code': '119',  # MPC observatory code
+    'secpix': (1.063, 1.063),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {"g'": 'g', "r'": 'r',
+                            "i'": 'i',
+                            'Clear': None},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/D500.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/D500.scamp',
+    'reg_max_mag': 17.5,  # 19
+    'reg_search_radius': 0.5,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/D500.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS'],
+
+    # additional parameters for atlas files
+    # diameter of the telescope's mirror
+    "telescope_diameter": 'APTDIA',
+    'observer': 'OBSERVER'
 }
 
 # DCT, LMI
@@ -5389,7 +5584,7 @@ cfhtmegaprime_param = {
 implemented_telescopes = ['AC32', 'AC32_oldcam', '052',
                           'BART254', 'Prompt6', 'Prompt7', 'AZT-8', 'AZT-8_lysnyky', 'AZT-22',
                           'NT-60',
-                          'VATT4K', 'DCTLMI', 'ARC35ARCTIC',
+                          'VATT4K', 'D500', 'DCTLMI', 'ARC35ARCTIC',
                           'ARC35AGILE', 'MAGIMACSL', 'MAGIMACSS',
                           'LOWELL31', 'LOWELL42',
                           'LOWELL72',
@@ -5436,6 +5631,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'AZT-22/Andor CCD/EMCCD (SDK2)': 'AZT-22',
                           'AZT-22': 'AZT-22',
                           '1.5m' : 'AZT-22_unfilled',
+                          'AZT-22 1.5m': 'AZT22_si600cam',
                             
                           'NT-60': 'NT-60',
                           'NT-60/Andor CCD/EMCCD (SDK2)': 'NT-60',
@@ -5452,7 +5648,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'Rozhen Zeiss-2000': 'rozhen2000',
                           'Rozhen Zeiss-2000/Andor':  'rozhen2000',
 
-                    
+                          'D500': 'D500',
 
                           'RC-36': 'RC-36/PL-09000',
 
@@ -5462,6 +5658,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'Prompt8': 'Prompt8',
                           'Prompt8 ': 'Prompt8',
                           # 'FLI': 'Prompt7',
+                          'ODK16 f/6.8': 'ODK168',
 
                           'FLI': 'TShAO-1m',
                           'LMI': 'DCTLMI',
@@ -5558,9 +5755,13 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'AZT-8_lisnyky': AZT8_lisnyky_param,
                         'AZT-22': AZT22_param,
                         'AZT-22_unfilled': AZT22_unfilled_param,
+                        'AZT22_si600cam': AZT22_si600cam,
                         'NT-60': NT60_param,
                         'Rozhen600': rozhen_600,
-                        'rozhen2000': rozhen_2000, 
+                        'rozhen2000': rozhen_2000,
+                        'D500': D500_param,
+                        'ODK168': Banon_param,
+                        'ODK16 f/6.8': Banon_param,
                         'RC-36/PL-09000': Kitab_param,
                         'BART 254/1600 mm': BART254_param,
                         'BART254': BART254_param,
@@ -5640,7 +5841,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
 # more information are available on the PP documentation website:
 # http://mommermi.github.io/pp/install.html
 
-try:
-    execfile(rootpath + '/setup/mytelescopes.py')
-except (IOError, NameError):
-    pass
+# try:
+#     execfile(rootpath + '/setup/mytelescopes.py')
+# except (IOError, NameError):
+#     pass
