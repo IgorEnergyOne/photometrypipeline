@@ -23,8 +23,16 @@ from __future__ import division
 # <http://www.gnu.org/licenses/>.
 
 import os
+import re
 import sys
 from pathlib import Path
+
+import pandas as pd
+from astropy.table import vstack
+from astropy.time import Time
+from astroquery.jplhorizons import Horizons
+from astroquery.jplsbdb import SBDB
+
 try:
     from past.utils import old_div
 except ImportError:
@@ -32,6 +40,9 @@ except ImportError:
     sys.exit()
 
 import math
+import time
+import requests
+import json
 import numpy as np
 from astropy.io import fits
 import astropy.units as u
@@ -45,6 +56,102 @@ if sys.version_info > (3, 0):
     from future import standard_library
     standard_library.install_aliases()
     from builtins import range
+
+import logging
+
+
+# ======================================================
+# SELECT VIZIER MIRROR
+# ======================================================
+
+def test_mirror(mirror, timeout=6, logger=None):
+    """Query a small record from one catalog on a given mirror."""
+    cat_id = "I/355/gaiadr3"  # Gaia DR3
+    test_url = f"{mirror.rstrip('/')}/viz-bin/VizieR?-source={cat_id}&-out.max=1"
+    log = logger.info if logger else print
+    try:
+        start = time.perf_counter()
+        r = requests.get(test_url, timeout=timeout)
+        elapsed = time.perf_counter() - start
+        if r.status_code == 200 and "VizieR" in r.text:
+            log(f"Mirror {mirror} responded in {elapsed:.2f}s")
+            return elapsed
+        else:
+            log(f"Mirror {mirror} returned invalid response (code {r.status_code})")
+    except requests.RequestException as e:
+        log(f"Mirror {mirror} failed: {e}")
+    return None
+
+
+def find_fastest_vizier_mirror(mirrors, logger=None):
+    """Return fastest available mirror; returns None if none accessible."""
+    results = {}
+    log = logger.info if logger else print
+    log("Testing Vizier mirrors...\n")
+    for m in mirrors:
+        log(f"Testing {m} ...")
+        latency = test_mirror(m, logger=logger)
+        if latency is not None:
+            results[m] = latency
+            log(f"OK ({latency:.2f}s)")
+        else:
+            log("failed")
+
+    if not results:
+        log("Warning: No Vizier mirrors are currently accessible!")
+        return None
+
+    fastest = min(results, key=results.get)
+    log(f"Fastest mirror: {fastest} ({results[fastest]:.2f}s)")
+    return fastest
+
+
+def save_cache(mirror, cache_file, logger=None):
+    """Save fastest mirror to cache file with timestamp."""
+    log = logger.info if logger else print
+    try:
+        cache_file.write_text(
+            json.dumps({"fastest_mirror": mirror, "timestamp": time.time()}, indent=2)
+        )
+        log(f"Saved mirror {mirror} to cache: {cache_file}")
+    except Exception as e:
+        if logger:
+            logger.warning(f"Failed to save cache file {cache_file}: {e}")
+        else:
+            print(f"Warning: failed to save cache file {cache_file}: {e}")
+
+
+def load_cache(path_cache, max_age_hours=12, logger=None):
+    """Load cached fastest mirror if not older than max_age_hours."""
+    cache_file = Path(path_cache)
+    log = logger.info if logger else print
+    if not cache_file.exists():
+        log(f"No cache file found at {path_cache}")
+        return None
+
+    try:
+        data = json.loads(cache_file.read_text())
+        age_h = (time.time() - data.get("timestamp", 0)) / 3600
+        if age_h < max_age_hours:
+            log(f"Loaded cached mirror {data.get('fastest_mirror')} (age {age_h:.2f}h)")
+            return data.get("fastest_mirror")
+        else:
+            log(f"Cache expired ({age_h:.1f}h old)")
+    except Exception as e:
+        if logger:
+            logger.warning(f"Failed to load cache file {path_cache}: {e}")
+        else:
+            print(f"Warning: failed to load cache file {path_cache}: {e}")
+
+    return None
+
+
+def check_mirror_accessible(mirror, logger=None):
+    """Return True if mirror still accessible, False otherwise."""
+    accessible = test_mirror(mirror, logger=logger) is not None
+    log = logger.info if logger else print
+    log(f"Mirror {mirror} accessible: {accessible}")
+    return accessible
 
 
 # TIME AND DATE
@@ -276,66 +383,162 @@ def find_asteroid_ldac(ldac, ast_coords):
     return i_min, sep[i_min]
 
 
-def parse_aperture_string(aperture_str):
+def _parse_aperture_param(token: str):
+    """Parse a single aperture parameter token.
+
+    Returns
+    -------
+    float
+        Fixed value (e.g. ``"5.0"`` or ``"-18"``).
+    (float, float)
+        Search range (e.g. ``"2:8"``).
+    None
+        Optimise automatically (``"auto"``, ``"_"``, ``"?"``, or ``""``).
     """
-    Parses a string describing an aperture and returns the corresponding parameters.
+    s = token.strip().lower()
+    if s in ('auto', '_', '?', ''):
+        return None
+    if ':' in s:
+        parts = s.split(':')
+        if len(parts) != 2:
+            raise ValueError(f"Range token must be 'lo:hi', got '{s}'")
+        lo, hi = float(parts[0]), float(parts[1])
+        if lo >= hi:
+            raise ValueError(f"Range lo ({lo}) must be strictly less than hi ({hi})")
+        return (lo, hi)
+    return float(s)
 
-    Format examples:
-        "c 5"           -> circular aperture, radius 5
-        "e 5 2 -18"     -> elliptical aperture, a=5, b=2, theta=-18
-        "p 3 2 -15"     -> pill aperture, length=3, width=2, theta=-15
 
-    Returns:
-        dict with keys:
-            - 'type': one of 'circular', 'elliptical', 'pill'
-            - other keys depend on type
+def parse_aperture_string(aperture_str):
+    """Parse an aperture specification string into a parameter dictionary.
 
-    Raises:
-        ValueError if format is invalid.
+    Each numeric parameter can be:
+
+    * a **fixed value** → stored as ``float``  (e.g. ``"5.0"``)
+    * a **search range** → stored as ``(lo, hi)`` tuple  (e.g. ``"2:8"``)
+    * ``"auto"`` / ``"_"`` / **omitted** → stored as ``None`` (optimise)
+
+    When **all** parameters are fixed floats the returned ``'mode'`` key is
+    ``'manual'`` and the aperture is applied directly.  If any parameter is
+    ``None`` or a range the mode is ``'optimal'``, which triggers the
+    SNR-grid search in :func:`~optimal_aperture.find_optimal_aperture`.
+
+    An optional ``fwhm=<value>`` token may appear anywhere in the string
+    (typically at the end).  When present the parsed FWHM (in pixels) is
+    stored under the ``'fwhm'`` key; otherwise ``'fwhm'`` is ``None``.
+
+    Supported shapes
+    ----------------
+    ``c`` – circular::
+
+        "c 5"            → fixed radius = 5 px  (manual)
+        "c"              → optimise radius  (optimal)
+        "c auto"         → same as above
+        "c 2:8"          → search radius ∈ [2, 8] px  (optimal)
+        "c 2:8 fwhm=3.5" → same, FWHM seed = 3.5 px
+
+    ``e`` – elliptical::
+
+        "e 5 2 -18"          → a=5, b=2, θ=-18°  (manual)
+        "e"                  → all parameters optimised  (optimal)
+        "e auto 2 -18"       → optimise a; b=2, θ=-18° fixed
+        "e 2:8 1:4 auto"     → a ∈ [2,8], b ∈ [1,4], θ auto
+        "e fwhm=4.0"         → all optimised with FWHM seed = 4.0 px
+
+    ``p`` – pill::
+
+        "p 3 2 -15"              → w=3, h=2, θ=-15°  (manual)
+        "p"                      → all parameters optimised  (optimal)
+        "p auto auto -15"        → optimise w and h; θ fixed
+        "p auto auto -15 fwhm=3" → same with FWHM seed = 3 px
+
+    Parameters
+    ----------
+    aperture_str : str
+
+    Returns
+    -------
+    dict
+        Always has ``'type'`` (``'circular'``, ``'elliptical'``, or ``'pill'``),
+        ``'mode'`` (``'manual'`` or ``'optimal'``), ``'fwhm'`` (``float`` or
+        ``None``), plus shape-specific keys whose values are ``float``,
+        ``(float, float)``, or ``None``.
+
+    Raises
+    ------
+    ValueError
+        On invalid format or out-of-range fixed values.
     """
     tokens = aperture_str.strip().lower().split()
     if not tokens:
         raise ValueError("Empty aperture string.")
 
+    # ── Extract optional fwhm=<value> token (may appear anywhere) ──────────
+    fwhm_val = None
+    shape_tokens = []
+    for t in tokens:
+        m = re.match(r'^fwhm=(\S+)$', t)
+        if m:
+            try:
+                fwhm_val = float(m.group(1))
+            except ValueError:
+                raise ValueError(f"Invalid fwhm value in aperture string: '{t}'")
+            if fwhm_val <= 0:
+                raise ValueError(f"fwhm must be > 0, got {fwhm_val}")
+        else:
+            shape_tokens.append(t)
+    tokens = shape_tokens
+    if not tokens:
+        raise ValueError("Aperture string contains only 'fwhm=...' – shape type is missing.")
+
     kind = tokens[0]
+    rest = tokens[1:]          # may be shorter than expected → missing ≡ None
+
+    def _get(idx):
+        return _parse_aperture_param(rest[idx]) if idx < len(rest) else None
+
+    def _check_positive(v, name):
+        if isinstance(v, float) and v <= 0:
+            raise ValueError(f"{name} must be > 0, got {v}")
+
+    def _check_theta(v, name='theta'):
+        if isinstance(v, float) and not (-180.0 <= v <= 180.0):
+            raise ValueError(f"{name} must be in [-180, 180], got {v}")
+
     try:
         if kind == 'c':
-            if len(tokens) != 2:
-                raise ValueError("Circular aperture requires 1 parameter (radius).")
-            radius = float(tokens[1])
-            if radius <= 0:
-                raise ValueError("Circular aperture radius must be larger than 0.")
-            return {'type': 'circular', 'radius': radius}
+            radius = _get(0)
+            _check_positive(radius, 'radius')
+            result = {'type': 'circular', 'radius': radius}
 
         elif kind == 'e':
-            if len(tokens) != 4:
-                raise ValueError("Elliptical aperture requires 3 parameters (a, b, theta).")
-            a = float(tokens[1])
-            b = float(tokens[2])
-            if a <= 0 or b <= 0:
-                raise ValueError("Elliptical aperture a and b must be larger than 0.")
-            theta = float(tokens[3])
-            if theta < -180 or theta > 180:
-                raise ValueError("Elliptical aperture theta must be between -180 and 180.")
-            return {'type': 'elliptical', 'a': a, 'b': b, 'theta': theta}
+            a, b, theta = _get(0), _get(1), _get(2)
+            _check_positive(a, 'a')
+            _check_positive(b, 'b')
+            _check_theta(theta)
+            result = {'type': 'elliptical', 'a': a, 'b': b, 'theta': theta}
 
         elif kind == 'p':
-            if len(tokens) != 4:
-                raise ValueError("Pill aperture requires 3 parameters (width, height, theta).")
-            width = float(tokens[1])
-            height = float(tokens[2])
-            if height <= 0 or width <= 0:
-                raise ValueError("Pill aperture length and width must be larger than 0.")
-            theta = float(tokens[3])
-            if theta < -180 or theta > 180:
-                raise ValueError("Pill aperture theta must be between -180 and 180.")
-            return {'type': 'pill', 'width': width, 'height': height,'theta': theta}
+            width, height, theta = _get(0), _get(1), _get(2)
+            _check_positive(width, 'width')
+            _check_positive(height, 'height')
+            _check_theta(theta)
+            result = {'type': 'pill', 'width': width, 'height': height, 'theta': theta}
 
         else:
             raise ValueError(f"Unknown aperture type '{kind}'. Use 'c', 'e', or 'p'.")
 
-    except ValueError as e:
-        raise ValueError(f"Invalid aperture string '{aperture_str}': {e}")
+    except ValueError as exc:
+        raise ValueError(f"Invalid aperture string '{aperture_str}': {exc}") from exc
+
+    # Determine mode: 'manual' only if every parameter is a plain float
+    param_values = [v for k, v in result.items() if k != 'type']
+    result['mode'] = 'manual' if all(isinstance(v, float) for v in param_values) else 'optimal'
+
+    # Attach the optional FWHM seed extracted earlier
+    result['fwhm'] = fwhm_val
+
+    return result
 
 
 
@@ -359,3 +562,153 @@ def lister(path: Path, name_pattern: str, return_type='name', object_type="file"
     if return_type == 'name':
         objects = sorted([obj.name for obj in objects])
     return objects
+
+
+def get_full_name(asteroid_id) -> str:
+    """gets the funll name of the asteroid from JPL SBDB"""
+    jpl_query = SBDB.query("{}".format(asteroid_id), phys=False)
+    # check if shortname exists (exists for asteroids with names)
+    shortname = jpl_query['object'].get('shortname')
+    if shortname:
+        return shortname
+    else:
+        name = jpl_query['object'].get('fullname')
+        return name
+
+
+def init_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories.dat') -> dict:
+    """read the data with observatories locations and their codes"""
+    obs_dict = {}
+    with open(dict_path, 'r') as file:
+        obs_file = file.readlines()[1:]
+    for obs_site in obs_file:
+        code, site = obs_site.strip('\n').split(maxsplit=1)
+        obs_dict.update({code: site})
+    return obs_dict
+
+
+def init_mpc_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories_mpc.dat') -> dict:
+    """read the data with mpc observatories locations and their codes"""
+    obs_dict = {}
+    obs_file = pd.read_fwf(dict_path, colspecs=[(0, 4), (4, 14), (14, 23), (23, 33), (33, 200)])
+    obs_file['Lat'] = obs_file.apply(lambda x: math.degrees(math.atan2(float(x['sin']), float(x['cos']))), axis=1)
+    for obs_site in obs_file.iloc:
+        code, long, lat, site_name = obs_site[['Code', 'Long.', 'Lat', 'Name']]
+        long_letter = 'E' if float(long) > 0 else 'W'
+        lat_sign = "+" if lat > 0 else ""
+        full_name = f"{long_letter} {long:.2f} {lat_sign}{lat:.2f} {site_name}"
+        obs_dict.update({code: full_name})
+    return obs_dict
+
+
+def detect_phot_system(filter: str) -> str:
+    """detects which photometric system is used for the photometry"""
+    if filter in ['U', 'B', 'V', 'R', 'I', 'C', 'Clear']:
+        return 'Johnson-Cousins'
+    elif filter in ['u', 'g', 'r', 'i', 'z']:
+        return 'Sloan'
+    else:
+        return 'Unknown'
+
+
+def get_fits_header(filename: str) -> dict:
+    """gets the header of the fits file"""
+    # name of the fits image file
+    # open image file
+    hdulist = fits.open(filename, mode='update', verify='silentfix',
+                        ignore_missing_end=True)
+    header = hdulist[0].header
+    return header
+
+
+def get_obsparam(header: dict) -> dict:
+    from setup.telescopes import telescope_parameters, instrument_identifiers
+    """gets the correct telescope parameters from the pipeline database"""
+    instrument_keys = ['TELESCOP', 'INSTRUME', 'PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME',
+                       ]
+    instruments = []
+    for key in instrument_keys:
+        if key in header:
+            # check the header entry is not empty
+            if header[key].strip():
+                instruments.append(header[key])
+                break
+    telescope = instrument_identifiers[instruments[0]]
+    obsparam = telescope_parameters[telescope]
+    return obsparam
+
+
+def julian_to_ymd(julian_date):
+    """Formats a Julian date as a string in the format "YYYY MON DD.D"""
+    month_dict = {'January': 'JAN', 'February': 'FEB', 'March': 'MAR',
+                  'April': 'APR', 'May': 'MAY', 'June': 'JUN',
+                  'July': 'JUL', 'August': 'AUG', 'September': 'SEP',
+                  'October': 'OCT', 'November': 'NOV', 'December': 'DEC'}
+    # Create an astropy Time object from the Julian date
+    t = Time(julian_date, format='jd', scale='utc')
+
+    # Extract the decimal day
+    decimal_day = t.datetime.day + t.datetime.hour / 24 + t.datetime.minute / 1440
+    # Format the month name
+    month_name = month_dict[t.datetime.strftime('%B')]
+
+    # Format the string with the year, month name, and decimal day
+    formatted_date = f"{t.datetime.year} {month_name} {decimal_day:.1f}"
+
+    return formatted_date
+
+
+def check_object_name(name):
+    """check body name for unwanted symbols"""
+    # check name
+    has_whitespace = bool(re.search(r'\s+', name))
+    only_letters = name.isalpha()
+    has_numbers = any(c.isdigit() for c in name)
+    has_letters = re.search(r"[a-zA-Z]", name)
+    # check if it is provisional designation with no whitespace
+    if has_letters and has_numbers and not has_whitespace:
+        name = name[:4] + ' ' + name[4:]
+    # check if there is more than one whitespace
+    elif has_whitespace:
+        name = re.sub(r'\s+', ' ', name)
+    return name
+
+
+def jpl_query_eph(body, epochs, location):
+    """query JPL Horizon system for the data"""
+    # query is split into chunks of 50 elements
+    step = 50
+    # ===============================================
+    end = len(epochs)
+    body = check_object_name(body)
+    full_ephemerides = []
+    for i in range(0, end, step):
+        obj = Horizons(id="{}".format(body), location=location, epochs=epochs[i:i + step])
+        chunk_ephemerides = obj.ephemerides()
+        full_ephemerides = vstack([full_ephemerides, chunk_ephemerides])
+
+    full_ephemerides = full_ephemerides.to_pandas().drop(columns="col0")
+    return full_ephemerides
+
+
+def lighttime_to_au(lighttime):
+    """
+    Converts light-time in minutes to distance in Astronomical Units (AU).
+    """
+    # Speed of light
+    C = 299792458 # m/s
+    AU_METERS = 149597870700 # meters to 1 AU
+    return (lighttime * 60 * C) / AU_METERS
+
+
+def calc_reduced_mag(app_mag, r, delta):
+    """calculates reduced magnitude for the object (as seen from 1 AU from the Sun and 1 AU from the Earth)"""
+    # $$m_red = m - 5 \log_{10}(r \Delta)$$
+    red_mag = app_mag - 5 * np.log10(r * delta)
+    return red_mag
+
+
+def get_lighttime(jpl_query_data):
+    """gets lighttime from the JPL query data and converts it to days"""
+    lighttime_jd = jpl_query_data['lighttime']
+    return lighttime_jd
