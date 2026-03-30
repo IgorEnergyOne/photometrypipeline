@@ -1358,12 +1358,12 @@ Banon_param = {
     'source_tolerance': 'high',
 
     # swarp settings
-    # 'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
-    #                   'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
-    #                   'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
-    # #                         keywords to be copied in image
-    # #                         combination using swarp
-    # 'swarp-config-file': rootpath + '/setup/AC32.swarp',
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/BanonODK16.swarp',
 
     # default catalog settings
     'astrometry_catalogs': ['GAIA3'],
