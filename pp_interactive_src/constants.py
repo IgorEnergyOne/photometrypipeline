@@ -23,6 +23,6 @@ WINDOW_WIDTH: int = 1400
 WINDOW_HEIGHT: int = 720
 
 # Sentinel key used in the per-alias offset dict when no per-band offset is
-# set — the value stored under this key acts as a fallback for all bands.
+# set  -  the value stored under this key acts as a fallback for all bands.
 OFFSET_ALL_KEY: str = "__ALL__"
 

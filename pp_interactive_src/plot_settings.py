@@ -18,6 +18,7 @@ from .utils import _safe
 class PlotSettings:
     """Manages plot settings, constants, and color/palette menus."""
 
+    # Class-level fallbacks (used when no AppConfig is supplied)
     DEFAULT_COLORS = [
         "red", "orange", "olive", "green", "blue", "purple",
         "brown", "pink", "gray", "cyan"
@@ -25,9 +26,9 @@ class PlotSettings:
 
     BAND_COLORS = {
         "U": "indigo", "B": "royalblue", "V": "limegreen",
-        "R": '#7c3150', "I": "dimgray",           # Johnson-Cousins UBVRI
-        "g": "#348034", "r": "#944d4d", "i": "#59327d", "z": "#753427",  # SDSS ugriz
-        'G': 'green', 'BP': 'blue', 'RP': 'red',  # GAIA filters
+        "R": '#7c3150', "I": "dimgray",
+        "g": "#348034", "r": "#944d4d", "i": "#59327d", "z": "#753427",
+        'G': 'green', 'BP': 'blue', 'RP': 'red',
     }
 
     SELECTION_MARKER = {'markersize': 5, 'zorder': 20, 'form': 'o', 'color': 'red'}
@@ -48,18 +49,53 @@ class PlotSettings:
         root: tk.Tk,
         refresh_callback: Callable[[], None],
         get_bands_callback: Callable[[], List[str]],
+        cfg=None,  # Optional[AppConfig]
     ):
         self.root = root
         self.refresh_callback = refresh_callback
         self.get_bands_callback = get_bands_callback
 
-        self.custom_colors: Dict[str, str] = {'flagged': 'orange', 'rejected': 'red'}
-        self.flagged_use_filter: bool = False
+        # Apply config values as instance attributes (shadow class-level defaults)
+        if cfg is not None:
+            self.DEFAULT_COLORS = list(cfg.colors.default_palette)
+            self.BAND_COLORS    = dict(cfg.colors.band)
+            self.custom_colors: Dict[str, str] = {
+                'flagged':  cfg.colors.flagged,
+                'rejected': cfg.colors.rejected,
+            }
+            self.flagged_use_filter: bool = cfg.colors.flagged_use_filter
+        else:
+            self.custom_colors = {'flagged': 'orange', 'rejected': 'red'}
+            self.flagged_use_filter = False
+
+        self.PALETTE_SWATCHES = self._build_palette_swatches()
 
         self.color_menu: Optional[tk.Menu] = None
         self.color_menu_btn: Optional[ttk.Menubutton] = None
 
-    # ——— colour resolution ———
+    #  -  -  -  palette helper  -  -  - 
+    def _build_palette_swatches(self) -> List[str]:
+        """Build the palette swatch list from current DEFAULT_COLORS and BAND_COLORS."""
+        extra = [
+            '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+            '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+        ]
+        return list(dict.fromkeys(
+            self.DEFAULT_COLORS
+            + list(self.BAND_COLORS.values())
+            + extra
+        ))
+
+    def apply_config(self, cfg) -> None:
+        """Re-apply settings from a new AppConfig (called after config is saved)."""
+        self.DEFAULT_COLORS   = list(cfg.colors.default_palette)
+        self.BAND_COLORS      = dict(cfg.colors.band)
+        self.custom_colors['flagged']  = cfg.colors.flagged
+        self.custom_colors['rejected'] = cfg.colors.rejected
+        self.flagged_use_filter        = cfg.colors.flagged_use_filter
+        self.PALETTE_SWATCHES = self._build_palette_swatches()
+
+    #  -  -  -  colour resolution  -  -  - 
     def get_color(self, band: Optional[str], idx: int) -> str:
         """Resolve display colour for *band*, checking custom overrides first."""
         if band is None:
@@ -70,7 +106,7 @@ class PlotSettings:
             return self.BAND_COLORS[band]
         return self.DEFAULT_COLORS[idx % len(self.DEFAULT_COLORS)]
 
-    # ——— menu construction ———
+    #  -  -  -  menu construction  -  -  - 
     def build_menu(self, parent=None, pack_btn: bool = True):
         """Create the Colors menubutton (dynamically populated via rebuild_menu)."""
         master_for_menu = parent if parent is not None else self.root
@@ -136,7 +172,7 @@ class PlotSettings:
         self.color_menu.add_command(label="Set rejected color...",
                                     command=lambda: self.show_palette_picker('rejected'))
 
-    # ——— colour application helpers ———
+    #  -  -  -  colour application helpers  -  -  - 
     def apply_color_to_band(self, band: str, hexcolor: str):
         if not band:
             return
@@ -196,4 +232,3 @@ class PlotSettings:
         ttk.Button(frm, text="More...",
                    command=lambda: (self.pick_color_for_band(band), top.destroy())).grid(
             row=btn_row, column=0, columnspan=cols, pady=(8, 0))
-

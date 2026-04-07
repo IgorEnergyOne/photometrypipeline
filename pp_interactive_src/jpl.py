@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from astropy.table import vstack
 from astroquery.jplhorizons import Horizons
-from astroquery.jplsbdb import SBDB  # noqa: F401 – imported for completeness
+from astroquery.jplsbdb import SBDB  # noqa: F401 - imported for completeness
 
 
 def check_object_name(name: str) -> str:
@@ -84,7 +84,7 @@ def iterative_lighttime_correction(body: str, epochs, location: str, progress_ca
             percent = offset_percent + (current / total) * scale_percent
             progress_callback(int(percent), 100)
 
-    # Step 1 – initial query for d1
+    # Step 1 - initial query for d1
     df1 = jpl_query_eph(body, jd_0, location,
                         progress_callback=lambda c, t: step_progress(c, t, 0, 33))
 
@@ -96,7 +96,7 @@ def iterative_lighttime_correction(body: str, epochs, location: str, progress_ca
     lt1_days = d1 * C_AU_S / 86400.0
     jd_1 = jd_0 - lt1_days
 
-    # Step 2 – second query for d2
+    # Step 2 - second query for d2
     df2 = jpl_query_eph(body, jd_1, location,
                         progress_callback=lambda c, t: step_progress(c, t, 33, 33))
 
@@ -109,7 +109,7 @@ def iterative_lighttime_correction(body: str, epochs, location: str, progress_ca
     lt2_days = d_avg * C_AU_S / 86400.0
     jd_final = jd_0 - lt2_days
 
-    # Step 3 – final query at light-time-corrected epochs
+    # Step 3 - final query at light-time-corrected epochs
     df_final = jpl_query_eph(body, jd_final, location,
                              progress_callback=lambda c, t: step_progress(c, t, 66, 34))
 

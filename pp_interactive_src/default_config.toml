@@ -1,0 +1,140 @@
+# pp_interactive – default configuration
+# =========================================================
+# This file ships with the package and is NEVER modified at runtime.
+# To customise settings copy relevant sections to
+#   ~/.config/pp_interactive/config.toml   (Linux / macOS)
+#   %APPDATA%\pp_interactive\config.toml   (Windows)
+# Only keys you include in your user file are overridden; everything
+# else falls back to the values here.
+# =========================================================
+
+[app]
+# Enable verbose debug output (also overridden by the --debug CLI flag)
+debug = false
+# ttkbootstrap theme name
+# Light:  "flatly" "cosmo" "journal" "litera" "lumen" "materia" "minty"
+#         "pulse"  "sandstone" "simplex" "sketchy" "spacelab" "united" "yeti"
+# Dark:   "darkly" "cyborg" "slate" "solar" "superhero" "vapor"
+theme = "flatly"
+
+[window]
+# Initial main-window dimensions in pixels
+width  = 1400
+height = 720
+
+[defaults]
+# Default photometry mode shown on startup
+# Allowed: "target" | "instrumental" | "control" | "relative"
+mode = "target"
+
+# Default time axis shown on startup
+# Allowed: "minutes" | "julian_date" | "mjd" | "rotation_phase"
+time_mode = "minutes"
+
+# Show rejected data points by default
+show_rejected = true
+
+# Default error-bar type shown on startup
+# Allowed: "calibrated" | "instrumental" | "relative" | "none"
+errorbar_type = "calibrated"
+
+# Show plot legend by default
+show_legend = true
+
+# Show grid by default
+show_grid = true
+
+# Default rotation period in hours (used when time_mode = "rotation_phase")
+period = 4.0
+
+# Period increment step for the z / x hotkeys (hours)
+period_step = 0.02
+
+# Default phase-wrap extension.  Values > 1.0 show a ghost copy of the first
+# portion of the curve so the wrap boundary is visually clear.
+phase_max = 1.2
+
+# Default vertical-offset step for the s / d hotkeys (magnitudes)
+offset_step = 0.05
+
+# Default position of the colour-info legend on the plot
+# Allowed: "upper left" | "upper right" | "lower left" | "lower right" | "center"
+color_legend_loc = "upper left"
+
+[plot]
+# Matplotlib figure size [width_inches, height_inches]
+figsize = [8.5, 5.2]
+
+# Data-point marker symbol (matplotlib marker string)
+marker_style = "o"
+
+# Data-point marker size (points)
+marker_size = 4.0
+
+# Error-bar cap length (points)
+errorbar_capsize = 2.0
+
+# Error-bar cap line thickness
+errorbar_capthick = 1.0
+
+# Error-bar line width
+errorbar_linewidth = 1.0
+
+# Alpha (transparency) for ghost phase-wrap copies  [0.0 – 1.0]
+ghost_alpha = 0.45
+
+# Edge-line width for ghost phase-wrap copies
+ghost_edge_width = 1.2
+
+# Background grid line alpha  [0.0 – 1.0]
+grid_alpha = 0.15
+
+# Legend font size
+# Allowed: "xx-small" "x-small" "small" "medium" "large" "x-large" "xx-large"
+legend_fontsize = "small"
+
+# Font size for selection-info labels and colour-info text (points)
+label_fontsize = 9
+
+# Phase-wrap boundary vertical line colour
+phase_wrap_color = "gray"
+
+# Phase-wrap boundary vertical line width
+phase_wrap_linewidth = 0.8
+
+# Phase-wrap boundary vertical line alpha  [0.0 – 1.0]
+phase_wrap_alpha = 0.6
+
+[colors]
+# Default colour for flagged (non-rejected, quality-flag > 0) data points
+flagged = "orange"
+
+# Default colour for rejected data points
+rejected = "red"
+
+# When true, flagged points are drawn in their band colour instead of
+# the flagged colour
+flagged_use_filter = false
+
+# Default colour palette cycling through different datasets / bands.
+# Used when no band-specific colour is configured.
+default_palette = [
+  "red", "orange", "olive", "green", "blue",
+  "purple", "brown", "pink", "gray", "cyan"
+]
+
+[colors.band]
+# Canonical per-filter colours  (Johnson-Cousins UBVRI + SDSS ugriz + Gaia)
+U  = "indigo"
+B  = "royalblue"
+V  = "limegreen"
+R  = "#7c3150"
+I  = "dimgray"
+g  = "#348034"
+r  = "#944d4d"
+i  = "#59327d"
+z  = "#753427"
+G  = "green"
+BP = "blue"
+RP = "red"
+

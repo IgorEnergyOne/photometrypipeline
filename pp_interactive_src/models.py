@@ -68,7 +68,7 @@ class LightCurveData:
         if filepath:
             self.load(filepath)
 
-    # ——— I/O ———
+    #  -  -  -  I/O  -  -  - 
     def load(self, filepath: str) -> None:
         """Load a CSV file, ensure required columns exist, and prime the array cache."""
         self.filename = filepath
@@ -81,7 +81,7 @@ class LightCurveData:
         if self.df is not None and self.filename:
             self.df.to_csv(self.filename, index=False)
 
-    # ——— internals ———
+    #  -  -  -  internals  -  -  - 
     def _ensure_columns(self):
         """Add mandatory columns with sensible defaults if they are absent."""
         if 'rejected' not in self.df.columns:

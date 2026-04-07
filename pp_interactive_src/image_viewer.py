@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-AsteroidImageViewer – popup window that displays the image for the currently
+AsteroidImageViewer - popup window that displays the image for the currently
 selected photometry point.
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ class AsteroidImageViewer:
         self._current_image_original = None
         self._current_overlay_original = None
         self.show_overlay_var = tk.BooleanVar(value=True)
-    # ——— public API ———
+    #  -  -  -  public API  -  -  - 
     def toggle_visibility(self):
         """Toggle the visibility of the asteroid image window."""
         if self.image_window is not None and self.image_window.winfo_exists():
@@ -41,7 +41,7 @@ class AsteroidImageViewer:
                 self._hide_window()
         else:
             self._create_window()
-    # ——— window lifecycle ———
+    #  -  -  -  window lifecycle  -  -  - 
     def _restore_window(self):
         if self.window_geometry:
             _safe(self.image_window.geometry, self.window_geometry)
@@ -81,7 +81,7 @@ class AsteroidImageViewer:
         win.bind("<Button-5>", self._on_zoom)
         win.bind("<o>", self._toggle_overlay_hotkey)
         win.bind("<O>", self._toggle_overlay_hotkey)
-    # ——— image loading & display ———
+    #  -  -  -  image loading & display  -  -  - 
     def update_image(self):
         """Load and display the image for the current selection."""
         if not self.image_window or not self.image_window.winfo_exists():

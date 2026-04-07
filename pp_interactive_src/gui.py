@@ -22,6 +22,7 @@ from tkinter import filedialog, messagebox, simpledialog
 import toolbox
 from .constants import (DEFAULT_PERIOD, DEFAULT_PHASE_MAX, OFFSET_ALL_KEY,
                         TIME_STEP, WINDOW_WIDTH, WINDOW_HEIGHT)
+from .config import get_config, AppConfig
 from .jpl import iterative_lighttime_correction, calc_reduced_mag
 from .models import FitsContext, LightCurveData
 from .plot_settings import PlotSettings
@@ -30,21 +31,14 @@ from .image_viewer import AsteroidImageViewer
 from .utils import _safe, next_version, debug_print
 
 class LightCurveGUI:
-    """Main application window.
-
-    Owns the Tk root, all data (``lightcurves`` dict), view state, and wires
-    together the plot, the asteroid-image viewer, and all menus/toolbars.
-
-    Responsibilities
-    ----------------
-    * Opening / saving CSV files and ATLAS files.
-    * Managing per-lightcurve visibility and vertical offsets.
-    * Dispatching keyboard shortcuts and mouse clicks to the plot.
-    * Fetching JPL ephemeris data on demand and storing results in the DataFrames.
-    """
-    def __init__(self, root: ttk.Window):
+    """Main application window."""
+    def __init__(self, root: ttk.Window, cfg: Optional[AppConfig] = None):
         self.root = root
         self.root.title("Lightcurve Viewer and Editor")
+
+        # Config (load singleton if none supplied)
+        self.cfg: AppConfig = cfg if cfg is not None else get_config()
+        _d = self.cfg.defaults  # shorthand
 
         # Data model: alias -> LightCurveData
         self.lightcurves: Dict[str, LightCurveData] = {}
@@ -66,21 +60,21 @@ class LightCurveGUI:
         # Asteroid Image Viewer
         self.asteroid_viewer = AsteroidImageViewer(self.root, self)
 
-        # View state
-        self.mode = 'target'  # 'target' | 'instrumental' | 'control' | 'relative'
-        self.time_mode = 'minutes'  # 'minutes' | 'julian_date' | 'mjd' | 'rotation_phase'
-        self.show_rejected = True
-        self.errorbar_type = 'calibrated'  # 'instrumental' | 'calibrated' | 'none'
+        # View state - defaults come from config
+        self.mode          = _d.mode
+        self.time_mode     = _d.time_mode
+        self.show_rejected = _d.show_rejected
+        self.errorbar_type = _d.errorbar_type
 
         # Multi-filter state
         self.selected_bands: Set[str] = set()  # empty => all bands
         self.band_vars: Dict[str, tk.BooleanVar] = {}
 
-        # Offset control scope (which band to nudge when ↑/↓)
+        # Offset control scope (which band to nudge when up/down)
         self.offset_scope_var = ttk.StringVar(value='auto')  # 'auto', 'ALL', or specific band label
 
         # Legend position
-        self.color_legend_loc_var = ttk.StringVar(value='upper left')
+        self.color_legend_loc_var = ttk.StringVar(value=_d.color_legend_loc)
 
         # Alignment controls
         self.align_reference_var = ttk.StringVar(value='')
@@ -89,15 +83,17 @@ class LightCurveGUI:
         # FITS contexts (alias -> FitsContext)
         self.fits_contexts: Dict[str, FitsContext] = {}
 
-        # Step used when nudging vertical offsets with ↑/↓ (mag)
-        self.offset_step_var = ttk.DoubleVar(value=0.05)
+        # Plot Settings - pass config so it loads colors/palette from file
+        self.plot_settings = PlotSettings(
+            self.root,
+            self._refresh_plot_callback,
+            self._get_bands_callback,
+            cfg=self.cfg,
+        )
 
-        # Plot Settings
-        self.plot_settings = PlotSettings(self.root, self._refresh_plot_callback, self._get_bands_callback)
-
-        # Plot display toggles (exposed via Plot Settings)
-        self.show_legend: bool = True
-        self.show_grid: bool = True
+        # Plot display toggles
+        self.show_legend: bool = _d.show_legend
+        self.show_grid:   bool = _d.show_grid
 
         # JPL-derived corrections toggles
         self.use_reduced_mag_var = tk.BooleanVar(value=False)
@@ -136,7 +132,7 @@ class LightCurveGUI:
         """Return a sorted list of all unique filter bands across loaded lightcurves."""
         return sorted({str(b) for lc in self.lightcurves.values() for b in lc.get_bands()})
 
-    # ——— UI construction ———
+    #  -  -  -  UI construction  -  -  - 
     def _build_ui(self):
         """Build the entire widget hierarchy: toolbar, collapsible panels, plot canvas."""
         master = ttk.Frame(self.root)
@@ -247,6 +243,20 @@ class LightCurveGUI:
         self.plot_settings_btn.pack(side=LEFT, padx=(10, 0))
 
         self.plot_settings_menu.add_command(label="Marker Settings...", command=self.show_marker_settings)
+        self.plot_settings_menu.add_command(label="App Settings...", command=self.show_config_dialog)
+        self.plot_settings_menu.add_separator()
+        self.plot_settings_menu.add_command(
+            label="Change Control Star...",
+            command=self._on_change_control_star,
+        )
+        self.plot_settings_menu.add_command(
+            label="Reset Control Star",
+            command=self._on_reset_control_star,
+            state=DISABLED,
+        )
+        # Record the index of the "Reset Control Star" entry so we can
+        # enable/disable it programmatically later.
+        self._reset_ctrl_menu_idx = self.plot_settings_menu.index(END)
         self.plot_settings_menu.add_separator()
 
         self.show_legend_var = ttk.BooleanVar(value=self.show_legend)
@@ -344,18 +354,26 @@ class LightCurveGUI:
         self.offset_slider = ttk.Scale(align_frame, from_=-5.0, to=+5.0, variable=self.offset_var,
                                        orient=HORIZONTAL, length=80, command=lambda v: self.on_offset_change(v))
         self.offset_slider.pack(side=LEFT, padx=3)
-        
-        ttk.Entry(align_frame, textvariable=self.offset_entry_var, width=6).pack(side=LEFT)
-        
+
+        self.offset_entry = ttk.Entry(align_frame, textvariable=self.offset_entry_var, width=6)
+        self.offset_entry.pack(side=LEFT)
+        self.offset_entry.bind("<Return>", lambda _e: (
+            self.on_offset_change(self.offset_entry_var.get()),
+            self.root.focus_set(),
+        ))
+        self.offset_entry.bind("<FocusOut>", lambda _e: self.on_offset_change(self.offset_entry_var.get()))
+
         self.offset_scope_var = ttk.StringVar(value='auto')
         self.offset_scope_combo = ttk.Combobox(align_frame, textvariable=self.offset_scope_var, state='readonly', width=6)
         self.offset_scope_combo.pack(side=LEFT, padx=3)
         self.offset_scope_combo['values'] = ['auto', 'ALL']
         self.offset_scope_combo.set('auto')
-        
-        ttk.Label(align_frame, text="Step:").pack(side=LEFT, padx=(5,0))
-        self.offset_step_var = ttk.DoubleVar(value=0.05)
-        ttk.Entry(align_frame, textvariable=self.offset_step_var, width=5).pack(side=LEFT)
+
+        ttk.Label(align_frame, text="Step:").pack(side=LEFT, padx=(5, 0))
+        self.offset_step_var = ttk.DoubleVar(value=self.cfg.defaults.offset_step)
+        self.offset_step_entry = ttk.Entry(align_frame, textvariable=self.offset_step_var, width=5)
+        self.offset_step_entry.pack(side=LEFT)
+        self.offset_step_entry.bind("<Return>", lambda _e: self.root.focus_set())
 
         # Live chi2 display for current band offset
         ttk.Separator(align_frame, orient=VERTICAL).pack(side=LEFT, fill=Y, padx=5, pady=2)
@@ -382,34 +400,37 @@ class LightCurveGUI:
         # Period controls
         rot = self.period_inner
         ttk.Label(rot, text="Period:").pack(side=LEFT, padx=(0, 0))
-        self.rotation_period_var = ttk.StringVar(value=f"{DEFAULT_PERIOD:.3f}")
+        self.rotation_period_var = ttk.StringVar(value=f"{self.cfg.defaults.period:.3f}")
         ttk.Scale(rot, from_=0.1, to=50.0, variable=self.rotation_period_var,
                   orient=HORIZONTAL, length=120, command=lambda _v: self.update_rotation_period()).pack(side=LEFT, padx=3)
         
         e = ttk.Entry(rot, textvariable=self.rotation_period_var, width=7)
         e.pack(side=LEFT, padx=3)
-        e.bind("<Return>", lambda _e: self.update_rotation_period())
-        
+        e.bind("<Return>", lambda _e: (self.update_rotation_period(), self.root.focus_set()))
+
         ttk.Label(rot, text="Step:").pack(side=LEFT, padx=(5, 0))
-        self.rotation_step_var = ttk.DoubleVar(value=TIME_STEP)
-        ttk.Entry(rot, textvariable=self.rotation_step_var, width=5).pack(side=LEFT)
+        self.rotation_step_var = ttk.DoubleVar(value=self.cfg.defaults.period_step)
+        self.rotation_step_entry = ttk.Entry(rot, textvariable=self.rotation_step_var, width=5)
+        self.rotation_step_entry.pack(side=LEFT)
+        self.rotation_step_entry.bind("<Return>", lambda _e: self.root.focus_set())
 
         ttk.Separator(rot, orient=VERTICAL).pack(side=LEFT, fill=Y, padx=(8, 4), pady=2)
         ttk.Label(rot, text="Phase max:").pack(side=LEFT, padx=(0, 0))
-        self.phase_max_var = ttk.StringVar(value=f"{DEFAULT_PHASE_MAX:.2f}")
+        self.phase_max_var = ttk.StringVar(value=f"{self.cfg.defaults.phase_max:.2f}")
         phase_max_entry = ttk.Entry(rot, textvariable=self.phase_max_var, width=5)
         phase_max_entry.pack(side=LEFT, padx=3)
-        phase_max_entry.bind("<Return>", lambda _e: self._on_phase_max_changed())
+        phase_max_entry.bind("<Return>", lambda _e: (self._on_phase_max_changed(), self.root.focus_set()))
         phase_max_entry.bind("<FocusOut>", lambda _e: self._on_phase_max_changed())
 
         # Plot area
         plot_frame = ttk.Frame(self.center_pane)
         plot_frame.pack(side=TOP, fill=BOTH, expand=True, padx=6, pady=(4, 6))
-        self.fig, self.ax = plt.subplots(figsize=(8.5, 5.2))
+        _figsize = tuple(self.cfg.plot.figsize) if hasattr(self, 'cfg') else (8.5, 5.2)
+        self.fig, self.ax = plt.subplots(figsize=_figsize)
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
         self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=True)
         NavigationToolbar2Tk(self.canvas, plot_frame).update()
-        self.plot = LightCurvePlot(self.fig, self.ax, self.canvas)
+        self.plot = LightCurvePlot(self.fig, self.ax, self.canvas, cfg=self.cfg)
         self.plot.selection = {'alias': None, 'index': None}
         self.canvas.mpl_connect("button_press_event", self.on_click)
         _safe(self.canvas.mpl_connect, "pick_event", self.on_pick_label)
@@ -549,7 +570,7 @@ class LightCurveGUI:
             "q              Quit application\n"
             "r              Toggle rejection for selected point\n"
             "R              Show / Hide rejected points\n"
-            "F              Toggle flagged-point colour (filter colour ↔ flagged colour)\n"
+            "F              Toggle flagged-point colour (filter colour <-> flagged colour)\n"
             "a              Cancel/clear selection\n"
             "S              Show / Hide image for selected point\n"
             "o              Toggle overlay of the image\n"
@@ -680,7 +701,7 @@ class LightCurveGUI:
             ctx.observatory_code = location
             self.fits_contexts[alias] = ctx
 
-        # 2. Epochs — the CSV uses 'julian_date'; fall back to 'jd' if needed
+        # 2. Epochs  -  the CSV uses 'julian_date'; fall back to 'jd' if needed
         if 'julian_date' in lc.df.columns:
             epochs = lc.df['julian_date'].values
         elif 'jd' in lc.df.columns:
@@ -729,16 +750,16 @@ class LightCurveGUI:
 
         JPL_COLS = ['r', 'delta', 'alpha_true', 'ObsEclLon', 'ObsEclLat']
 
-        # Step 1 – determine what's already in the dataframe
+        # Step 1 - determine what's already in the dataframe
         present = [c for c in JPL_COLS if c in lc.df.columns]
         missing = [c for c in JPL_COLS if c not in lc.df.columns]
 
         if not missing:
-            # All JPL columns are already present — nothing to do, they will
+            # All JPL columns are already present  -  nothing to do, they will
             # be written to the file automatically.
             pass
         else:
-            # Some (or all) columns are absent — ask the user whether to fetch.
+            # Some (or all) columns are absent  -  ask the user whether to fetch.
             if present:
                 detail = (f"Present : {', '.join(present)}\n"
                           f"Missing : {', '.join(missing)}\n\n")
@@ -768,7 +789,7 @@ class LightCurveGUI:
                     messagebox.showerror("JPL Error", f"Failed to fetch JPL data:\n{e}")
                     # user can still choose to save what we have
 
-        # Step 2 – choose save path
+        # Step 2 - choose save path
         file = filedialog.asksaveasfilename(
             initialdir=os.path.dirname(lc.filename) if lc.filename else os.getcwd(),
             initialfile=os.path.basename(lc.filename) if lc.filename else "lightcurve.csv",
@@ -778,7 +799,7 @@ class LightCurveGUI:
         if not file:
             return  # user cancelled the save dialog
 
-        # Step 3 – save; whatever columns are in lc.df (including any newly
+        # Step 3 - save; whatever columns are in lc.df (including any newly
         # fetched JPL ones) are written as-is.
         lc.filename = file
         lc.df.to_csv(file, index=False)
@@ -884,8 +905,8 @@ class LightCurveGUI:
     def _build_atlas_df(self, lc, use_lighttime: bool, use_reduced_mag: bool) -> pd.DataFrame:
         """Return a copy of ``lc.df`` with column substitutions applied.
 
-        * ``use_lighttime``   – replaces ``julian_date`` with ``corrected_jd``
-        * ``use_reduced_mag`` – replaces ``mag`` with ``reduced_mag``
+        * ``use_lighttime``   - replaces ``julian_date`` with ``corrected_jd``
+        * ``use_reduced_mag`` - replaces ``mag`` with ``reduced_mag``
 
         The original DataFrame is never modified.
         """
@@ -924,7 +945,7 @@ class LightCurveGUI:
         fits_filepath    = ctx.filepath if ctx else ""
 
         # If we do not yet have a context (or the stored filepath is empty),
-        # ask the user — they can either type the IDs manually or load a FITS file.
+        # ask the user  -  they can either type the IDs manually or load a FITS file.
         if not ctx or not fits_filepath:
             res = self._ask_target_and_location(alias,
                                                 prefill_target=prefill_target,
@@ -989,10 +1010,10 @@ class LightCurveGUI:
             messagebox.showerror("Nothing selected", "No atlas filename provided")
             return
 
-        # ── 5. Build working DataFrame with requested substitutions ──────────
+        # -- 5. Build working DataFrame with requested substitutions ----------
         work_df = self._build_atlas_df(lc, use_lighttime, use_reduced_mag)
 
-        # ── 6. Write temp CSV(s) and call pp_atlas ───────────────────────────
+        # -- 6. Write temp CSV(s) and call pp_atlas ---------------------------
         # Build the correction flags that will be forwarded to pp_atlas so that
         # the REDUCED MAG. and LT CORRECTED header fields are set to T/F correctly.
         correction_flags = ""
@@ -1047,7 +1068,7 @@ class LightCurveGUI:
                     if os.path.exists(tmp):
                         os.remove(tmp)
 
-        # ── 7. Summary ───────────────────────────────────────────────────────
+        # -- 7. Summary -------------------------------------------------------
         notes = []
         if use_lighttime:
             notes.append("lighttime-corrected JD")
@@ -1193,7 +1214,7 @@ class LightCurveGUI:
         finally:
             self.root.config(cursor="")
 
-    # ——— Alignment & Colors ———
+    #  -  -  -  Alignment & Colors  -  -  - 
     def _update_align_ref_choices(self):
         """Update the reference band combobox based on available bands."""
         if not self.lightcurves:
@@ -1395,9 +1416,9 @@ class LightCurveGUI:
             val, err = cdata[0], cdata[1]
             chi2_red = cdata[2] if len(cdata) > 2 else float('nan')
             n_pts = cdata[3] if len(cdata) > 3 else 0
-            chi2_str = f"{chi2_red:.3f}" if np.isfinite(chi2_red) else "--"
+            chi2_str = f"{chi2_red:.5f}" if np.isfinite(chi2_red) else "--"
             n_str = str(n_pts) if n_pts > 0 else "--"
-            tree.insert("", END, values=(name, f"{val:.4f}", f"{err:.4f}", chi2_str, n_str))
+            tree.insert("", END, values=(name, f"{val:.5f}", f"{err:.4f}", chi2_str, n_str))
 
         # Buttons
         btn_frame = ttk.Frame(dlg)
@@ -1439,7 +1460,7 @@ class LightCurveGUI:
             self.toggle_btn.config(text="[ + ] Alignment & Colors")
             self.align_inner.pack_forget()
 
-    # ——— FITS Context Helpers ———
+    #  -  -  -  FITS Context Helpers  -  -  - 
 
     def _ask_target_and_location(
         self,
@@ -1770,7 +1791,7 @@ class LightCurveGUI:
             self.chi2_label_var.set(f"chi2: --")
         else:
             n_str = f" (N={n_pts})" if n_pts is not None else ""
-            self.chi2_label_var.set(f"chi2: {chi2_red:.3f}{n_str}")
+            self.chi2_label_var.set(f"chi2: {chi2_red:.4f}{n_str}")
 
     def _refresh_chi2_for_current_band(self, band_key=None):
         """Recompute and display chi-squared for the current band and offset."""
@@ -1800,7 +1821,7 @@ class LightCurveGUI:
         self._update_chi2_label(chi2_red, n_pts)
 
 
-    # ——— Offsets ———
+    #  -  -  -  Offsets  -  -  - 
     def _refresh_offset_scope_choices(self):
         """Update the offset scope combobox values to match the loaded bands."""
         alias = self.current_lc_alias
@@ -1861,7 +1882,7 @@ class LightCurveGUI:
         # Update chi2 label for the current band
         self._refresh_chi2_for_current_band(band_key)
 
-    # ——— State setters ——
+    #  -  -  -  State setters  -  - 
     def set_mode(self):
         """Apply the photometry mode selected in the Mode combobox."""
         self.mode = self.mode_var.get()
@@ -1966,7 +1987,7 @@ class LightCurveGUI:
         if lc is None:
             return False
 
-        # ── 1. Target + observatory ──────────────────────────────────────────
+        # -- 1. Target + observatory ------------------------------------------
         ctx = self.fits_contexts.get(alias)
         prefill_target   = (ctx.target_object    or "") if ctx else ""
         prefill_location = (ctx.observatory_code or "") if ctx else ""
@@ -1989,7 +2010,7 @@ class LightCurveGUI:
             self.fits_contexts[alias] = ctx
 
 
-        # ── 2. Epochs ───────────────────────────────────────────────────────
+        # -- 2. Epochs -------------------------------------------------------
         jd_col = 'julian_date' if 'julian_date' in lc.df.columns else 'jd' if 'jd' in lc.df.columns else None
         if jd_col is None:
             messagebox.showerror("Missing Column", "The CSV is missing a 'julian_date' or 'jd' column.")
@@ -1999,7 +2020,7 @@ class LightCurveGUI:
             messagebox.showerror("No Data", "No valid JD values found in the lightcurve.")
             return False
 
-        # ── 3. Progress dialog ───────────────────────────────────────────────
+        # -- 3. Progress dialog -----------------------------------------------
         prog_dlg = tk.Toplevel(self.root)
         prog_dlg.title("Fetching JPL Data...")
         prog_dlg.transient(self.root)
@@ -2022,7 +2043,7 @@ class LightCurveGUI:
             except Exception:
                 pass
 
-        # ── 4. Query ─────────────────────────────────────────────────────────
+        # -- 4. Query ---------------------------------------------------------
         self.root.config(cursor="watch")
         try:
             jpl_df = iterative_lighttime_correction(target, epochs, location, progress_callback=progress_cb)
@@ -2036,7 +2057,7 @@ class LightCurveGUI:
 
         prog_dlg.destroy()
 
-        # ── 5. Attach columns to lc.df ───────────────────────────────────────
+        # -- 5. Attach columns to lc.df ---------------------------------------
         cols_to_add = [
             'r', 'delta', 'alpha_true', 'ObsEclLon', 'ObsEclLat',
             'corrected_jd', 'lighttime_days',
@@ -2051,7 +2072,7 @@ class LightCurveGUI:
         if 'r' in lc.df.columns and 'delta' in lc.df.columns:
             lc.df['reduced_mag'] = calc_reduced_mag(lc.df['mag'], lc.df['r'], lc.df['delta'])
 
-        # Reduced magnitudes (uncorrected distances – for reference)
+        # Reduced magnitudes (uncorrected distances - for reference)
         if 'r_uncorr' in lc.df.columns and 'delta_uncorr' in lc.df.columns:
             lc.df['reduced_mag_uncorr'] = calc_reduced_mag(
                 lc.df['mag'], lc.df['r_uncorr'], lc.df['delta_uncorr']
@@ -2139,7 +2160,7 @@ class LightCurveGUI:
             self.plot.blit._bg = None
             self.plot.blit.quick_redraw()
 
-    # ——— Plot interactions ———
+    #  -  -  -  Plot interactions  -  -  - 
     def request_plot_update(self):
         """Schedule a full plot update via ``self.plot.update()``."""
         self.plot.update(self.lightcurves, self.lc_offsets, self.lc_visible, self.mode, self.time_mode,
@@ -2251,7 +2272,7 @@ class LightCurveGUI:
         """Toggle the asteroid image viewer for the selected point."""
         self.asteroid_viewer.toggle_visibility()
 
-    # ——— Rotation period ———
+    #  -  -  -  Rotation period  -  -  - 
     def adjust_rotation_period(self, delta: float):
         """Change the rotation period by *delta* steps and trigger a redraw."""
         try:
@@ -2333,9 +2354,154 @@ class LightCurveGUI:
         except Exception:
             pass
 
+    # ---------- change / reset control star ----------
+    def _on_change_control_star(self):
+        """Open a directory picker then launch the star-picker dialog."""
+        alias = self._ensure_active_alias()
+        if alias is None:
+            messagebox.showwarning(
+                "No lightcurve",
+                "Please open a lightcurve CSV file first.",
+                parent=self.root,
+            )
+            return
+
+        lc = self.lightcurves.get(alias)
+        if lc is None or lc.df is None:
+            return
+
+        # Ask for directory containing the FITS and LDAC files
+        directory = filedialog.askdirectory(
+            title="Select directory with FITS and LDAC files",
+            initialdir=os.path.dirname(lc.filename or os.getcwd()),
+            parent=self.root,
+        )
+        if not directory:
+            return
+
+        from .star_picker import StarPickerDialog, collect_fits_ldac_pairs
+        pairs = collect_fits_ldac_pairs(directory)
+        if not pairs:
+            messagebox.showerror(
+                "No data found",
+                f"No matching FITS/LDAC file pairs found in:\n{directory}",
+                parent=self.root,
+            )
+            return
+
+        def _on_star_selected(ra: float, dec: float,
+                              photo_col: str, photo_err_col: str) -> None:
+            from .star_picker import apply_new_control_star
+            try:
+                tol = 5.0
+                n_ok, n_tot = apply_new_control_star(
+                    lc, directory, ra, dec,
+                    photo_col=photo_col,
+                    photo_err_col=photo_err_col,
+                    tol_arcsec=tol,
+                )
+            except Exception as exc:
+                messagebox.showerror(
+                    "Error applying control star",
+                    str(exc), parent=self.root)
+                return
+
+            if n_ok == 0:
+                messagebox.showwarning(
+                    "No frames matched",
+                    "The selected star could not be cross-matched to any frame "
+                    "in the CSV.  Check that the directory contains the correct "
+                    "LDAC files and that the star has valid RA/Dec coordinates.",
+                    parent=self.root,
+                )
+                return
+
+            # Enable "Reset" menu item
+            try:
+                if self._reset_ctrl_menu_idx is not None:
+                    self.plot_settings_menu.entryconfigure(
+                        self._reset_ctrl_menu_idx, state=NORMAL)
+            except Exception:
+                pass
+
+            self.plot.invalidate_layout()
+            self.request_plot_update()
+
+        StarPickerDialog(self.root, directory, _on_star_selected)
+
+    def _on_reset_control_star(self):
+        """Restore original control-star columns in the active lightcurve."""
+        alias = self._ensure_active_alias()
+        if alias is None:
+            return
+        lc = self.lightcurves.get(alias)
+        if lc is None:
+            return
+
+        from .star_picker import reset_control_star
+        if not reset_control_star(lc):
+            messagebox.showinfo(
+                "Nothing to reset",
+                "No modified control-star data found for this lightcurve.",
+                parent=self.root,
+            )
+            return
+
+        # Disable "Reset" item again
+        try:
+            if self._reset_ctrl_menu_idx is not None:
+                self.plot_settings_menu.entryconfigure(
+                    self._reset_ctrl_menu_idx, state=DISABLED)
+        except Exception:
+            pass
+
+        self.plot.invalidate_layout()
+        self.request_plot_update()
+        messagebox.showinfo(
+            "Control Star Reset",
+            f"Original control-star data restored for '{alias}'.",
+            parent=self.root,
+        )
+
+    # ---------- config / app settings dialog ----------
+    def show_config_dialog(self):
+        """Open the tabbed App Settings dialog (Plot Settings -> App Settings...)."""
+        from .config_dialog import ConfigDialog
+        ConfigDialog(self.root, self.cfg, on_save=self._on_config_saved)
+
+    def _on_config_saved(self, new_cfg) -> None:
+        """Apply a freshly-saved AppConfig to the running session."""
+        old_theme = self.cfg.app.theme
+        self.cfg = new_cfg
+
+        # -- Color / palette settings  (immediate) --------------------
+        self.plot_settings.apply_config(new_cfg)
+
+        # -- Plot style settings  (immediate) --------------------------
+        p = new_cfg.plot
+        self.plot._cfg            = new_cfg
+        self.plot.marker_style    = p.marker_style
+        self.plot.marker_size     = p.marker_size
+        self.plot.errorbar_capsize  = p.errorbar_capsize
+        self.plot.errorbar_capthick = p.errorbar_capthick
+        self.plot.errorbar_linewidth = p.errorbar_linewidth
+
+        # -- Notify if restart-required settings changed ---------------
+        if old_theme != new_cfg.app.theme:
+            messagebox.showinfo(
+                "Restart required",
+                f"Theme changed to '{new_cfg.app.theme}'.\n"
+                "Please restart the application for this to take effect.",
+                parent=self.root,
+            )
+
+        # Force a full plot rebuild with the new style values
+        if hasattr(self, 'plot'):
+            self.plot.invalidate_layout()
+        self.request_plot_update()
+
     # ---------- marker settings dialog ----------
     def show_marker_settings(self):
-        """Open the marker style/size settings dialog."""
         marker_dialog = ttk.Toplevel()
         marker_dialog.title("Marker and Error Bar Settings")
         marker_dialog.transient(self.root)
@@ -2451,7 +2617,7 @@ class LightCurveGUI:
             self.root.quit()
 
 
-# ───────────────────────────── Entrypoint ────────────────────────────────
+# ----------------------------- Entrypoint --------------------------------
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Interactive lightcurve viewer')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')

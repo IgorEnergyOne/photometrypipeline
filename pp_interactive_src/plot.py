@@ -89,46 +89,41 @@ class LightCurvePlot:
 
     Owns the axes, the BlitManager, and all plotted artist handles.  Keeps a
     *layout signature* string; when the signature changes (different visible
-    aliases, mode, time axis, offsets, …) the axes are fully rebuilt.
+    aliases, mode, time axis, offsets, ...) the axes are fully rebuilt.
     For changes that only move existing artists (offset nudge, selection move)
     a fast blit-only path is used instead.
     """
 
-    def __init__(self, fig: matplotlib.figure.Figure, ax: matplotlib.axes.Axes, canvas: FigureCanvasTkAgg):
+    def __init__(self, fig: matplotlib.figure.Figure, ax: matplotlib.axes.Axes, canvas: FigureCanvasTkAgg,
+                 cfg=None):  # cfg: Optional[AppConfig]
         self.fig = fig
         self.ax = ax
         self.canvas = canvas
+        self._cfg = cfg  # kept for style lookups inside update() / _clear_axes()
 
         self.xlabel = "Julian Date"
         self.ylabel = "Magnitude"
         self.title = "Lightcurve"
         self.auto_title = True
 
-        # Per-mode Y-axis limits/ticks (keyed by mode string: 'target', 'relative', etc.)
         self._y_limits_per_mode: Dict[str, Optional[Tuple[float, float]]] = {}
         self._y_nticks_per_mode: Dict[str, Optional[int]] = {}
-
-        # Tracks the active rendering mode so set_y_limits knows which bucket to write
         self._current_mode: str = 'target'
-
-        # User-overridden axis labels (None means use the auto-generated label)
         self._user_xlabel: Optional[str] = None
         self._user_ylabel: Optional[str] = None
-
-        # User-defined zoom state (persistent across updates)
         self.user_xlim: Optional[Tuple[float, float]] = None
         self.user_ylim: Optional[Tuple[float, float]] = None
-
-        # Asteroid image zoom level
         self.asteroid_zoom_level = 1.0
         self._current_asteroid_image_original = None
         self._current_asteroid_overlay_original = None
 
-        self.marker_size = 4.0
-        self.marker_style = 'o'
-        self.errorbar_capsize = 2.0
-        self.errorbar_capthick = 1.0
-        self.errorbar_linewidth = 1.0
+        # Style values - initialised from config, may be overridden at runtime
+        _p = cfg.plot if cfg is not None else None
+        self.marker_size          = _p.marker_size          if _p else 4.0
+        self.marker_style         = _p.marker_style         if _p else 'o'
+        self.errorbar_capsize     = _p.errorbar_capsize     if _p else 2.0
+        self.errorbar_capthick    = _p.errorbar_capthick    if _p else 1.0
+        self.errorbar_linewidth   = _p.errorbar_linewidth   if _p else 1.0
 
         self.available_markers = PlotSettings.MARKERS
         self.marker_dict = {name: marker for marker, name in self.available_markers}
@@ -139,11 +134,11 @@ class LightCurvePlot:
 
         self.parent_gui: Optional["LightCurveGUI"] = None
 
-        # entry registry: alias -> list of band entries
         self.plotted_handles: Dict[str, List[dict]] = {}
         self._layout_signature: Optional[str] = None
 
-        # persistent selection marker
+        _label_fs = _p.label_fontsize if _p else 9
+
         (self.sel_artist,) = self.ax.plot([], [], PlotSettings.SELECTION_MARKER['form'],
                                           color=PlotSettings.SELECTION_MARKER['color'],
                                           markersize=PlotSettings.SELECTION_MARKER['markersize'],
@@ -151,7 +146,7 @@ class LightCurvePlot:
                                           visible=False, animated=True)
         try:
             self.sel_text = self.ax.text(0, 0, '', color=PlotSettings.SELECTION_MARKER['color'],
-                                         fontsize=9,
+                                         fontsize=_label_fs,
                                          zorder=PlotSettings.SELECTION_MARKER['zorder'] + 1,
                                          visible=False, animated=True)
         except Exception:
@@ -160,7 +155,7 @@ class LightCurvePlot:
         self.blit = BlitManager(self.canvas, self.ax)
         self._register_blit_artists()
 
-    # ——— internal helpers ———
+    #  -  -  -  internal helpers  -  -  - 
 
     def _register_blit_artists(self):
         """Collect all current plot artists into the BlitManager for quick redraws."""
@@ -191,8 +186,11 @@ class LightCurvePlot:
             grid_on = bool(self.parent_gui.show_grid)
         except Exception:
             grid_on = True
+        _p = self._cfg.plot if self._cfg is not None else None
+        _grid_alpha  = _p.grid_alpha   if _p else 0.15
+        _label_fs    = _p.label_fontsize if _p else 9
         if grid_on:
-            self.ax.grid(alpha=0.15)
+            self.ax.grid(alpha=_grid_alpha)
         else:
             self.ax.grid(False)
         self.plotted_handles.clear()
@@ -207,7 +205,7 @@ class LightCurvePlot:
         try:
             self.sel_text = self.ax.text(
                 0, 0, '', color=PlotSettings.SELECTION_MARKER.get('color', 'red'),
-                fontsize=9,
+                fontsize=_label_fs,
                 zorder=PlotSettings.SELECTION_MARKER.get('zorder', 20) + 1,
                 visible=False, animated=True,
             )
@@ -268,7 +266,7 @@ class LightCurvePlot:
         if lo < hi:
             self.ax.set_ylim(hi, lo)
 
-    # ——— per-mode Y-limit properties ———
+    #  -  -  -  per-mode Y-limit properties  -  -  - 
 
     @property
     def y_limits(self) -> Optional[Tuple[float, float]]:
@@ -413,7 +411,7 @@ class LightCurvePlot:
         """Force a full rebuild on next update (e.g. when masks change)."""
         self._layout_signature = None
 
-    # ——— main update ———
+    #  -  -  -  main update  -  -  - 
 
     def update(
         self,
@@ -452,7 +450,7 @@ class LightCurvePlot:
                 if jd is None or not jd.size:
                     continue
 
-                # ── Lighttime-corrected JD (if enabled) ─────────────────────
+                # -- Lighttime-corrected JD (if enabled) ---------------------
                 use_lt = False
                 use_rm = False
                 if self.parent_gui is not None:
@@ -470,7 +468,7 @@ class LightCurvePlot:
                 else:
                     jd = arr.get('jd')
 
-                # ── Y array selection by mode ────────────────────────────────
+                # -- Y array selection by mode --------------------------------
                 if mode == 'target':
                     if use_rm and lc.df is not None and 'reduced_mag' in lc.df.columns:
                         Yfull = lc.df['reduced_mag'].to_numpy(dtype=float, copy=False)
@@ -497,7 +495,7 @@ class LightCurvePlot:
                         messagebox.showwarning("No valid magnitudes for control star",
                                                "No valid data (mag_control) for control star to plot.")
 
-                # ── Y error array by errorbar type ───────────────────────────
+                # -- Y error array by errorbar type ---------------------------
                 if errorbar_type == 'calibrated':
                     Yerr_full = arr.get('sig')
                 elif errorbar_type == 'instrumental':
@@ -584,9 +582,10 @@ class LightCurvePlot:
                     ghost_face = self._ghost_color(color, amount=0.60)
                     ghost_flagged_face = self._ghost_color(flagged_color_for_this, amount=0.60)
                     ghost_rejected_face = self._ghost_color(rejected_color_for_this, amount=0.60)
-                    GHOST_ALPHA = 0.45
+                    _p = self._cfg.plot if self._cfg is not None else None
+                    GHOST_ALPHA = _p.ghost_alpha      if _p else 0.45
                     GHOST_ZORDER = 7
-                    GHOST_EW = 1.2
+                    GHOST_EW    = _p.ghost_edge_width if _p else 1.2
 
                     def make_series(m, c, X_override=None, face_color=None, edge_color=None,
                                     edge_width=None, alpha=1.0, zorder_marker=10):
@@ -737,8 +736,9 @@ class LightCurvePlot:
 
             if plotted_any:
                 try:
+                    _legend_fs = self._cfg.plot.legend_fontsize if self._cfg else 'small'
                     if getattr(self.parent_gui, 'show_legend', True):
-                        self.ax.legend(title='Lightcurves', fontsize='small')
+                        self.ax.legend(title='Lightcurves', fontsize=_legend_fs)
                     else:
                         leg = self.ax.get_legend()
                         if leg is not None:
@@ -749,7 +749,7 @@ class LightCurvePlot:
                     except Exception:
                         pass
 
-            # ── Draw Color Info on Plot ──────────────────────────────────────
+            # -- Draw Color Info on Plot --------------------------------------
             if self.parent_gui and getattr(self.parent_gui.show_colors_on_plot_var, 'get', lambda: False)():
                 info_lines = []
                 vis_aliases = [a for a in lc_dict.keys() if visible.get(a, True)]
@@ -765,9 +765,10 @@ class LightCurvePlot:
                     loc_val = "upper left"
                     if self.parent_gui:
                         loc_val = self.parent_gui.color_legend_loc_var.get()
+                    _info_fs = self._cfg.plot.label_fontsize if self._cfg else 9
                     text_str = "\n".join(info_lines)
                     at = offsetbox.AnchoredText(text_str, loc=loc_val, frameon=True,
-                                                prop=dict(fontsize=9))
+                                                prop=dict(fontsize=_info_fs))
                     at.patch.set_boxstyle("round,pad=0.,rounding_size=0.2")
                     at.patch.set_alpha(0.7)
                     self.ax.add_artist(at)
@@ -825,8 +826,15 @@ class LightCurvePlot:
                             pass
                     self.ax.set_xlim(0.0, _pm)
                     if _pm > 1.0:
-                        self.ax.axvline(x=1.0, color='gray', linestyle='--',
-                                        linewidth=0.8, alpha=0.6, zorder=1)
+                        _p = self._cfg.plot if self._cfg is not None else None
+                        self.ax.axvline(
+                            x=1.0,
+                            color=_p.phase_wrap_color      if _p else 'gray',
+                            linestyle='--',
+                            linewidth=_p.phase_wrap_linewidth if _p else 0.8,
+                            alpha=_p.phase_wrap_alpha        if _p else 0.6,
+                            zorder=1,
+                        )
                 except Exception:
                     pass
 
@@ -842,7 +850,7 @@ class LightCurvePlot:
             self._layout_signature = new_sig
             return
 
-        # ── fast path (update existing artists only) ─────────────────────────
+        # -- fast path (update existing artists only) -------------------------
         debug_print("Only fast update needed")
         for alias, entries in self.plotted_handles.items():
             vis_alias = visible.get(alias, True)
@@ -981,7 +989,7 @@ class LightCurvePlot:
                     if h is not None:
                         _set_visible(h, want)
 
-        # ── selection marker update ──────────────────────────────────────────
+        # -- selection marker update ------------------------------------------
         sel = getattr(self, 'selection', {'alias': None, 'index': None})
         sel_alias = sel.get('alias')
         sel_idx = sel.get('index')
@@ -1065,7 +1073,7 @@ class LightCurvePlot:
         self._set_labels()
         self.blit.quick_redraw()
 
-    # ——— point picking ———
+    #  -  -  -  point picking  -  -  - 
 
     def select_nearest_point(
         self,
