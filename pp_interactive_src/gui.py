@@ -2389,6 +2389,17 @@ class LightCurveGUI:
             )
             return
 
+        # Determine the preferred photometric filter: the band with the most
+        # non-rejected rows; falls back to the first band if all are rejected.
+        preferred_filter: Optional[str] = None
+        if lc.df is not None and 'band' in lc.df.columns:
+            df_active = lc.df[~lc.df.get('rejected',
+                               pd.Series(False, index=lc.df.index))]
+            counts = (df_active if not df_active.empty else lc.df)[
+                'band'].dropna().astype(str).value_counts()
+            if not counts.empty:
+                preferred_filter = str(counts.index[0])
+
         def _on_star_selected(ra: float, dec: float,
                               photo_col: str, photo_err_col: str) -> None:
             from .star_picker import apply_new_control_star
@@ -2427,7 +2438,8 @@ class LightCurveGUI:
             self.plot.invalidate_layout()
             self.request_plot_update()
 
-        StarPickerDialog(self.root, directory, _on_star_selected)
+        StarPickerDialog(self.root, directory, _on_star_selected,
+                         preferred_filter=preferred_filter)
 
     def _on_reset_control_star(self):
         """Restore original control-star columns in the active lightcurve."""

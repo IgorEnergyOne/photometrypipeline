@@ -55,6 +55,17 @@ _FLAG_COLORS: Dict[int, str] = {
 def _flag_color(flag: int) -> str:
     return _FLAG_COLORS.get(int(flag), 'blue')
 
+# -- flag marker shapes for the star-picker overlay ---------------------------
+_FLAG_MARKERS: Dict[int, str] = {
+    0:  'o',   # clean:                  circle
+    1:  's',   # aperture incomplete:    square
+    2:  '^',   # blended:               triangle-up
+    3:  'D',   # blended + aper. inc.:  diamond
+    4:  'v',   # saturated:             triangle-down
+    8:  'p',   # truncated:             pentagon
+    16: '*',   # incomplete isophotal:  star
+}
+
 
 # -- calibrated filter columns (same list as pp_stars.py) --------------------
 _CAL_FILTERS = [
@@ -72,6 +83,9 @@ _CAL_FILTERS = [
     ("G_BP","_BPmag", "_e_BPmag"),
     ("G_RP","_RPmag", "_e_RPmag"),
 ]
+
+# Band-label → calibrated magnitude column name
+_BAND_TO_MAG_COL: Dict[str, str] = {label: mcol for label, mcol, _ in _CAL_FILTERS}
 
 _MAG_COMBO_VALUES = [
     "Both (AUTO)",
@@ -467,6 +481,14 @@ class StarPhotometryWindow:
                              label=inst_label, zorder=3)
             ax_l.set_ylabel(inst_label, color='tab:blue')
             ax_l.tick_params(axis='y', labelcolor='tab:blue')
+            # Trend line
+            arr_y = np.array(inst_mags, dtype=float)
+            valid = np.isfinite(arr_y)
+            if valid.sum() >= 2:
+                p = np.polyfit(x[valid].astype(float), arr_y[valid], 1)
+                ax_l.plot(x, np.polyval(p, x.astype(float)),
+                          '--', color='tab:blue', alpha=0.55, linewidth=1.4,
+                          label=f'slope: {p[0]:+.4f} mag/fr')
 
         # ── calibrated (right axis when "Both", else left) ────────────────
         sel_cal = self.cal_filter_var.get()
@@ -492,18 +514,42 @@ class StarPhotometryWindow:
             ax_to_use.set_ylabel(f"Calibrated Magnitude ({sel_cal})",
                                  color='tab:red')
             ax_to_use.tick_params(axis='y', labelcolor='tab:red')
+            # Trend line
+            arr_yc = np.array(cal_mags, dtype=float)
+            validc = np.isfinite(arr_yc)
+            if validc.sum() >= 2:
+                pc = np.polyfit(x[validc].astype(float), arr_yc[validc], 1)
+                ax_to_use.plot(x, np.polyval(pc, x.astype(float)),
+                               '--', color='tab:red', alpha=0.55, linewidth=1.4,
+                               label=f'slope: {pc[0]:+.4f} mag/fr')
 
         ax_l.set_xlabel("Image Index")
         ax_l.set_title(f"Star ID: {self._star_id_str}")
-        ax_l.set_xticks(x)
+        # Limit tick density: show every frame when ≤15, otherwise auto-space
+        n_pts = len(x)
+        if n_pts <= 15:
+            ax_l.set_xticks(x)
+        else:
+            from matplotlib.ticker import MaxNLocator
+            ax_l.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=15))
+
+        # Invert y-axes: smaller magnitude number = brighter = top of plot
+        inst_plotted = show_inst and any(not np.isnan(m) for m in inst_mags)
+        cal_plotted  = show_cal  and any(not np.isnan(m) for m in cal_mags)
+        if inst_plotted or (cal_plotted and not show_both):
+            ax_l.invert_yaxis()
+        if cal_plotted and show_both:
+            ax_r.invert_yaxis()
 
         h1, l1 = ax_l.get_legend_handles_labels()
         h2, l2 = (ax_r.get_legend_handles_labels()
                   if show_both else ([], []))
         if h1 or h2:
-            ax_l.legend(h1 + h2, l1 + l2, loc='upper left')
+            ax_l.legend(h1 + h2, l1 + l2,
+                        loc='upper center', bbox_to_anchor=(0.5, -0.18),
+                        ncol=2, fontsize='x-small', framealpha=0.85)
 
-        self.fig.tight_layout()
+        self.fig.tight_layout(rect=[0, 0.14, 1, 1])
         self.canvas.draw_idle()
 
 
@@ -525,10 +571,12 @@ class StarPickerDialog:
         directory: str,
         callback: Callable[[float, float, str, str], None],
         tol_arcsec: float = 5.0,
+        preferred_filter: Optional[str] = None,
     ) -> None:
         self._parent    = parent
         self._directory = directory
         self._callback  = callback
+        self._preferred_filter = preferred_filter  # band label, e.g. "R"
 
         self._pairs = collect_fits_ldac_pairs(directory)
         if not self._pairs:
@@ -576,17 +624,21 @@ class StarPickerDialog:
         ttk.Button(tb, text="Next >>", width=7,
                    command=lambda: self._nav(+1)).pack(side=LEFT)
 
-        ttk.Separator(tb, orient=VERTICAL).pack(side=LEFT, fill=Y, padx=8)
-        ttk.Label(tb, text="Phot:").pack(side=LEFT)
+        # Internal defaults (no UI controls; kept for cross-matching logic)
         self._photo_var = ttk.StringVar(value="APER")
-        ttk.Combobox(tb, textvariable=self._photo_var,
-                     values=["APER", "AUTO"], state="readonly",
-                     width=6).pack(side=LEFT, padx=4)
+        self._tol_var   = ttk.StringVar(value="5.0")
 
         ttk.Separator(tb, orient=VERTICAL).pack(side=LEFT, fill=Y, padx=8)
-        ttk.Label(tb, text="Match radius (arcsec):").pack(side=LEFT)
-        self._tol_var = ttk.StringVar(value="5.0")
-        ttk.Entry(tb, textvariable=self._tol_var, width=5).pack(side=LEFT, padx=4)
+        self._show_overlay_var = ttk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            tb, text="Overlay", variable=self._show_overlay_var,
+            command=self._redraw, bootstyle="round-toggle",
+        ).pack(side=LEFT, padx=(0, 4))
+        self._show_legend_var = ttk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            tb, text="Legend", variable=self._show_legend_var,
+            command=self._redraw, bootstyle="round-toggle",
+        ).pack(side=LEFT, padx=(0, 4))
 
         # ---- BOTTOM status bar (packed BEFORE canvas so it is never hidden)
         status_frm = ttk.Frame(self._top, padding=(6, 4))
@@ -615,7 +667,12 @@ class StarPickerDialog:
         plot_frm.pack(side=TOP, fill=BOTH, expand=True)
 
         self._fig, self._ax = plt.subplots(figsize=(9, 6.5))
-        self._fig.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.01)
+        self._fig.subplots_adjust(left=0.01, right=0.87, top=0.99, bottom=0.01)
+        # Pre-allocate a fixed colorbar axes so _redraw never steals space
+        # from self._ax by creating/removing colorbar axes dynamically.
+        self._cbar_ax = self._fig.add_axes([0.895, 0.05, 0.018, 0.90])
+        self._cbar_ax.set_visible(False)
+        self._cbar = None  # colorbar object managed in _redraw
 
         self._canvas = FigureCanvasTkAgg(self._fig, master=plot_frm)
         self._canvas.get_tk_widget().pack(fill=BOTH, expand=True)
@@ -637,14 +694,111 @@ class StarPickerDialog:
             self._common_df = compute_common_stars(self._pairs, tol_arcsec=tol_arcsec)
             n = len(self._common_df) if self._common_df is not None else 0
             self._info_var.set(
-                f"{n} stars present in all {len(self._pairs)} frame(s).  "
+                f"{n} stars in all {len(self._pairs)} frame(s).  "
+                f"Computing per-star slopes…"
+            )
+            self._top.update_idletasks()
+            self._compute_slopes()
+            n_stable = (int(np.sum(self._stable_mask))
+                        if getattr(self, '_stable_mask', None) is not None else 0)
+            self._info_var.set(
+                f"{n} stars in all {len(self._pairs)} frame(s), "
+                f"{n_stable} photometrically stable (green halo).  "
                 f"Click a coloured circle to select."
             )
         except Exception as exc:
             self._info_var.set(f"Error computing common stars: {exc}")
             self._common_df = pd.DataFrame()
+            self._star_slopes = None
+            self._stable_mask = None
         finally:
             self._top.config(cursor="")
+
+    # -- per-star slope computation ---------------------------------------
+
+    def _compute_slopes(self) -> None:
+        """Compute a linear cal-mag slope (mag/frame) for every common star.
+
+        Populates:
+          self._star_slopes  – float array, NaN where fit was not possible
+          self._stable_mask  – bool array, True for the bottom 30 % of |slope|
+        """
+        self._star_slopes = None
+        self._stable_mask = None
+
+        common = self._common_df
+        if common is None or common.empty:
+            return
+
+        # Same column-priority logic as _redraw
+        preferred = getattr(self, '_preferred_filter', None)
+        mag_col = None
+        if preferred:
+            candidate = _BAND_TO_MAG_COL.get(preferred)
+            if (candidate and candidate in common.columns
+                    and common[candidate].notna().any()):
+                mag_col = candidate
+        if mag_col is None:
+            for _, mcol, _ in _CAL_FILTERS:
+                if mcol in common.columns and common[mcol].notna().any():
+                    mag_col = mcol
+                    break
+        if mag_col is None:
+            return
+
+        try:
+            tol = float(self._tol_var.get())
+        except (ValueError, AttributeError):
+            tol = 5.0
+
+        n_frames = len(self._pairs)
+        n_stars  = len(common)
+        slopes   = np.full(n_stars, np.nan)
+        x_frames = np.arange(n_frames, dtype=float)
+
+        for si in range(n_stars):
+            star_ref = common.iloc[si]
+            ra  = float(star_ref.get('ra_deg',  0.0))
+            dec = float(star_ref.get('dec_deg', 0.0))
+            if ra == 0.0 and dec == 0.0:
+                continue
+
+            frame_mags: List[float] = []
+            for _, ldac_path in self._pairs:
+                if ldac_path not in self._ldac_cache:
+                    try:
+                        self._ldac_cache[ldac_path] = read_ldac_df(ldac_path)
+                    except Exception:
+                        self._ldac_cache[ldac_path] = pd.DataFrame()
+                df = self._ldac_cache[ldac_path]
+                if df is None or df.empty:
+                    frame_mags.append(np.nan)
+                    continue
+                idx = find_nearest_radec(df, ra, dec, tol_arcsec=tol)
+                if idx is None:
+                    frame_mags.append(np.nan)
+                    continue
+                v = df.iloc[idx].get(mag_col, np.nan)
+                frame_mags.append(float(v) if pd.notnull(v) else np.nan)
+
+            arr   = np.array(frame_mags, dtype=float)
+            valid = np.isfinite(arr)
+            if valid.sum() >= 2:
+                try:
+                    slopes[si] = np.polyfit(x_frames[valid], arr[valid], 1)[0]
+                except Exception:
+                    pass
+
+        self._star_slopes = slopes
+
+        # Stable = bottom 30 % of |slope| among stars that have a valid fit
+        abs_s  = np.abs(slopes)
+        finite = abs_s[np.isfinite(abs_s)]
+        if len(finite) == 0 or n_frames < 2:
+            self._stable_mask = np.isfinite(abs_s)
+        else:
+            threshold = np.percentile(finite, 30)
+            self._stable_mask = abs_s <= threshold
 
     # -- frame navigation -------------------------------------------------
 
@@ -677,12 +831,20 @@ class StarPickerDialog:
     # -- drawing ----------------------------------------------------------
 
     def _redraw(self) -> None:
-        self._ax.cla()
-        data = self._current_image
-        all_df   = self._current_df
-        common   = self._common_df
+        from matplotlib.colors import BoundaryNorm
 
-        # FITS image
+        # Reuse the pre-allocated colorbar axes; just clear it.
+        # Never call self._cbar.remove() – that would resize self._ax.
+        self._cbar = None
+        self._cbar_ax.cla()
+        self._cbar_ax.set_visible(False)
+
+        self._ax.cla()
+        data   = self._current_image
+        all_df = self._current_df
+        common = self._common_df
+
+        # FITS image -------------------------------------------------------
         try:
             if _HAS_ZSCALE:
                 norm = ImageNormalize(data, interval=ZScaleInterval())
@@ -692,32 +854,131 @@ class StarPickerDialog:
         except Exception:
             self._ax.imshow(data, cmap='gray', origin='lower')
 
-        # All detected stars: small grey crosses (context only, not selectable)
-        if all_df is not None and not all_df.empty and 'XWIN_IMAGE' in all_df.columns:
+        # All detected stars: small grey crosses ---------------------------
+        show_overlay = self._show_overlay_var.get()
+        show_legend  = self._show_legend_var.get()
+
+        if show_overlay and all_df is not None and not all_df.empty and 'XWIN_IMAGE' in all_df.columns:
             self._ax.scatter(
                 all_df['XWIN_IMAGE'], all_df['YWIN_IMAGE'],
                 s=6, marker='+', c='gray', linewidths=0.5,
                 alpha=0.5, zorder=2, label='Not in all frames',
             )
 
-        # Common stars: coloured by flag, selectable
-        if common is not None and not common.empty and 'XWIN_IMAGE' in common.columns:
-            flag_groups = (common.groupby('FLAGS')
+        # Common stars: coloured by calibrated mag, shaped by flag ---------
+        if show_overlay and common is not None and not common.empty and 'XWIN_IMAGE' in common.columns:
+
+            # ── find calibrated magnitude column ──────────────────────────
+            # Priority: preferred_filter (from the active lightcurve) >
+            # first populated column in _CAL_FILTERS order.
+            mag_col = None
+            preferred = getattr(self, '_preferred_filter', None)
+            if preferred:
+                candidate = _BAND_TO_MAG_COL.get(preferred)
+                if (candidate and candidate in common.columns
+                        and common[candidate].notna().any()):
+                    mag_col = candidate
+            if mag_col is None:
+                for _, mcol, _ in _CAL_FILTERS:
+                    if mcol in common.columns and common[mcol].notna().any():
+                        mag_col = mcol
+                        break
+
+            # ── build discrete 1-mag-bin colormap ─────────────────────────
+            cmap_sc = norm_sc = mags_plot = None
+            if mag_col is not None:
+                raw_mags = common[mag_col].values.astype(float)
+                finite   = raw_mags[np.isfinite(raw_mags)]
+                if len(finite):
+                    mag_lo     = int(np.floor(finite.min()))
+                    mag_hi     = int(np.ceil(finite.max()))
+                    boundaries = list(range(mag_lo, mag_hi + 2))  # one extra fence
+                    cmap_sc    = plt.cm.plasma_r
+                    norm_sc    = BoundaryNorm(boundaries,
+                                             ncolors=plt.cm.plasma_r.N,
+                                             clip=True)
+                    mid_mag    = float(np.nanmedian(finite))
+                    mags_plot  = np.where(np.isfinite(raw_mags), raw_mags, mid_mag)
+                else:
+                    mag_col = None
+
+            # ── iterate over flag groups ───────────────────────────────────
+            flag_groups = (list(common.groupby('FLAGS'))
                            if 'FLAGS' in common.columns else [(0, common)])
-            for flag, gdf in flag_groups:
+            has_mag_scatter = False
+            for flag_val, gdf in flag_groups:
+                marker = _FLAG_MARKERS.get(int(flag_val), 'o')
                 sz = (np.sqrt(gdf['ISOAREA_IMAGE'].values) * np.pi
                       if 'ISOAREA_IMAGE' in gdf.columns
                       else np.full(len(gdf), 18))
-                sz = np.clip(sz, 12, 60)
-                self._ax.scatter(
-                    gdf['XWIN_IMAGE'], gdf['YWIN_IMAGE'],
-                    s=sz, edgecolors=_flag_color(flag),
-                    facecolors='none', linewidths=1.2,
-                    zorder=4, label=f'All frames, FLAG={int(flag)}',
-                )
-            self._ax.legend(loc='lower right', fontsize='x-small', framealpha=0.6)
+                sz = np.clip(sz, 14, 70)
+                flag_lbl = f'FLAG={int(flag_val)}'
 
-        # Re-draw selection highlight
+                if mags_plot is not None and norm_sc is not None:
+                    # Map magnitudes → RGBA edge colours; keep faces transparent
+                    # so the FITS image shows through the marker.
+                    row_pos    = gdf.index.values   # safe: common has RangeIndex
+                    c_vals     = mags_plot[row_pos]
+                    edge_rgba  = cmap_sc(norm_sc(c_vals))
+                    self._ax.scatter(
+                        gdf['XWIN_IMAGE'], gdf['YWIN_IMAGE'],
+                        s=sz, facecolors='none', edgecolors=edge_rgba,
+                        marker=marker, linewidths=1.5, zorder=4,
+                        label=flag_lbl,
+                    )
+                    has_mag_scatter = True
+                else:
+                    # Fallback: flag colour when no calibrated mags available
+                    self._ax.scatter(
+                        gdf['XWIN_IMAGE'], gdf['YWIN_IMAGE'],
+                        s=sz, edgecolors=_flag_color(int(flag_val)),
+                        facecolors='none', linewidths=1.2,
+                        marker=marker, zorder=4, label=flag_lbl,
+                    )
+
+            # ── colorbar: calibrated magnitude, bright at top ──────────────
+            if has_mag_scatter and mag_col is not None:
+                try:
+                    from matplotlib.cm import ScalarMappable
+                    sm = ScalarMappable(cmap=cmap_sc, norm=norm_sc)
+                    sm.set_array([])
+                    self._cbar_ax.set_visible(True)
+                    self._cbar = self._fig.colorbar(
+                        sm, cax=self._cbar_ax, cmap='plasma',
+                        label=f'Cal. mag  ({mag_col.lstrip("_")})',
+                    )
+                    self._cbar.ax.invert_yaxis()  # bright (small mag) at top
+                except Exception:
+                    self._cbar_ax.set_visible(False)
+                    self._cbar = None
+
+            # ── green halo for photometrically stable stars ────────────────
+            stable_mask = getattr(self, '_stable_mask', None)
+            if (stable_mask is not None and stable_mask.any()
+                    and 'XWIN_IMAGE' in common.columns):
+                stable_df = common[stable_mask]
+                if not stable_df.empty:
+                    halo_sz = (np.sqrt(stable_df['ISOAREA_IMAGE'].values) * np.pi * 1.3
+                               if 'ISOAREA_IMAGE' in stable_df.columns
+                               else np.full(len(stable_df), 32))
+                    halo_sz = np.clip(halo_sz, 22, 70)
+                    self._ax.scatter(
+                        stable_df['XWIN_IMAGE'], stable_df['YWIN_IMAGE'],
+                        s=halo_sz, marker='o',
+                        facecolors=(0.0, 1.0, 0.3, 0.13),   # faint green fill
+                        edgecolors=(0.0, 0.85, 0.2, 0.80),  # bright green edge
+                        linewidths=2.2, zorder=3,
+                        label='Stable mag (bottom 30% |slope|)',
+                    )
+
+            if show_legend:
+                self._ax.legend(loc='lower right', fontsize='x-small', framealpha=0.6)
+
+        # Hide colorbar when overlay is off
+        if not show_overlay:
+            self._cbar_ax.set_visible(False)
+
+        # Re-draw selection highlight --------------------------------------
         if self._selected is not None:
             self._highlight = self._ax.scatter(
                 [self._selected['x']], [self._selected['y']],
