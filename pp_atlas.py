@@ -5,19 +5,12 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
-import re
 import argparse
 from pathlib import Path
 
-from astropy.io import fits
-from astropy.table import vstack
-from astropy.time import Time
-from astroquery.jplhorizons import Horizons
-from astroquery.jplsbdb import SBDB
 import pandas as pd
 import numpy as np
-import math
-from toolbox import lister
+import toolbox
 
 # row order in the atlas header
 row_order = ['object', 'reference', 'info_observer', 'info_reducer', 'info_add', 'observing_site', 'telescope',
@@ -51,136 +44,11 @@ atlas_dict = {
 }
 
 
-def get_full_name(asteroid_id) -> str:
-    jpl_query = SBDB.query("{}".format(asteroid_id), phys=False)
-    # check if shortname exists (exists for asteroids with names)
-    shortname = jpl_query['object'].get('shortname')
-    if shortname:
-        return shortname
-    else:
-        name = jpl_query['object'].get('fullname')
-        return name
-
-
-def init_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories.dat') -> dict:
-    """read the data with observatories locations and their codes"""
-    obs_dict = {}
-    with open(dict_path, 'r') as file:
-        obs_file = file.readlines()[1:]
-    for obs_site in obs_file:
-        code, site = obs_site.strip('\n').split(maxsplit=1)
-        obs_dict.update({code: site})
-    return obs_dict
-
-
-def init_mpc_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories_mpc.dat') -> dict:
-    """read the data with mpc observatories locations and their codes"""
-    obs_dict = {}
-    obs_file = pd.read_fwf(dict_path, colspecs=[(0, 4), (4, 14), (14, 23), (23, 33), (33, 200)])
-    obs_file['Lat'] = obs_file.apply(lambda x: math.degrees(math.atan2(float(x['sin']), float(x['cos']))), axis=1)
-    for obs_site in obs_file.iloc:
-        code, long, lat, site_name = obs_site[['Code', 'Long.', 'Lat', 'Name']]
-        long_letter = 'E' if float(long) > 0 else 'W'
-        lat_sign = "+" if lat > 0 else ""
-        full_name = f"{long_letter} {long:.2f} {lat_sign}{lat:.2f} {site_name}"
-        obs_dict.update({code: full_name})
-    return obs_dict
-
-
 def form_atlas_entry(entry: str, atlas_entry_len=15) -> str:
     """forms header entries for atlas files by adding ...: at the end"""
     lendiff = atlas_entry_len - len(entry)
     formed_entry = entry + "." * (lendiff - 1) + ":"
     return formed_entry
-
-
-def detect_phot_system(filter: str) -> str:
-    """detects which photometric system is used for the photometry"""
-    if filter in ['U', 'B', 'V', 'R', 'I', 'C', 'Clear']:
-        return 'Johnson-Cousins'
-    elif filter in ['u', 'g', 'r', 'i', 'z']:
-        return 'Sloan'
-    else:
-        return 'Unknown'
-
-
-def get_fits_header(filename: str) -> dict:
-    """gets the header of the fits file"""
-    # name of the fits image file
-    # open image file
-    hdulist = fits.open(filename, mode='update', verify='silentfix',
-                        ignore_missing_end=True)
-    header = hdulist[0].header
-    return header
-
-
-def get_obsparam(header: dict) -> dict:
-    """gets the correct telescope parameters from the pipeline database"""
-    instrument_keys = ['TELESCOP', 'INSTRUME', 'PPINSTRU', 'LCAMMOD', 'FPA', 'CAM_NAME',
-                       ]
-    instruments = []
-    for key in instrument_keys:
-        if key in header:
-            # check the header entry is not empty
-            if header[key].strip():
-                instruments.append(header[key])
-                break
-    telescope = instrument_identifiers[instruments[0]]
-    obsparam = telescope_parameters[telescope]
-    return obsparam
-
-
-def julian_to_ymd(julian_date):
-    """Formats a Julian date as a string in the format "YYYY MON DD.D"""
-    month_dict = {'January': 'JAN', 'February': 'FEB', 'March': 'MAR',
-                  'April': 'APR', 'May': 'MAY', 'June': 'JUN',
-                  'July': 'JUL', 'August': 'AUG', 'September': 'SEP',
-                  'October': 'OCT', 'November': 'NOV', 'December': 'DEC'}
-    # Create an astropy Time object from the Julian date
-    t = Time(julian_date, format='jd', scale='utc')
-
-    # Extract the decimal day
-    decimal_day = t.datetime.day + t.datetime.hour / 24 + t.datetime.minute / 1440
-    # Format the month name
-    month_name = month_dict[t.datetime.strftime('%B')]
-
-    # Format the string with the year, month name, and decimal day
-    formatted_date = f"{t.datetime.year} {month_name} {decimal_day:.1f}"
-
-    return formatted_date
-
-
-def check_object_name(name):
-    """check body name for unwanted symbols"""
-    # check name
-    has_whitespace = bool(re.search(r'\s+', name))
-    only_letters = name.isalpha()
-    has_numbers = any(c.isdigit() for c in name)
-    has_letters = re.search(r"[a-zA-Z]", name)
-    # check if it is provisional designation with no whitespace
-    if has_letters and has_numbers and not has_whitespace:
-        name = name[:4] + ' ' + name[4:]
-    # check if there is more than one whitespace
-    elif has_whitespace:
-        name = re.sub(r'\s+', ' ', name)
-    return name
-
-
-def jpl_query_eph(body, epochs, location):
-    """query JPL Horizon system for the data"""
-    # query is split into chunks of 50 elements
-    step = 50
-    # ===============================================
-    end = len(epochs)
-    body = check_object_name(body)
-    full_ephemerides = []
-    for i in range(0, end, step):
-        obj = Horizons(id="{}".format(body), location=location, epochs=epochs[i:i + step])
-        chunk_ephemerides = obj.ephemerides()
-        full_ephemerides = vstack([full_ephemerides, chunk_ephemerides])
-
-    full_ephemerides = full_ephemerides.to_pandas().drop(columns="col0")
-    return full_ephemerides
 
 
 def midtime_aspect_data(date: str, target: str, obs_code: str):
@@ -189,7 +57,7 @@ def midtime_aspect_data(date: str, target: str, obs_code: str):
     # query for the aspect data
     # columns = ['r', 'delta', 'alpha_true', 'PABLon', 'PABLat']
     columns = ['r', 'delta', 'alpha_true', 'ObsEclLon', 'ObsEclLat']
-    query_data = jpl_query_eph(body=target,
+    query_data = toolbox.jpl_query_eph(body=target,
                                location=obs_code,
                                epochs=[date])
 
@@ -209,12 +77,12 @@ end_atlas = """\n===============------------------------========================
 END OF OBJECT   """
 
 
-def form_atlas(filename_header, filename_photometry):
+def form_atlas(filename_header, filename_photometry, use_reduced_mag=False, use_lt_corrected=False):
     """forms atlas file from the resulting pipeline data and fits header"""
-    header = get_fits_header(filename_header)
-    obsparam = get_obsparam(header)  # inst_sigma (reduced sigma) * 2**0.5- cal_sigma - zeropoint_sigma
-    obs_dict = init_obs_dict()
-    obs_dict_mpc = init_mpc_obs_dict()
+    header = toolbox.get_fits_header(filename_header)
+    obsparam = toolbox.get_obsparam(header)  # inst_sigma (reduced sigma) * 2**0.5- cal_sigma - zeropoint_sigma
+    obs_dict = toolbox.init_obs_dict()
+    obs_dict_mpc = toolbox.init_mpc_obs_dict()
     # get photometry data
     if type(filename_photometry) == pd.DataFrame:
         photometry_data = filename_photometry
@@ -262,12 +130,12 @@ def form_atlas(filename_header, filename_photometry):
             observatory = obsparam.get('observatory_code')
 
     fits_dict = {
-        "object": get_full_name(header.get(obsparam.get('object'))),
+        "object": toolbox.get_full_name(header.get(obsparam.get('object'))),
         "observer": 'Observer(s): ' + header.get(obsparam.get('observer', 'observer'), 'no data'),
         "reference": obsparam.get('reference', 'Krugly et al. in prep.'),
         "info_observer": 'Observer(s): ' + header.get(obsparam.get('observer', 'observer'), 'no data'),
         "info_reducer": 'Reducer(s): Yu. Krugly, pipeline',
-        "info_aspect": f"aspect data on observing midtime {julian_to_ymd(observing_time)}",
+        "info_aspect": f"aspect data on observing midtime {toolbox.julian_to_ymd(observing_time)}",
         "info_add": f"filter: {orig_filter}, band: {reduc_filter}, method: {photometry_method}",
         'aspect_data': midtime_aspect_data(observing_time,
                                            header.get(obsparam.get('object')),
@@ -282,12 +150,12 @@ def form_atlas(filename_header, filename_photometry):
         "exptime": obsparam.get('exptime'),
         "airmass": obsparam.get('airmass'),
         "filter": reduc_filter,
-        "phot_system": detect_phot_system(header.get(obsparam.get('filter'))),
+        "phot_system": toolbox.detect_phot_system(header.get(obsparam.get('filter'))),
         'relative_phot': 'F',
-        'reduced_mag': 'F',
-        'lt_corrected': 'F',
-        'obs_time': f'{observing_time:.1f} ({julian_to_ymd(observing_time)})',
-        'zero_time': f'{zero_time:.1f} ({julian_to_ymd(zero_time)})',
+        'reduced_mag': 'T' if use_reduced_mag else 'F',
+        'lt_corrected': 'T' if use_lt_corrected else 'F',
+        'obs_time': f'{observing_time:.1f} ({toolbox.julian_to_ymd(observing_time)})',
+        'zero_time': f'{zero_time:.1f} ({toolbox.julian_to_ymd(zero_time)})',
         'zero_mag': f'{0.0} sigma = {sig_median:.4f} {sig_percentiles[0]:.4f} +{sig_percentiles[1]:.4f}, catalog: {catalog}',
         'time_unit': '1 day'
     }
@@ -366,6 +234,10 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument('-fname_out', help='name for the resulting atlas file',
                         default=None)
+    parser.add_argument('-use_reduced_mag', action='store_true', default=False,
+                        help='mark the ATLAS file as containing reduced magnitudes (sets REDUCED MAG.: T)')
+    parser.add_argument('-use_lt_corrected', action='store_true', default=False,
+                        help='mark the ATLAS file as lighttime-corrected (sets LT CORRECTED: T)')
     parser.add_argument('-combine', nargs='+',
                         help='combine multiple ATLAS files. Can be a single file containing a list of paths, '
                              'or a list of directories containing .ATL files')
@@ -378,19 +250,21 @@ if __name__ == "__main__":
     if args.combine is None:
         rootpath = os.environ.get('PHOTPIPEDIR')
         if filename_header is None:
-            filename_header = lister(os.getcwd(), '*.fit*', 'path', 'file')[0]
+            filename_header = toolbox.lister(os.getcwd(), '*.fit*', 'path', 'file')[0]
             # check if path is a directory
         elif os.path.isdir(filename_header):
-            filename_header = lister(filename_header, '*.fit*', 'path', 'file')[0]
+            filename_header = toolbox.lister(filename_header, '*.fit*', 'path', 'file')[0]
         filename_photo = args.fname_photo
         if filename_photo is None:
-            filename_photo = lister(os.getcwd(), '*_.csv', 'path', 'file')[0]
+            filename_photo = toolbox.lister(os.getcwd(), '*_.csv', 'path', 'file')[0]
         elif os.path.isdir(filename_photo):
-            filename_photo = lister(filename_photo, '*_.csv', 'path', 'file')[0]
+            filename_photo = toolbox.lister(filename_photo, '*_.csv', 'path', 'file')[0]
         if filename_atlas is None:
             filename_atlas = str(os.path.basename(filename_photo)).replace('.csv', '.ATL')
         exec(open(rootpath + '/setup/telescopes.py').read())
-        text_atlas = form_atlas(filename_header, filename_photo)
+        text_atlas = form_atlas(filename_header, filename_photo,
+                                use_reduced_mag=args.use_reduced_mag,
+                                use_lt_corrected=args.use_lt_corrected)
         # transform text from UNIX to DOS format
         text_atlas = text_atlas.replace('\n', '\r\n')
         print('\n#-----------------------\nresulting ATLAS file:\n\n' + text_atlas)
