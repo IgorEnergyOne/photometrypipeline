@@ -48,8 +48,7 @@ class AsteroidImageViewer:
         if self.window_geometry:
             _safe(self.image_window.geometry, self.window_geometry)
         self.image_window.deiconify()
-        self.image_window.lift()
-        self.root.after(100, lambda: self.root.focus_force())
+        self.root.focus_force()
 
     def _hide_window(self):
         self.window_geometry = _safe(self.image_window.geometry)
@@ -68,19 +67,17 @@ class AsteroidImageViewer:
                                variable=self.show_overlay_var,
                                command=self.refresh_display)
         chk.pack(side=BOTTOM, pady=5)
-        self.root.focus_set()
-        def return_focus(event=None):
-            if self.root.winfo_exists():
-                self.root.focus_set()
-        top.bind("<Map>", return_focus)
-        self.root.after(50, lambda: self.root.focus_force())
-        self.root.after(200, lambda: self.root.focus_force())
+        self.root.focus_force()
 
     def _bind_events(self, win: tk.Toplevel):
         def _on_configure(evt=None):
             if evt and evt.widget == win:
                 self.window_geometry = win.geometry()
+        def _redirect_focus(evt=None):
+            if self.root.winfo_exists():
+                self.root.focus_force()
         win.bind("<Configure>", _on_configure, add="+")
+        win.bind("<FocusIn>", _redirect_focus, add="+")
         win.bind("<MouseWheel>", self._on_zoom)
         win.bind("<Button-4>", self._on_zoom)
         win.bind("<Button-5>", self._on_zoom)
