@@ -30,6 +30,7 @@ from .plot import LightCurvePlot
 from .image_viewer import AsteroidImageViewer
 from .utils import _safe, next_version, debug_print
 
+
 class LightCurveGUI:
     """Main application window."""
     def __init__(self, root: ttk.Window, cfg: Optional[AppConfig] = None):

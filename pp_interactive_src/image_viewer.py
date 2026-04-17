@@ -19,6 +19,8 @@ except ImportError:
     ImageTk = None
 if TYPE_CHECKING:
     from .gui import LightCurveGUI
+
+
 class AsteroidImageViewer:
     """Manages the asteroid image window: loading, zooming, overlay toggle,
     and persisting window state/zoom level."""
@@ -48,9 +50,11 @@ class AsteroidImageViewer:
         self.image_window.deiconify()
         self.image_window.lift()
         self.root.after(100, lambda: self.root.focus_force())
+
     def _hide_window(self):
         self.window_geometry = _safe(self.image_window.geometry)
         self.image_window.withdraw()
+
     def _create_window(self):
         top = tk.Toplevel(self.root)
         self.image_window = top
@@ -71,6 +75,7 @@ class AsteroidImageViewer:
         top.bind("<Map>", return_focus)
         self.root.after(50, lambda: self.root.focus_force())
         self.root.after(200, lambda: self.root.focus_force())
+
     def _bind_events(self, win: tk.Toplevel):
         def _on_configure(evt=None):
             if evt and evt.widget == win:
@@ -81,6 +86,7 @@ class AsteroidImageViewer:
         win.bind("<Button-5>", self._on_zoom)
         win.bind("<o>", self._toggle_overlay_hotkey)
         win.bind("<O>", self._toggle_overlay_hotkey)
+
     #  -  -  -  image loading & display  -  -  - 
     def update_image(self):
         """Load and display the image for the current selection."""
@@ -110,16 +116,31 @@ class AsteroidImageViewer:
         base_dir = os.getcwd()
         if lc.filename:
             base_dir = os.path.dirname(os.path.abspath(lc.filename))
+        raw_path = Path(raw_filename)
+        stem = raw_path.stem  # filename without extension (e.g. "mscience0217" from "mscience0217.ldac")
+        mode = getattr(self.data_provider, 'mode', 'target')
+        if mode == 'control':
+            # Control star thumbnail: Control_Star_{stem}_thumb.png
+            glob_patterns = [f"Control_Star_{stem}_thumb.png"]
+        else:
+            # Target thumbnail: *__{stem}_thumb.png  (target name prepended before __)
+            glob_patterns = [f"*__{stem}_thumb.png", f"{stem}_thumb.png"]
         candidate_paths = []
         if os.path.isabs(raw_filename):
-            candidate_paths.append(Path(raw_filename))
+            parent = raw_path.parent
+            for pat in glob_patterns:
+                candidate_paths += sorted(parent.glob(pat))
         else:
             bp = Path(base_dir)
-            candidate_paths += [bp / raw_filename, bp.parent / raw_filename, bp.parent.parent / raw_filename]
+            for pat in glob_patterns:
+                candidate_paths += sorted(bp.rglob(pat))
+        # deduplicate preserving order
+        seen: set = set()
+        candidate_paths = [p for p in candidate_paths if not (p in seen or seen.add(p))]
         found_path = next((p for p in candidate_paths if p.exists()), None)
         if not found_path:
-            msg = ("Image not found.\nSearched for: " + raw_filename + "\nIn:\n"
-                   + "\n".join(str(p.parent) for p in candidate_paths))
+            msg = ("Image not found.\nSearched for: " + stem + '.png' + "\nIn:\n"
+                   + str(Path(base_dir)) + " (and subdirectories)")
             ttk.Label(self.image_window, text=msg).pack(padx=20, pady=20)
             return
         try:
@@ -128,18 +149,15 @@ class AsteroidImageViewer:
                 return
             self._current_image_original = Image.open(str(found_path)).convert("RGBA")
             self._current_overlay_original = None
-            potential_overlays = []
-            if found_path.suffix.lower() != '.png':
-                potential_overlays.append(found_path.with_suffix('.png'))
-            potential_overlays.append(found_path.with_name(f"{found_path.stem}_overlay.png"))
-            for ov_p in potential_overlays:
-                if ov_p.exists():
-                    self._current_overlay_original = Image.open(str(ov_p)).convert("RGBA")
-                    break
+            # Overlay is always named <stem>_overlay.png in the same directory
+            ov_path = found_path.with_name(f"{found_path.stem}_overlay.png")
+            if ov_path.exists():
+                self._current_overlay_original = Image.open(str(ov_path)).convert("RGBA")
             self.refresh_display()
             self.image_window.title(f"Image: {found_path.name}")
         except Exception as e:
             ttk.Label(self.image_window, text=f"Error loading image:\n{e}").pack(padx=20, pady=20)
+
     def refresh_display(self):
         """Resize and display the stored image at the current zoom level."""
         if not self.image_window or not self.image_window.winfo_exists():
@@ -166,6 +184,7 @@ class AsteroidImageViewer:
         photo = ImageTk.PhotoImage(resized_img)
         img_label.configure(image=photo)
         img_label.image = photo
+
     def _on_zoom(self, event):
         if self._current_image_original is None:
             return
@@ -176,6 +195,7 @@ class AsteroidImageViewer:
             self.zoom_level /= scale_factor
         self.zoom_level = max(0.1, min(20.0, self.zoom_level))
         self.refresh_display()
+
     def _toggle_overlay_hotkey(self, event=None):
         self.show_overlay_var.set(not self.show_overlay_var.get())
         self.refresh_display()
