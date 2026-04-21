@@ -216,6 +216,8 @@ def combine_atlas(input_paths, fname_out: str):
             # remove "END OF OBJECT" character
             atlas = atlas[:-1]
             atlas = ''.join(atlas)
+            # transform text from UNIX to DOS format
+            atlas = atlas.replace('\n', '\r\n')
             all_atlas.append(atlas)
 
         atlas_whole = ''.join(all_atlas)
