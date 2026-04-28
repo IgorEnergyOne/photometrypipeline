@@ -33,7 +33,7 @@ from astropy.io import ascii
 import pandas as pd
 
 try:
-    from astroquery.vizier import Vizier
+    from toolbox import ResilientVizier as Vizier
 except ImportError:
     print('Module astroquery not found. Please install with: pip install '
           'astroquery')
@@ -257,11 +257,18 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
                 message_shown = True
 
         else:
-            objects.append({'ident': eph[0]['targetname'].replace(" ", "_"),
-                            'obsdate.jd': cat.obstime[0],
-                            'cat_idx': cat_idx,
-                            'ra_deg': eph[0]['RA']-offset[0]/3600,
-                            'dec_deg': eph[0]['DEC']-offset[1]/3600})
+            obj_entry = {'ident': eph[0]['targetname'].replace(" ", "_"),
+                          'obsdate.jd': cat.obstime[0],
+                          'cat_idx': cat_idx,
+                          'ra_deg': eph[0]['RA']-offset[0]/3600,
+                          'dec_deg': eph[0]['DEC']-offset[1]/3600}
+            # piggy-back on the same ephemeris call to store aspect data
+            for col in ('r', 'delta', 'alpha_true', 'ObsEclLon', 'ObsEclLat'):
+                try:
+                    obj_entry[col] = float(eph[0][_col])
+                except Exception:
+                    obj_entry[col] = np.nan
+            objects.append(obj_entry)
             logging.info('Successfully grabbed Horizons position for %s ' %
                          cat.obj.replace('_', ' '))
             logging.info('HORIZONS call: %s' % obj.uri)
@@ -555,6 +562,24 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         print('{:d} potential target(s) per frame identified.'.format(
             int(len(objects)/len(catalogs))))
 
+    # build aspect lookup: (ident, catalogname) -> aspect dict
+    # aspect data is stored in objects only for moving targets queried via
+    # moving_primary_target(); control stars and fixed targets have no entry.
+    cat_idx_to_name = {i: cat.catalogname for i, cat in enumerate(catalogs)}
+    aspect_lookup = {}
+    for obj in objects:
+        if 'r' in obj:
+            key = (obj['ident'], cat_idx_to_name.get(obj['cat_idx'], ''))
+            aspect_lookup[key] = {k: obj[k]
+                                   for k in ('r', 'delta', 'alpha_true',
+                                             'ObsEclLon', 'ObsEclLat')}
+
+    # observatory code — same lookup used by moving_primary_target()
+    try:
+        obs_code = _pp_conf.telescope_parameters[
+            catalogs[0].origin.split(';')[0].strip()]['observatory_code']
+    except (KeyError, IndexError):
+        obs_code = '-'
     # extract source data for identified targets
 
     data = []
@@ -711,9 +736,13 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         # column names for Series row and dataframe
         colnames = ["rejected", "filename", "target", "julian_date", "mag", "sig", "source_ra", "source_dec", "ra_offset",
                     "dec_offset", "man_ra_offset", "man_dec_offset", "exptime", "airmass", "zeropoint", "zeropoint_sig",
-                    "inst_mag", "inst_sig", "catalog", "band", "sextractor_flags", "telescope", "photo_method", "FWHM",
+                    "inst_mag", "inst_sig", "catalog", "original_filter", "band", "sextractor_flags",
+                    "telescope", "observatory_code", "photo_method", "FWHM",
+                    "r", "delta", "alpha_true", "ObsEclLon", "ObsEclLat",
                   ]
         datalist = []
+        # cache: fits filename -> original filter string read from the FITS header
+        fits_header_cache = {}
 
         for dat in data:
             # sort measured magnitudes by target
@@ -762,16 +791,32 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                 # mag, sig - calibrated values for magnitude
                 # source_ra, source_dec - measured coordinates from the image
                 # ra_offset, dec_offset - offset of measured coordinates from the expected ones (catalogue)
+
+                # read original FITS filter keyword directly from the FITS header
+                fits_filename = dat[10][:-4] + 'fits'
+                if fits_filename not in fits_header_cache:
+                    try:
+                        _hdr = get_fits_header(fits_filename)
+                        _obsp = get_obsparam(_hdr)
+                        fits_header_cache[fits_filename] = str(_hdr.get(_obsp['filter'], '-')).strip()
+                    except Exception:
+                        fits_header_cache[fits_filename] = '-'
+                original_filter = fits_header_cache[fits_filename]
+
                 # create pandas series from a row of data
                 if instrumental:
                     catalogname = '-'
                     filtername = '-'
+                asp = aspect_lookup.get((target, dat[10]), {})
                 data_row = pd.Series([reject_this_target, dat[10].replace(' ', '_'), target.replace('_', ' '),
                                       dat[9][0], dat[7], dat[8],
                                       dat[3], dat[4], (dat[1] - dat[3]) * 3600., (dat[2] - dat[4]) * 3600., offset[0],
                                       offset[1], dat[9][1], dat[19], (dat[7] - dat[5]), np.sqrt(dat[8] ** 2 - dat[6] ** 2),
-                                      dat[5], dat[6], catalogname, filtername, dat[14], dat[13].split(';')[0],
-                                      phot_mode, dat[15] * 3600],
+                                      dat[5], dat[6], catalogname, original_filter, filtername, dat[14],
+                                      dat[13].split(';')[0], obs_code, phot_mode, dat[15] * 3600,
+                                      asp.get('r', np.nan), asp.get('delta', np.nan),
+                                      asp.get('alpha_true', np.nan), asp.get('ObsEclLon', np.nan),
+                                      asp.get('ObsEclLat', np.nan)],
                                      index=colnames)
                 datalist.append(data_row)
                 # create dict with resulting data
@@ -820,6 +865,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
         # write the same data to csv file
         # format pandas dataframe with output data
         photometry_pd = pd.DataFrame.from_records(datalist)
+
         filename = 'photometry_%s.dat' % target.translate(_pp_conf.target2filename)
         photometry_pd.to_csv(filename[:-4] + '.csv', sep=',', index=False)
 
