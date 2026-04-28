@@ -175,7 +175,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
 
     # open one sample image file
     hdulist = fits.open(filenames[0], verify='ignore',
-                        ignore_missing_end='True')
+                        ignore_missing_end='True', memmap=False)
     header = hdulist[0].header
 
     # check if this is a single-extension FITS file
@@ -258,11 +258,11 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         for filename in filenames:
             # open image file
             hdulist = fits.open(filename, mode='update', verify='silentfix',
-                                ignore_missing_end=True)
+                                ignore_missing_end=True, memmap=False)
             header = hdulist[0].header
             # check if ra/dec are present in a header
-            if (header.get(obsparam['ra']) is None
-                    or header.get(obsparam['ra']) is None or rewrite_radec):
+            if ((header.get(obsparam['ra']) is None
+                    or header.get(obsparam['ra']) is None) or rewrite_radec):
                 logging.info(f'{filename}: RA/DEC not in header or radec override is set')
                 ra_dec_files.append(filename)
                 epoch = get_obs_time(header, obsparam).jd
@@ -290,7 +290,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
         for idx, filename in enumerate(ra_dec_files):
             # open image file
             hdulist = fits.open(filename, mode='update', verify='silentfix',
-                                ignore_missing_end=True)
+                                ignore_missing_end=True, memmap=False)
             header = hdulist[0].header
             logging.info('calculated RA/DEC for the target: %s deg %s deg' % (ras[idx], decs[idx]))
             # set ra/dec in header
@@ -313,7 +313,7 @@ def prepare(filenames, obsparam, header_update, keep_wcs=False,
 
         # open image file
         hdulist = fits.open(filename, mode='update', verify='silentfix',
-                            ignore_missing_end=True)
+                            ignore_missing_end=True, memmap=False)
         header = hdulist[0].header
 
         # check if binning keyword is present in header
@@ -679,7 +679,7 @@ if __name__ == '__main__':
     for filename in filenames:
         try:
             hdulist = fits.open(filename, verify='ignore',
-                                ignore_missing_end=True)
+                                ignore_missing_end=True, memmap=False)
         except IOError:
             raise IOError('File %s does not exist! Abort.' % filename)
 
