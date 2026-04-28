@@ -126,6 +126,21 @@ log_level = logging.INFO
 log_datefmt = '%m/%d/%Y %H:%M:%S'
 log_filename = 'LOG'
 
+# ---- VizieR resilient mirror setup ----
+# Load mirror list and pre-seed the active mirror from the on-disk cache.
+# ResilientVizier will only probe mirrors lazily on the first connection failure.
+try:
+    ResilientVizier._mirrors = load_vizier_mirrors(
+        os.path.join(rootpath, 'setup', 'vizier_mirrors.dat'))
+    ResilientVizier._cache_path = Path(rootpath) / '.vizier_mirror_cache.json'
+    # Pre-seed from cache (12-hour TTL) so the first query is already fast.
+    _cached_mirror = load_cache(ResilientVizier._cache_path)
+    if _cached_mirror:
+        ResilientVizier._active_mirror = _cached_mirror
+except Exception as _e:
+    print(f"Warning: VizieR mirror setup failed: {_e}")
+# ----------------------------------------
+
 # start pp_process_idx counter (if using 'pp_run all')
 pp_process_idx = 0
 
@@ -186,7 +201,7 @@ fluxmargin_aprad = 0.05
 
 # minimum number of stars (integer number) or fraction (float) to use in
 # photometric calibration
-minstars = 0.5
+minstars = 0.8
 
 # solar color margin
 # solar color filtering allows for color indices

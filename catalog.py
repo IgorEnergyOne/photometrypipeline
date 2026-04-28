@@ -49,8 +49,8 @@ except ImportError:
     sys.exit()
 
 try:
-    from astroquery.vizier import Vizier
     from astroquery.sdss import SDSS
+    from toolbox import ResilientVizier as Vizier
 except ImportError:
     print('Module astroquery not found. Please install with: pip install '
           'astroquery')

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from astropy import units as u
 from astropy.coordinates import SkyCoord
-from astroquery.vizier import Vizier
+from toolbox import ResilientVizier as Vizier
 from astropy.table import Column
 from astropy.coordinates import Angle
 import re
@@ -488,6 +488,7 @@ def skycoord_match(gaia_cat: pd.DataFrame, sec_cat: pd.DataFrame, tag, tolerance
 
     gaia_matched = gaia_cat[mask].reset_index(drop=True)
     sec_matched = sec_cat.iloc[idx[mask]].reset_index(drop=True)
+    sec_matched['sep'] = sep[mask]
 
     # Merge the two DataFrames side-by-side
     both = pd.concat([gaia_matched, sec_matched.add_suffix(f'_{tag}')], axis=1)

@@ -1,0 +1,16 @@
+# VizieR mirror list
+# Lines starting with '#' and blank lines are ignored.
+# Source: https://vizier.unistra.fr/mirrors.html  (April 2026)
+#
+# Use bare server-root URLs (scheme + host + trailing slash, no portal sub-path).
+# The VizieR CGI endpoint /viz-bin/VizieR is always at the server root on
+# every mirror, so portal sub-paths such as /vizier/ must NOT be included here.
+#
+# Mirror                               Location
+http://vizier.cds.unistra.fr/          # CDS, Strasbourg, France
+http://vizier.nao.ac.jp/               # ADAC, Tokyo, Japan
+https://vizier.iucaa.in/               # IUCAA, Pune, India
+http://vizier.china-vo.org/            # NAOC, Beijing, China
+https://vizier.cfa.harvard.edu/        # CfA Harvard, Cambridge, USA
+http://vizier.idia.ac.za/              # IDIA, South Africa
+

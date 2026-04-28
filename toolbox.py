@@ -26,12 +26,15 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pandas as pd
 from astropy.table import vstack
 from astropy.time import Time
 from astroquery.jplhorizons import Horizons
 from astroquery.jplsbdb import SBDB
+from astroquery.vizier import Vizier
+from astroquery.exceptions import RemoteServiceError
 
 try:
     from past.utils import old_div
@@ -60,14 +63,33 @@ if sys.version_info > (3, 0):
 import logging
 
 
-# ======================================================
-# SELECT VIZIER MIRROR
-# ======================================================
+
+
+# WORKING WITH VIZIER MIRRORS
+
+def _mirror_origin(mirror):
+    """Return the scheme+host of *mirror*, discarding any portal sub-path.
+    Examples
+    --------
+    >>> _mirror_origin("http://vizier.nao.ac.jp/vizier/")
+    'http://vizier.nao.ac.jp'
+    >>> _mirror_origin("https://vizier.cfa.harvard.edu/vizier/")
+    'https://vizier.cfa.harvard.edu'
+    """
+    parsed = urlparse(mirror)
+    return f"{parsed.scheme}://{parsed.netloc}"
+
 
 def test_mirror(mirror, timeout=6, logger=None):
-    """Query a small record from one catalog on a given mirror."""
+    """Query a small record from one catalog on a given mirror.
+
+    The test URL is always built from the server *root* (scheme + host),
+    because the VizieR CGI lives at ``/viz-bin/VizieR`` on every mirror
+    regardless of what portal sub-path the mirror URL may contain.
+    """
     cat_id = "I/355/gaiadr3"  # Gaia DR3
-    test_url = f"{mirror.rstrip('/')}/viz-bin/VizieR?-source={cat_id}&-out.max=1"
+    origin = _mirror_origin(mirror)
+    test_url = f"{origin}/viz-bin/VizieR?-source={cat_id}&-out.max=1"
     log = logger.info if logger else print
     try:
         start = time.perf_counter()
@@ -146,13 +168,148 @@ def load_cache(path_cache, max_age_hours=12, logger=None):
     return None
 
 
-def check_mirror_accessible(mirror, logger=None):
-    """Return True if mirror still accessible, False otherwise."""
-    accessible = test_mirror(mirror, logger=logger) is not None
-    log = logger.info if logger else print
-    log(f"Mirror {mirror} accessible: {accessible}")
-    return accessible
+def load_vizier_mirrors(path):
+    """Read mirror URLs from a plain-text file (one URL per line, '#' comments).
 
+    Parameters
+    ----------
+    path : str or Path
+        Path to the mirrors file (e.g. ``$PHOTPIPEDIR/setup/vizier_mirrors.dat``).
+
+    Returns
+    -------
+    list[str]
+        List of mirror URL strings.
+    """
+    mirrors = []
+    try:
+        for raw in Path(path).read_text().splitlines():
+            line = raw.split('#')[0].strip()   # strip inline comments
+            if line:
+                mirrors.append(line)
+    except Exception as e:
+        print(f"Warning: could not load VizieR mirrors from {path}: {e}")
+    return mirrors
+
+
+class ResilientVizier:
+    """Transparent wrapper around :class:`astroquery.vizier.Vizier` that
+    automatically switches to an alternative mirror on connection failure.
+
+    Class-level state (shared across all instances within a process):
+
+    ``_mirrors`` : list[str]
+        Mirror URLs loaded from ``setup/vizier_mirrors.dat``.
+        Set once in ``_pp_conf.py`` via
+        ``ResilientVizier._mirrors = load_vizier_mirrors(...)``.
+
+    ``_cache_path`` : Path
+        Path to the JSON mirror-selection cache file.
+        Set once in ``_pp_conf.py`` via
+        ``ResilientVizier._cache_path = Path(rootpath) / '.vizier_mirror_cache.json'``.
+
+    ``_active_mirror`` : str or None
+        Currently active mirror URL, or ``None`` to use astroquery's default.
+        Pre-seeded from disk cache in ``_pp_conf.py``.
+
+    ``max_retries`` : int
+        Number of times to retry after a mirror switch (default ``1``).
+        Override in ``_pp_conf.py`` if needed (e.g. ``ResilientVizier.max_retries = 2``).
+    """
+
+    # ── class-level state, populated by _pp_conf.py ──────────────────────
+    _mirrors: list = []
+    _cache_path: Path = None
+    _active_mirror: str = None  # None → astroquery uses its built-in default
+    max_retries: int = 1
+    # ─────────────────────────────────────────────────────────────────────
+
+    # Exceptions that indicate a network / server problem worth retrying
+    _NETWORK_ERRORS = (
+        requests.ConnectionError,
+        requests.Timeout,
+        requests.exceptions.ReadTimeout,
+    )
+
+    def __init__(self, **kwargs):
+        """Accept the same keyword arguments as :class:`~astroquery.vizier.Vizier`."""
+        self._kwargs = kwargs
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _build_vizier(self):
+        """Return a real ``Vizier`` instance pointed at the active mirror.
+
+        ``astroquery.Vizier(server=...)`` expects a bare hostname (e.g.
+        ``'vizier.nao.ac.jp'``).  We extract that from the full mirror URL so
+        that mirrors stored with a portal sub-path (e.g. ``/vizier/``) are
+        handled correctly.
+        """
+        kwargs = dict(self._kwargs)
+        if self.__class__._active_mirror:
+            # Extract hostname only – astroquery builds the full URL internally.
+            # The correct constructor kwarg is 'vizier_server' (not 'server').
+            kwargs['vizier_server'] = urlparse(self.__class__._active_mirror).hostname
+        return Vizier(**kwargs)
+
+    @classmethod
+    def _switch_mirror(cls, logger=None):
+        """Reset active mirror, re-probe all mirrors, save winner to cache."""
+        log = logger.info if logger else print
+        log("ResilientVizier: current mirror failed – probing all mirrors …")
+        # Invalidate stale state first so a second concurrent failure doesn't
+        # re-use the dead mirror while probing is in progress.
+        cls._active_mirror = None
+
+        if not cls._mirrors:
+            log("ResilientVizier: no mirror list configured – using astroquery default")
+            return
+
+        winner = find_fastest_vizier_mirror(cls._mirrors, logger=logger)
+        cls._active_mirror = winner  # may be None if all mirrors are down
+
+        if winner and cls._cache_path:
+            save_cache(winner, Path(cls._cache_path), logger=logger)
+        elif not winner:
+            log("ResilientVizier: WARNING – no VizieR mirror is reachable!")
+
+    # ------------------------------------------------------------------
+    # Public query methods (mirror the Vizier API)
+    # ------------------------------------------------------------------
+
+    def _run_with_failover(self, method_name, *args, **kwargs):
+        """Execute ``method_name`` on a real Vizier, retrying after mirror switch."""
+        last_exc = None
+        for attempt in range(self.__class__.max_retries + 1):
+            try:
+                v = self._build_vizier()
+                return getattr(v, method_name)(*args, **kwargs)
+            except self.__class__._NETWORK_ERRORS as exc:
+                last_exc = exc
+                logging.warning(
+                    f"ResilientVizier: network error on attempt {attempt + 1} "
+                    f"({type(exc).__name__}: {exc}) – switching mirror"
+                )
+                self.__class__._switch_mirror()
+            except RemoteServiceError as exc:
+                last_exc = exc
+                logging.warning(
+                    f"ResilientVizier: remote service error on attempt {attempt + 1} "
+                    f"({exc}) – switching mirror"
+                )
+                self.__class__._switch_mirror()
+        raise last_exc  # re-raise if all retries exhausted
+
+    def query_region(self, *args, **kwargs):
+        return self._run_with_failover('query_region', *args, **kwargs)
+
+    def query_object(self, *args, **kwargs):
+        return self._run_with_failover('query_object', *args, **kwargs)
+
+    def query_catalog(self, *args, **kwargs):
+        return self._run_with_failover('query_catalog', *args, **kwargs)
 
 # TIME AND DATE
 
