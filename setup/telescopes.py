@@ -1307,6 +1307,68 @@ TianShan_param = {
     'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
+Taiwan1m_param = {
+    'telescope_instrument': 'Driver for Teledyne Princeton Instruments cameras' ,  # telescope/instrument name
+    'telescope_keyword': 'LOT',  # telescope/instrument keyword
+    'observatory_code': 'D35',  # MPC observatory code
+    'secpix': (0.376, 0.376),  # pixel size (arcsec) before binning
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    #'date_keyword': 'DATE|TIME-OBS',  # obs date/time
+   'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'JD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'RAPAS_Grp': 'RP'}, # GAIA Rp filter
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    # 'source_maxarea': 30,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+
+    'sex-config-file': rootpath + '/setup/Prompt7.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/Prompt7.scamp',
+    'reg_max_mag': 20.0,
+    'reg_search_radius': 1.0,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    # 'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+    #                 'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+    #                'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    #    'swarp-config-file': rootpath+'/setup/vatt4k.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
 
 Banon_param = {
     'telescope_instrument': 'ASCOM_QHYCCD-Cameras-Capture',  # telescope/instrument name
@@ -2923,9 +2985,9 @@ tngdolores_param = {
     # pp_prepare
     'object': 'OBJCAT',  # object name keyword
     'filter': 'FLT_ID',  # filter keyword
-    'filter_translations': {'B': 'B', 'V': 'V', 'I': 'I', 'R': 'R', 
+    'filter_translations': {'B': 'B', 'V': 'V', 'I': 'I', 'R': 'R',
                             'B_JOHN_10': 'B', 'V_JOHN_11': 'V',
-                            'R_JOHN_12': 'R', 'I_JOHN_13': 'I', 
+                            'R_JOHN_12': 'R', 'I_JOHN_13': 'I',
                             'B_John_10': 'B', 'V_John_11': 'V',
                             'R_John_12': 'R', 'I_John_13': 'I',
                             },
@@ -5624,7 +5686,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'FLI ML47-10': 'AZT-8',
                           'ML47-10': 'AZT-8',
                           'AZT-8': 'AZT-8',
-                          
+
                           '70-cm reflector AZT-8/FLI ML47-10': 'AZT-8',
 
                           'PL47-10 FLI': 'AZT-8_lisnyky',
@@ -5632,7 +5694,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'AZT-22': 'AZT-22',
                           '1.5m' : 'AZT-22_unfilled',
                           'AZT-22 1.5m': 'AZT22_si600cam',
-                            
+
                           'NT-60': 'NT-60',
                           'NT-60/Andor CCD/EMCCD (SDK2)': 'NT-60',
                           'Andor CCD/EMCCD (SDK2)': 'NT-60',
@@ -5644,7 +5706,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'FLI PL09000': 'Rozhen600',
                           'Zeiss-600': 'Rozhen600',
                           'Rozhen Zeiss-600/PL09000': 'Rozhen600',
-                          '2-m RCC': 'rozhen2000', 
+                          '2-m RCC': 'rozhen2000',
                           'Rozhen Zeiss-2000': 'rozhen2000',
                           'Rozhen Zeiss-2000/Andor':  'rozhen2000',
 
@@ -5661,6 +5723,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'ODK16 f/6.8': 'ODK168',
 
                           'FLI': 'TShAO-1m',
+                          'LOT': 'Taiwan-1m',
                           'LMI': 'DCTLMI',
                           'lmi': 'DCTLMI',
                           'arctic': 'ARC35ARCTIC',
@@ -5769,6 +5832,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'Prompt7': Prompt7_param,
                         'Prompt8': Prompt8_param,
                         'TShAO-1m': TianShan_param,
+                        'Taiwan-1m': Taiwan1m_param,
                         'DCTLMI': dctlmi_param,
                         'ARC35ARCTIC': arc35arctic_param,
                         'ARC35AGILE': arc35agile_param,
