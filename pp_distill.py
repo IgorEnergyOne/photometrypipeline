@@ -263,11 +263,16 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
                           'ra_deg': eph[0]['RA']-offset[0]/3600,
                           'dec_deg': eph[0]['DEC']-offset[1]/3600}
             # piggy-back on the same ephemeris call to store aspect data
+            logging.info('Extracting aspect data from Horizons ephemeris for '
+                         '%s (cat_idx=%d)' % (cat.obj.replace('_', ' '), cat_idx))
             for col in ('r', 'delta', 'alpha_true', 'ObsEclLon', 'ObsEclLat'):
                 try:
-                    obj_entry[col] = float(eph[0][_col])
-                except Exception:
+                    obj_entry[col] = float(eph[0][col])
+                    logging.info('  aspect field %s = %s' % (col, obj_entry[col]))
+                except Exception as e:
                     obj_entry[col] = np.nan
+                    logging.warning('  aspect field %s not available in '
+                                    'Horizons response: %s' % (col, e))
             objects.append(obj_entry)
             logging.info('Successfully grabbed Horizons position for %s ' %
                          cat.obj.replace('_', ' '))
@@ -570,9 +575,21 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
     for obj in objects:
         if 'r' in obj:
             key = (obj['ident'], cat_idx_to_name.get(obj['cat_idx'], ''))
-            aspect_lookup[key] = {k: obj[k]
-                                   for k in ('r', 'delta', 'alpha_true',
-                                             'ObsEclLon', 'ObsEclLat')}
+            aspect_data = {k: obj[k]
+                           for k in ('r', 'delta', 'alpha_true',
+                                     'ObsEclLon', 'ObsEclLat')}
+            all_nan = all(np.isnan(v) for v in aspect_data.values()
+                          if isinstance(v, float))
+            if all_nan:
+                logging.warning('aspect_lookup: all aspect fields are NaN '
+                                'for key %s — aspect data was not retrieved '
+                                'properly (check moving_primary_target logs)' % str(key))
+            else:
+                logging.info('aspect_lookup: stored aspect data for key %s: %s'
+                             % (str(key), aspect_data))
+            aspect_lookup[key] = aspect_data
+    logging.info('aspect_lookup has %d entries; keys: %s'
+                 % (len(aspect_lookup), list(aspect_lookup.keys())))
 
     # observatory code — same lookup used by moving_primary_target()
     try:
@@ -808,6 +825,9 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                     catalogname = '-'
                     filtername = '-'
                 asp = aspect_lookup.get((target, dat[10]), {})
+
+                logging.info('Aspect data for (%s, %s): %s'
+                             % (target, dat[10], asp))
                 data_row = pd.Series([reject_this_target, dat[10].replace(' ', '_'), target.replace('_', ' '),
                                       dat[9][0], dat[7], dat[8],
                                       dat[3], dat[4], (dat[1] - dat[3]) * 3600., (dat[2] - dat[4]) * 3600., offset[0],
