@@ -672,6 +672,7 @@ class LightCurveGUI:
         return alias
 
     def _fetch_jpl_data(self, lc, alias):
+    def _fetch_jpl_data(self, lc, alias):
         """Fetch basic JPL ephemeris columns (r, delta, alpha, EclLon/Lat) for *lc*
         and append them to ``lc.df``.  Returns ``(True, [added_cols])`` or ``False``."""
         # 1. Get / ask for target + observatory
@@ -755,21 +756,28 @@ class LightCurveGUI:
         present = [c for c in JPL_COLS if c in lc.df.columns]
         missing = [c for c in JPL_COLS if c not in lc.df.columns]
 
-        if not missing:
-            # All JPL columns are already present  -  nothing to do, they will
-            # be written to the file automatically.
+        # Columns that exist but contain only NaN / None (no real data)
+        empty = [c for c in present if lc.df[c].isna().all()]
+        # Treat fully-empty columns the same as missing ones for the prompt
+        effectively_missing = missing + empty
+
+        if not effectively_missing:
+            # All JPL columns are present and have data - nothing to do, they
+            # will be written to the file automatically.
             pass
         else:
-            # Some (or all) columns are absent  -  ask the user whether to fetch.
-            if present:
-                detail = (f"Present : {', '.join(present)}\n"
-                          f"Missing : {', '.join(missing)}\n\n")
+            # Some (or all) columns are absent or completely empty - ask the
+            # user whether to fetch.
+            have_data = [c for c in present if c not in empty]
+            if have_data:
+                detail = (f"Present with data : {', '.join(have_data)}\n"
+                          f"Missing / empty   : {', '.join(effectively_missing)}\n\n")
             else:
-                detail = f"Missing : {', '.join(missing)}\n\n"
+                detail = f"Missing / empty : {', '.join(effectively_missing)}\n\n"
 
             fetch_ans = messagebox.askyesno(
                 "Add JPL Data to CSV?",
-                f"The following JPL ephemeris columns are not in the current data:\n\n"
+                f"The following JPL ephemeris columns are missing or contain no data:\n\n"
                 f"{detail}"
                 "Fetch missing columns from JPL Horizons now?\n"
                 "(Requires internet connection and target/observatory info)\n\n"
