@@ -672,7 +672,6 @@ class LightCurveGUI:
         return alias
 
     def _fetch_jpl_data(self, lc, alias):
-    def _fetch_jpl_data(self, lc, alias):
         """Fetch basic JPL ephemeris columns (r, delta, alpha, EclLon/Lat) for *lc*
         and append them to ``lc.df``.  Returns ``(True, [added_cols])`` or ``False``."""
         # 1. Get / ask for target + observatory
