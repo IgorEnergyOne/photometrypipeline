@@ -157,6 +157,74 @@ AC32_oldcam_param = {
     'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
 }
 
+# Abastumani (119) new 1.5-m telescope R-C (folk)
+asa15_param = {
+    'telescope_instrument': 'SX-H36',  # telescope/instrument name
+    'telescope_keyword': 'ASA Z1500',  # telescope/instrument keyword
+    'observatory_code': '119',  # MPC observatory code
+    'secpix': (0.1696, 0.1696),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': False,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Clear': None},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 12,  # default sextractor source minimum N_pixels
+    'source_snr': 7,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/ASA15.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/ASA15.scamp',
+    'reg_max_mag': 16.5,  # 19
+    'reg_search_radius': 0.5,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/ASA15.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS'],
+
+    # additional parameters for atlas files
+    # diameter of the telescope's mirror
+    "telescope_diameter": 'APTDIA',
+    'observer': 'OBSERVER'
+}
+
 code052_param = {
     'telescope_instrument': 'Newton 0.61-m f/4.3',  # telescope/instrument name
     'telescope_keyword': 'agent_052',  # telescope/instrument keyword
@@ -5679,6 +5747,8 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           'IMG6303E': 'AC-32_oldcam',
                           'AC-32   ': 'AC-32_oldcam',
 
+                          'ASA-15': 'ASA-15',
+                          'SX-H36': 'ASA-15',
                           'Newton 0.61-m f/4.3': 'agent_052',
                           'SBIG ST-10 Dual CCD Camera': 'agent_052',
 
@@ -5808,6 +5878,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'AC-32   ': AC32_param,
                         'AC-32_oldcam': AC32_oldcam_param,
                         'CCD FLI PL4240': AC32_param,
+                        'ASA-15': asa15_param,
                         'Newton 0.61-m f/4.3': code052_param,
                         'Simeiz1000_PL1001E': simeiz_zeis_1000_PL1001E,
                         'Simeiz1000_ML09000': simeiz_zeis_1000_ML09000,
