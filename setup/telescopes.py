@@ -977,6 +977,68 @@ rozhen_2000 = {
     'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'GAIA3', 'APASS9', '2MASS']
 }
 
+rozhen_schmidt = {
+    'telescope_instrument': 'Rozhen Schmidt 50/70 cm',  # telescope/instrument name
+    'telescope_keyword': 'Rozhen Schmidt 50/70 cm',  # telescope/instrument keyword
+    'observatory_code': '071',  # MPC observatory code
+    'secpix': (1.079, 1.079),  # pixel size (arcsec) before binning
+
+    # image orientation preferences
+    'flipx': True,
+    'flipy': False,
+    'rotate': 0,
+
+    # instrument-specific FITS header keywords
+    'binning': ('XBINNING', 'YBINNING'),  # binning in x/y
+    'extent': ('NAXIS1', 'NAXIS2'),  # N_pixels in x/y
+    'ra': 'OBJCTRA',  # telescope pointing, RA
+    'dec': 'OBJCTDEC',  # telescope pointin, Dec
+    'radec_separator': ' ',  # RA/Dec hms separator, use 'XXX'
+    # if already in degrees
+    'date_keyword': 'DATE-OBS',  # obs date/time
+    # keyword; use
+    # 'date|time' if
+    # separate
+    'obsmidtime_jd': 'MIDTIMJD',  # obs midtime jd keyword
+    # (usually provided by
+    # pp_prepare
+    'object': 'OBJECT',  # object name keyword
+    'filter': 'FILTER',  # filter keyword
+    'filter_translations': {'V': 'V', 'R': 'R',
+                            'I': 'I', 'B': 'B',
+                            'Clear': None},
+    # filtername translation dictionary
+    'exptime': 'EXPTIME',  # exposure time keyword (s)
+    'airmass': 'AIRMASS',  # airmass keyword
+
+    # source extractor settings
+    'source_minarea': 5,  # default sextractor source minimum N_pixels
+    'source_snr': 3,  # default sextractor source snr for registration
+    'aprad_default': 5,  # default aperture radius in px
+    'aprad_range': [2, 10],  # [minimum, maximum] aperture radius (px)
+    'sex-config-file': rootpath + '/setup/Schmidt-50_70.sex',
+    'mask_file': {},
+    #                        mask files as a function of x,y binning
+
+    # scamp settings
+    'scamp-config-file': rootpath + '/setup/Schmidt-50_70.scamp',
+    'reg_max_mag': 18.5,  # 19
+    'reg_search_radius': .5,  # deg
+    'source_tolerance': 'high',
+
+    # swarp settings
+    'copy_keywords': ('TELESCOP,INSTRUME,FILTER,EXPTIME,OBJECT,' +
+                      'DATE-OBS,TIME-OBS,RA,DEC,SECPIX,AIRMASS,' +
+                      'TEL_KEYW,CCDBIN1,CCDBIN2,MIDTIMJD'),
+    #                         keywords to be copied in image
+    #                         combination using swarp
+    'swarp-config-file': rootpath + '/setup/Schmidt-50_70.swarp',
+
+    # default catalog settings
+    'astrometry_catalogs': ['GAIA3'],
+    'photometry_catalogs': ['GAIA3', 'PANSTARRS', 'SDSS-R9', 'APASS9', '2MASS']
+}
+
 # Kitab Boris Satovsky
 Kitab_param = {
     'telescope_instrument': 'RC-36/PL-09000',  # telescope/instrument name
@@ -5779,6 +5841,7 @@ instrument_identifiers = {'= "Vatt4k"': 'VATT4K',
                           '2-m RCC': 'rozhen2000',
                           'Rozhen Zeiss-2000': 'rozhen2000',
                           'Rozhen Zeiss-2000/Andor':  'rozhen2000',
+                          '50/70-cm Schmidt': 'Rozhen Schmidt 50/70 cm',
 
                           'D500': 'D500',
 
@@ -5893,6 +5956,7 @@ telescope_parameters = {'VATT4K': vatt4k_param,
                         'NT-60': NT60_param,
                         'Rozhen600': rozhen_600,
                         'rozhen2000': rozhen_2000,
+                        'Rozhen Schmidt 50/70 cm': rozhen_schmidt,
                         'D500': D500_param,
                         'ODK168': Banon_param,
                         'ODK16 f/6.8': Banon_param,
