@@ -341,6 +341,11 @@ class ConfigDialog:
         self._v_grid_alpha = ttk.DoubleVar(value=p.grid_alpha)
         _scale_row("Grid alpha:", self._v_grid_alpha, 0.0, 1.0)
 
+        # Y axis
+        _label_row("Y axis", pady=8)
+        self._v_min_y_range = ttk.DoubleVar(value=p.min_y_range)
+        _entry_row("Min. auto range (mag):", self._v_min_y_range)
+
         # Fonts
         _label_row("Fonts", pady=8)
         self._v_legend_fs = ttk.StringVar(value=p.legend_fontsize)
@@ -501,6 +506,7 @@ class ConfigDialog:
         cfg.plot.phase_wrap_linewidth = float(self._v_wrap_lw.get())
         cfg.plot.phase_wrap_alpha  = float(self._v_wrap_alpha.get())
         cfg.plot.grid_alpha        = float(self._v_grid_alpha.get())
+        cfg.plot.min_y_range       = float(self._v_min_y_range.get())
         cfg.plot.legend_fontsize   = self._v_legend_fs.get()
         cfg.plot.label_fontsize    = int(self._v_label_fs.get())
 

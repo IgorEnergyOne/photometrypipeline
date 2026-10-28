@@ -102,6 +102,7 @@ class PlotSection:
     phase_wrap_color: str = "gray"
     phase_wrap_linewidth: float = 0.8
     phase_wrap_alpha: float = 0.6
+    min_y_range: float = 0.2
 
 
 @dataclass
@@ -122,12 +123,34 @@ class ColorsSection:
 
 
 @dataclass
+class TextImportSection:
+    last_used: Dict[str, Any] = field(default_factory=lambda: {
+        "delimiter": "whitespace",
+        "skip_rows": 0,
+        "comment_char": "#",
+        "has_header": True,
+        "time_format": "julian_date",
+        "default_band": "V",
+        "col_time": "0",
+        "col_mag": "1",
+        "col_sig": "2",
+        "col_band": "",
+        "col_rejected": "",
+        "col_inst_mag": "",
+        "col_inst_sig": "",
+        "col_batch": "",
+    })
+    presets: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
 class AppConfig:
     app: AppSection = field(default_factory=AppSection)
     window: WindowSection = field(default_factory=WindowSection)
     defaults: DefaultsSection = field(default_factory=DefaultsSection)
     plot: PlotSection = field(default_factory=PlotSection)
     colors: ColorsSection = field(default_factory=ColorsSection)
+    text_import: TextImportSection = field(default_factory=TextImportSection)
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +195,12 @@ def _dict_to_config(d: dict) -> AppConfig:
                     cfg.colors.band.update(v)
             elif hasattr(cfg.colors, k):
                 setattr(cfg.colors, k, v)
+    if "text_import" in d:
+        ti_d = d["text_import"]
+        if "last_used" in ti_d and isinstance(ti_d["last_used"], dict):
+            cfg.text_import.last_used.update(ti_d["last_used"])
+        if "presets" in ti_d and isinstance(ti_d["presets"], dict):
+            cfg.text_import.presets.update(ti_d["presets"])
     return cfg
 
 

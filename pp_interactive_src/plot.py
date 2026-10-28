@@ -17,7 +17,7 @@ from tkinter import messagebox
 from .constants import DEFAULT_PHASE_MAX, OFFSET_ALL_KEY
 from .models import LightCurveData
 from .plot_settings import PlotSettings
-from .utils import _combine, _safe, debug_print
+from .utils import _combine, _safe, debug_print, format_asteroid_name
 
 if TYPE_CHECKING:
     from .gui import LightCurveGUI
@@ -107,6 +107,8 @@ class LightCurvePlot:
         self.auto_title = True
 
         self._y_limits_per_mode: Dict[str, Optional[Tuple[float, float]]] = {}
+        # (brighter, fainter) offsets from the curve centre, alternative to fixed limits
+        self._y_offsets_per_mode: Dict[str, Tuple[float, float]] = {}
         self._y_nticks_per_mode: Dict[str, Optional[int]] = {}
         self._current_mode: str = 'target'
         self._user_xlabel: Optional[str] = None
@@ -144,6 +146,13 @@ class LightCurvePlot:
                                           markersize=PlotSettings.SELECTION_MARKER['markersize'],
                                           zorder=PlotSettings.SELECTION_MARKER['zorder'],
                                           visible=False, animated=True)
+        (self.multi_sel_artist,) = self.ax.plot([], [], 's',
+                                                color='#00d4ff',
+                                                markersize=PlotSettings.SELECTION_MARKER['markersize'] + 3,
+                                                markeredgewidth=2.0,
+                                                markerfacecolor='none',
+                                                zorder=PlotSettings.SELECTION_MARKER['zorder'] - 1,
+                                                visible=False, animated=True)
         try:
             self.sel_text = self.ax.text(0, 0, '', color=PlotSettings.SELECTION_MARKER['color'],
                                          fontsize=_label_fs,
@@ -159,23 +168,33 @@ class LightCurvePlot:
 
     def _register_blit_artists(self):
         """Collect all current plot artists into the BlitManager for quick redraws."""
-        artists: List[matplotlib.artist.Artist] = [self.sel_artist]
+        artists: List[matplotlib.artist.Artist] = [self.sel_artist, self.multi_sel_artist]
         if getattr(self, 'sel_text', None) is not None:
             artists.append(self.sel_text)
+
+        def _flatten(obj):
+            if obj is None:
+                return []
+            if isinstance(obj, (list, tuple)):
+                flat = []
+                for item in obj:
+                    flat.extend(_flatten(item))
+                return flat
+            if hasattr(obj, 'lines'):
+                flat = []
+                for item in getattr(obj, 'lines', ()):
+                    flat.extend(_flatten(item))
+                if hasattr(obj, 'marker_line') and obj.marker_line is not None:
+                    flat.append(obj.marker_line)
+                return flat
+            return [obj]
+
         for entries in self.plotted_handles.values():
             for e in entries:
-                for key in ('valid', 'flagged', 'rejected'):
+                for key in ('valid', 'flagged', 'rejected', 'ghost_valid', 'ghost_flagged', 'ghost_rejected'):
                     h = e.get(key)
-                    if h is None:
-                        continue
-                    if hasattr(h, 'lines'):
-                        artists.extend(getattr(h, 'lines', []))
-                        artists.extend(getattr(h, 'caplines', []))
-                        artists.extend(getattr(h, 'barlinecols', []))
-                    elif isinstance(h, (list, tuple)):
-                        artists.extend(h)
-                    else:
-                        artists.append(h)
+                    if h is not None:
+                        artists.extend(_flatten(h))
         self.blit.add_artists(artists)
 
     def _clear_axes(self):
@@ -202,6 +221,15 @@ class LightCurvePlot:
             zorder=PlotSettings.SELECTION_MARKER.get('zorder', 20),
             visible=False, animated=True,
         )
+        (self.multi_sel_artist,) = self.ax.plot(
+            [], [], 's',
+            color='#00d4ff',
+            markersize=PlotSettings.SELECTION_MARKER.get('markersize', 5) + 3,
+            markeredgewidth=2.0,
+            markerfacecolor='none',
+            zorder=PlotSettings.SELECTION_MARKER.get('zorder', 20) - 1,
+            visible=False, animated=True,
+        )
         try:
             self.sel_text = self.ax.text(
                 0, 0, '', color=PlotSettings.SELECTION_MARKER.get('color', 'red'),
@@ -215,9 +243,30 @@ class LightCurvePlot:
         self.ylabel_text = None
         self.title_text = None
 
-    def _set_labels(self):
+    def curve_center(self, offsets: Dict[str, Dict[str, float]]) -> Optional[float]:
+        """Centre of the plotted non-rejected points (offsets included), or
+        ``None`` if nothing is plotted.
+
+        Taken as the midpoint of the 5th-95th percentile range so that single
+        outliers do not pull it away from the lightcurve itself."""
+        values = []
+        for alias, entries in self.plotted_handles.items():
+            for e in entries:
+                b = e['band']
+                off = offsets.get(alias, {}).get(str(b) if b is not None else OFFSET_ALL_KEY,
+                                                 offsets.get(alias, {}).get(OFFSET_ALL_KEY, 0.0))
+                y = np.asarray(e['Ybase'], dtype=float)[~e['mask_rejected']] + off
+                values.append(y[np.isfinite(y)])
+        y = np.concatenate(values) if values else np.empty(0)
+        if not y.size:
+            return None
+        lo, hi = np.percentile(y, [5, 95])
+        return float(lo + hi) / 2.0
+
+    def _set_labels(self, offsets: Optional[Dict[str, Dict[str, float]]] = None):
         """Apply axis labels/title, enforce magnitude-axis inversion, and honour
-        the user-defined Y limits and tick count."""
+        the user-defined Y limits (fixed, or as offsets from the curve centre)
+        and tick count."""
         # Prefer explicit user overrides; fall back to auto-generated values
         effective_xlabel = self._user_xlabel if self._user_xlabel is not None else self.xlabel
         effective_ylabel = self._user_ylabel if self._user_ylabel is not None else self.ylabel
@@ -240,8 +289,15 @@ class LightCurvePlot:
 
         lo, hi = self.ax.get_ylim()
 
-        if self.y_limits is not None:
-            req_lo, req_hi = self.y_limits
+        requested = self.y_limits
+        if requested is None and self.y_offsets is not None and offsets is not None:
+            center = self.curve_center(offsets)
+            if center is not None:
+                brighter, fainter = self.y_offsets
+                requested = (center - brighter, center + fainter)
+
+        if requested is not None:
+            req_lo, req_hi = requested
             self.ax.set_ylim(req_lo, req_hi)
             lo, hi = self.ax.get_ylim()
 
@@ -252,11 +308,13 @@ class LightCurvePlot:
             from matplotlib.ticker import AutoLocator
             self.ax.yaxis.set_major_locator(AutoLocator())
 
-        if self.y_limits is None:
+        if requested is None:
+            # Auto-scaling: never show less than ``min_y_range`` magnitudes
+            min_range = self._cfg.plot.min_y_range if self._cfg is not None else 0.2
             extent = abs(hi - lo)
-            if extent < 0.2:
+            if extent < min_range:
                 mid = (hi + lo) / 2.0
-                new_half = 0.1
+                new_half = min_range / 2.0
                 if lo > hi:
                     self.ax.set_ylim(mid + new_half, mid - new_half)
                 else:
@@ -274,6 +332,12 @@ class LightCurvePlot:
         return self._y_limits_per_mode.get(self._current_mode)
 
     @property
+    def y_offsets(self) -> Optional[Tuple[float, float]]:
+        """(brighter, fainter) Y offsets from the curve centre for the current
+        mode, or ``None`` when not in offset mode."""
+        return self._y_offsets_per_mode.get(self._current_mode)
+
+    @property
     def y_nticks(self) -> Optional[int]:
         """Y-axis tick count for the currently active mode, or ``None`` for auto."""
         return self._y_nticks_per_mode.get(self._current_mode)
@@ -282,10 +346,29 @@ class LightCurvePlot:
         """Set manual Y-axis bounds and optional tick count for the **current mode**.
         Pass ``None`` for both bounds to revert to automatic scaling for this mode."""
         mode = self._current_mode
+        self._y_offsets_per_mode.pop(mode, None)
         if ymin is None or ymax is None:
             self._y_limits_per_mode.pop(mode, None)
         else:
             self._y_limits_per_mode[mode] = (ymin, ymax)
+        self._set_y_nticks(nticks)
+
+    def set_y_offsets(self, brighter: float, fainter: float, nticks: Optional[int] = None):
+        """Show the **current mode** as the curve centre minus *brighter* to the
+        centre plus *fainter* magnitudes; the centre follows the data on redraw."""
+        mode = self._current_mode
+        self._y_limits_per_mode.pop(mode, None)
+        self._y_offsets_per_mode[mode] = (abs(brighter), abs(fainter))
+        self._set_y_nticks(nticks)
+
+    def reset_y_ranges(self):
+        """Drop the manual Y ranges (limits and centre offsets) of **all** modes,
+        e.g. when a new document is opened."""
+        self._y_limits_per_mode.clear()
+        self._y_offsets_per_mode.clear()
+
+    def _set_y_nticks(self, nticks: Optional[int]):
+        mode = self._current_mode
         if nticks is None:
             self._y_nticks_per_mode.pop(mode, None)
         else:
@@ -297,6 +380,18 @@ class LightCurvePlot:
         if self.parent_gui and hasattr(self.parent_gui, 'plot_settings'):
             return self.parent_gui.plot_settings.get_color(b, idx)
         return PlotSettings.DEFAULT_COLORS[idx % len(PlotSettings.DEFAULT_COLORS)]
+
+    def _choose_marker_for_batch(self, batch_val, batches: List) -> str:
+        """Return the marker shape for a specific batch identifier."""
+        available = [m[0] for m in PlotSettings.MARKERS]
+        try:
+            idx = batches.index(batch_val)
+        except Exception:
+            try:
+                idx = int(batch_val) - 1
+            except Exception:
+                idx = 0
+        return available[idx % len(available)]
 
     def _compute_time_x(self, arr_jd: np.ndarray, time_mode: str, period_hours: Optional[float]) -> np.ndarray:
         """Convert raw JD values to the X-axis representation selected by *time_mode*.
@@ -399,11 +494,19 @@ class LightCurvePlot:
             use_lt_flag = int(bool(getattr(self.parent_gui.use_lighttime_var, 'get', lambda: False)()))
         except Exception:
             use_lt_flag = 0
+        try:
+            edit_mode_flag = int(bool(getattr(self.parent_gui, 'edit_mode', False)))
+        except Exception:
+            edit_mode_flag = 0
+        try:
+            batch_markers_flag = int(bool(getattr(self.parent_gui, 'show_batch_markers', False)))
+        except Exception:
+            batch_markers_flag = 0
 
         signature = (f"{visible_aliases}|{mode}|{time_mode}{rp}|{errorbar_type}"
                      f"|{selected_band}|rej={int(bool(show_rejected))}|legend={legend_flag}|grid={grid_flag}"
                      f"|colors={colors_flag}|loc={colors_loc}"
-                     f"|rm={use_rm_flag}|lt={use_lt_flag}"
+                     f"|rm={use_rm_flag}|lt={use_lt_flag}|edit={edit_mode_flag}|bm={batch_markers_flag}"
                      f"|{self.marker_style}|{self.marker_size}|{self.valid_color}|{offsets_data}")
         return signature
 
@@ -534,12 +637,19 @@ class LightCurvePlot:
                     except Exception:
                         phase_max = DEFAULT_PHASE_MAX
 
+                show_batch_markers = bool(getattr(self.parent_gui, 'show_batch_markers', False))
+                use_batch_markers = show_batch_markers and lc.has_batches()
+                batch_arr_full = lc.arr.get('batch_number')
+                batches_list = lc.get_batches() if use_batch_markers else []
+
                 for bidx, b in enumerate(bands_to_draw):
                     band_mask = np.ones_like(jd, dtype=bool)
                     if b is not None and band_col is not None and len(band_col) == len(jd):
                         band_mask = (band_col.astype(str) == str(b))
                     if not np.any(band_mask):
                         continue
+
+                    batch_col = batch_arr_full[band_mask] if (use_batch_markers and batch_arr_full is not None) else None
 
                     X_raw = self._compute_time_x(jd[band_mask], time_mode, period)
 
@@ -591,36 +701,56 @@ class LightCurvePlot:
                                     edge_width=None, alpha=1.0, zorder_marker=10):
                         if not np.any(m):
                             return None
-                        Xplot = X_override if X_override is not None else X
-                        Y_plot = Ybase[m] + off
-                        mfc = face_color if face_color is not None else c
-                        mec = edge_color if edge_color is not None else c
-                        mew = edge_width if edge_width is not None else 0.5
-                        want_err = (Yerr is not None and
-                                    getattr(self.parent_gui, 'errorbar_type', 'none') != 'none')
-                        if want_err:
-                            container = self.ax.errorbar(
-                                Xplot[m], Y_plot, yerr=Yerr[m], fmt='none', ecolor=mec,
-                                capsize=self.errorbar_capsize, capthick=self.errorbar_capthick,
-                                elinewidth=self.errorbar_linewidth,
-                                zorder=zorder_marker - 5, alpha=alpha,
-                            )
-                            line, = self.ax.plot(
-                                Xplot[m], Y_plot, linestyle='None', marker=self.marker_style,
-                                markersize=self.marker_size, color=mfc,
-                                markerfacecolor=mfc, markeredgecolor=mec,
-                                markeredgewidth=mew, zorder=zorder_marker, picker=5, alpha=alpha,
-                            )
-                            container.marker_line = line
-                            return container
+
+                        def _plot_sub_series(sub_m, marker_form):
+                            if not np.any(sub_m):
+                                return None
+                            Xplot = X_override if X_override is not None else X
+                            Y_plot = Ybase[sub_m] + off
+                            mfc = face_color if face_color is not None else c
+                            mec = edge_color if edge_color is not None else c
+                            mew = edge_width if edge_width is not None else 0.5
+                            want_err = (Yerr is not None and
+                                        getattr(self.parent_gui, 'errorbar_type', 'none') != 'none')
+                            if want_err:
+                                container = self.ax.errorbar(
+                                    Xplot[sub_m], Y_plot, yerr=Yerr[sub_m], fmt='none', ecolor=mec,
+                                    capsize=self.errorbar_capsize, capthick=self.errorbar_capthick,
+                                    elinewidth=self.errorbar_linewidth,
+                                    zorder=zorder_marker - 5, alpha=alpha,
+                                )
+                                line, = self.ax.plot(
+                                    Xplot[sub_m], Y_plot, linestyle='None', marker=marker_form,
+                                    markersize=self.marker_size, color=mfc,
+                                    markerfacecolor=mfc, markeredgecolor=mec,
+                                    markeredgewidth=mew, zorder=zorder_marker, picker=5, alpha=alpha,
+                                )
+                                container.marker_line = line
+                                return container
+                            else:
+                                line, = self.ax.plot(
+                                    Xplot[sub_m], Y_plot, linestyle='None', marker=marker_form,
+                                    markersize=self.marker_size, color=mfc,
+                                    markerfacecolor=mfc, markeredgecolor=mec,
+                                    markeredgewidth=mew, zorder=zorder_marker, picker=5, alpha=alpha,
+                                )
+                                return line
+
+                        if use_batch_markers and batch_col is not None and batches_list:
+                            res_handles = None
+                            for b_val in batches_list:
+                                sub_m = m & (batch_col == b_val)
+                                if np.any(sub_m):
+                                    b_marker = self._choose_marker_for_batch(b_val, batches_list)
+                                    h_sub = _plot_sub_series(sub_m, b_marker)
+                                    res_handles = _combine(res_handles, h_sub)
+                            sub_nan = m & pd.isna(batch_col)
+                            if np.any(sub_nan):
+                                h_sub = _plot_sub_series(sub_nan, self.marker_style)
+                                res_handles = _combine(res_handles, h_sub)
+                            return res_handles
                         else:
-                            line, = self.ax.plot(
-                                Xplot[m], Y_plot, linestyle='None', marker=self.marker_style,
-                                markersize=self.marker_size, color=mfc,
-                                markerfacecolor=mfc, markeredgecolor=mec,
-                                markeredgewidth=mew, zorder=zorder_marker, picker=5, alpha=alpha,
-                            )
-                            return line
+                            return _plot_sub_series(m, self.marker_style)
 
                     if time_mode == 'rotation_phase' and phase_max > 1.0:
                         c1 = is_cycle1
@@ -780,7 +910,7 @@ class LightCurvePlot:
                     lc = lc_dict[only]
                     if lc.df is not None and 'target' in lc.df.columns and not lc.df.empty:
                         try:
-                            self.title = str(lc.df['target'].iloc[0])
+                            self.title = format_asteroid_name(lc.df['target'].iloc[0])
                         except Exception:
                             pass
 
@@ -813,6 +943,32 @@ class LightCurvePlot:
             if use_lt and "(LT-corr)" not in self.xlabel:
                 self.xlabel = self.xlabel + " (LT-corr)"
 
+            # -- Draw batch indicators in edit mode ---------------------------
+            if getattr(self.parent_gui, 'edit_mode', False):
+                for alias, lc in lc_dict.items():
+                    if not visible.get(alias, True) or lc.df is None or not lc.has_batches():
+                        continue
+                    batches = lc.get_batches()
+                    if len(batches) <= 1:
+                        continue
+                    cmap = plt.get_cmap('tab10')
+                    for b_i, b_val in enumerate(batches):
+                        b_idx = lc.get_batch_indices(b_val)
+                        if not b_idx:
+                            continue
+                        jd_b = lc.arr['jd'][b_idx]
+                        if jd_b.size == 0 or np.all(np.isnan(jd_b)):
+                            continue
+                        X_b = self._compute_time_x(jd_b, time_mode, period)
+                        if time_mode == 'rotation_phase':
+                            X_b = np.mod(X_b, 1.0)
+                        valid_xb = X_b[np.isfinite(X_b)]
+                        if valid_xb.size == 0:
+                            continue
+                        xmin_b, xmax_b = float(np.min(valid_xb)), float(np.max(valid_xb))
+                        b_color = cmap(b_i % 10)
+                        self.ax.axvspan(xmin_b, xmax_b, color=b_color, alpha=0.08, zorder=0)
+
             # rotation_phase x limits and wrap boundary
             if time_mode == 'rotation_phase':
                 try:
@@ -838,7 +994,8 @@ class LightCurvePlot:
                 except Exception:
                     pass
 
-            self._set_labels()
+            self._set_labels(offsets)
+            self._update_selection_artists(lc_dict, offsets, mode, time_mode)
             self._register_blit_artists()
             _safe(self.fig.tight_layout)
 
@@ -874,11 +1031,14 @@ class LightCurvePlot:
 
                     if handle is None:
                         return
-                    if hasattr(handle, 'lines') or hasattr(handle, 'caplines') or hasattr(handle, 'barlinecols'):
-                        _vis(getattr(handle, 'lines', []), visible)
-                        err_on = bool(visible and (self.parent_gui.errorbar_type != 'none'))
-                        _vis(getattr(handle, 'caplines', []), err_on)
-                        _vis(getattr(handle, 'barlinecols', []), err_on)
+                    if hasattr(handle, 'lines'):
+                        err_on = bool(visible and (getattr(self.parent_gui, 'errorbar_type', 'none') != 'none'))
+                        if len(handle.lines) > 0 and handle.lines[0] is not None:
+                            _vis(handle.lines[0], visible)
+                        if len(handle.lines) > 1:
+                            _vis(handle.lines[1], err_on)
+                        if len(handle.lines) > 2:
+                            _vis(handle.lines[2], err_on)
                         if hasattr(handle, 'marker_line'):
                             _vis(handle.marker_line, visible)
                         return
@@ -930,14 +1090,19 @@ class LightCurvePlot:
                                     segs.append(np.array([[Xm[i], Ym[i]], [Xm[i], Ym[i]]]))
                                 else:
                                     segs.append(np.array([[Xm[i], Ym[i] - dy], [Xm[i], Ym[i] + dy]]))
-                            for lc_col in getattr(h, 'barlinecols', []):
+                            bar_cols = h.lines[2] if len(h.lines) > 2 else ()
+                            for lc_col in bar_cols:
                                 lc_col.set_segments(segs)
-                            for cap in getattr(h, 'caplines', []):
+                                lc_col.set_visible(True)
+                            caps = h.lines[1] if len(h.lines) > 1 else ()
+                            for cap in caps:
                                 cap.set_visible(True)
                         else:
-                            for lc_col in getattr(h, 'barlinecols', []):
+                            bar_cols = h.lines[2] if len(h.lines) > 2 else ()
+                            for lc_col in bar_cols:
                                 lc_col.set_visible(False)
-                            for cap in getattr(h, 'caplines', []):
+                            caps = h.lines[1] if len(h.lines) > 1 else ()
+                            for cap in caps:
                                 cap.set_visible(False)
 
                         if hasattr(h, 'marker_line') and h.marker_line is not None:
@@ -990,9 +1155,67 @@ class LightCurvePlot:
                         _set_visible(h, want)
 
         # -- selection marker update ------------------------------------------
+        self._update_selection_artists(lc_dict, offsets, mode, time_mode)
+        self._set_labels(offsets)
+        self.blit.quick_redraw()
+
+    def _update_selection_artists(self, lc_dict, offsets, mode, time_mode):
+        """Update positions and visibility of single selection and multi-selection markers."""
         sel = getattr(self, 'selection', {'alias': None, 'index': None})
         sel_alias = sel.get('alias')
         sel_idx = sel.get('index')
+
+        # 1. Multi-selection points
+        sel_indices = set()
+        if self.parent_gui is not None and hasattr(self.parent_gui, 'selected_point_indices'):
+            sel_indices = set(self.parent_gui.selected_point_indices)
+
+        if sel_alias in lc_dict and sel_indices:
+            lc = lc_dict[sel_alias]
+            df = lc.df
+            arr = lc.arr
+            if df is not None and len(df) > 0:
+                valid_sel_idx = [i for i in sorted(sel_indices) if 0 <= i < len(df)]
+                if valid_sel_idx:
+                    jd_all = arr.get('jd')
+                    period = None
+                    if time_mode == 'rotation_phase' and self.parent_gui is not None:
+                        try:
+                            period = float(self.parent_gui.rotation_period_var.get())
+                        except Exception:
+                            period = None
+                    X_all = self._compute_time_x(jd_all, time_mode, period)
+                    if time_mode == 'rotation_phase':
+                        X_all = np.mod(X_all, 1.0)
+
+                    if mode == 'target' and 'mag' in df.columns:
+                        Y_all = arr.get('mag')
+                    elif mode == 'instrumental' and 'inst_mag' in df.columns:
+                        Y_all = arr.get('inst_mag')
+                    elif mode == 'relative' and 'rel_mag' in df.columns:
+                        Y_all = arr.get('rel_mag')
+                    else:
+                        Y_all = arr.get('mag_control', pd.Series(np.zeros(len(df))))
+
+                    bands = arr.get('band')
+                    multi_x = []
+                    multi_y = []
+                    for idx_val in valid_sel_idx:
+                        b_val = str(bands[idx_val]) if bands is not None and idx_val < len(bands) else None
+                        off = offsets.get(sel_alias, {}).get(
+                            b_val, offsets.get(sel_alias, {}).get(OFFSET_ALL_KEY, 0.0))
+                        multi_x.append(X_all[idx_val])
+                        multi_y.append(Y_all[idx_val] + off)
+                    self.multi_sel_artist.set_data(multi_x, multi_y)
+                    self.multi_sel_artist.set_visible(True)
+                else:
+                    self.multi_sel_artist.set_visible(False)
+            else:
+                self.multi_sel_artist.set_visible(False)
+        else:
+            self.multi_sel_artist.set_visible(False)
+
+        # 2. Single focused selection point and text label
         if sel_alias in lc_dict and sel_idx is not None:
             lc = lc_dict[sel_alias]
             df = lc.df
@@ -1019,6 +1242,8 @@ class LightCurvePlot:
                     sy = float(df['mag'].iloc[sel_idx])
                 elif mode == 'instrumental' and 'inst_mag' in df.columns:
                     sy = float(df['inst_mag'].iloc[sel_idx])
+                elif mode == 'relative' and 'rel_mag' in df.columns:
+                    sy = float(df['rel_mag'].iloc[sel_idx])
                 else:
                     sy = float(df.get('mag_control', pd.Series(np.zeros(len(df))))[sel_idx])
                 off = offsets.get(sel_alias, {}).get(
@@ -1027,8 +1252,14 @@ class LightCurvePlot:
                 self.sel_artist.set_visible(True)
                 txt = ''
                 try:
+                    if 'batch_number' in df.columns and not pd.isna(df['batch_number'].iloc[sel_idx]):
+                        bnum = df['batch_number'].iloc[sel_idx]
+                        txt += f"[B:{bnum}] "
+                    elif 'batch' in df.columns and not pd.isna(df['batch'].iloc[sel_idx]):
+                        bnum = df['batch'].iloc[sel_idx]
+                        txt += f"[B:{bnum}] "
                     if 'filename' in df.columns:
-                        txt = str(df['filename'].iloc[sel_idx])
+                        txt += str(df['filename'].iloc[sel_idx])
                 except Exception:
                     txt = ''
                 if getattr(self, 'sel_text', None) is not None and txt:
@@ -1070,10 +1301,87 @@ class LightCurvePlot:
                 except Exception:
                     pass
 
-        self._set_labels()
-        self.blit.quick_redraw()
-
     #  -  -  -  point picking  -  -  - 
+
+    def select_points_in_region(
+        self,
+        xmin: float,
+        xmax: float,
+        ymin: float,
+        ymax: float,
+        lc_dict: Dict[str, LightCurveData],
+        offsets: Dict[str, Dict[str, float]],
+        mode: str,
+        time_mode: str,
+        selected_bands: Set[str],
+        show_rejected: bool,
+    ) -> List[Tuple[str, int, Optional[str]]]:
+        """Find all data points whose (X, Y) fall within [xmin, xmax] and [ymin, ymax].
+
+        Returns a list of (alias, dataframe_index, band) tuples.
+        """
+        x_lo, x_hi = min(xmin, xmax), max(xmin, xmax)
+        y_lo, y_hi = min(ymin, ymax), max(ymin, ymax)
+
+        matched = []
+        for alias, lc in lc_dict.items():
+            if lc.df is None or lc.df.empty:
+                continue
+            df = lc.df
+            arr = lc.arr
+            jd = arr.get('jd')
+            if jd is None or not jd.size:
+                continue
+            bands = arr.get('band')
+            rejected = arr.get('rejected') if arr.get('rejected') is not None else np.zeros(len(df), dtype=bool)
+
+            band_mask = np.ones(len(df), dtype=bool)
+            if (selected_bands is not None) and ('band' in df.columns):
+                band_mask = df['band'].astype(str).isin(selected_bands).to_numpy()
+
+            vis_mask = band_mask & (~np.isnan(jd))
+            if not show_rejected:
+                vis_mask &= (~rejected)
+
+            period = None
+            if time_mode == 'rotation_phase' and self.parent_gui is not None:
+                try:
+                    period = float(self.parent_gui.rotation_period_var.get())
+                except Exception:
+                    period = None
+            X_all = self._compute_time_x(jd, time_mode, period)
+            if time_mode == 'rotation_phase':
+                X_all = np.mod(X_all, 1.0)
+
+            if mode == 'target':
+                Y_all = arr.get('mag')
+            elif mode == 'instrumental':
+                Y_all = arr.get('inst_mag')
+            elif mode == 'relative':
+                Y_all = arr.get('rel_mag')
+            else:
+                Y_all = arr.get('mag_control')
+            if Y_all is None:
+                continue
+
+            off_all = np.zeros(len(df))
+            if bands is not None:
+                for i in np.nonzero(vis_mask)[0]:
+                    bval = str(bands[i]) if bands is not None else None
+                    off_all[i] = offsets.get(alias, {}).get(
+                        bval, offsets.get(alias, {}).get(OFFSET_ALL_KEY, 0.0))
+            else:
+                off_all[:] = offsets.get(alias, {}).get(OFFSET_ALL_KEY, 0.0)
+
+            Y_plotted = Y_all + off_all
+
+            in_box = vis_mask & (X_all >= x_lo) & (X_all <= x_hi) & (Y_plotted >= y_lo) & (Y_plotted <= y_hi)
+            matched_indices = np.nonzero(in_box)[0]
+            for idx in matched_indices:
+                b_val = str(bands[idx]) if bands is not None else None
+                matched.append((alias, int(idx), b_val))
+
+        return matched 
 
     def select_nearest_point(
         self,

@@ -5,7 +5,8 @@ Data-layer classes for pp_interactive_src: FitsContext and LightCurveData.
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -51,28 +52,36 @@ class FitsContext:
 
 
 class LightCurveData:
-    """Container for one CSV light-curve plus cached numpy arrays for fast plotting.
+    """Container for one light-curve dataset plus cached numpy arrays for fast plotting.
 
     Attributes:
-        filename:  Path to the source CSV file.
-        df:        Full DataFrame (the authoritative data store).
-        arr:       Dict of pre-cast numpy arrays mirroring key DataFrame columns;
-                   kept in sync after every mutation so the plot layer never has
-                   to re-allocate on each redraw.
+        filename:     Path to the source file.
+        df:           Full DataFrame (the authoritative data store).
+        arr:          Dict of pre-cast numpy arrays mirroring key DataFrame columns;
+                      kept in sync after every mutation so the plot layer never has
+                      to re-allocate on each redraw.
+        metadata:     Extra metadata parsed from file headers (e.g. ATLAS zero_time).
+        fits_context: Optional FitsContext constructed during loading (e.g. from ATLAS headers).
     """
 
-    def __init__(self, filepath: Optional[str] = None):
+    def __init__(self, filepath: Optional[str] = None, loader_name: Optional[str] = None, **loader_kwargs):
         self.filename: Optional[str] = None
         self.df: Optional[pd.DataFrame] = None
         self.arr: Dict[str, np.ndarray] = {}
+        self.metadata: Dict[str, Any] = {}
+        self.fits_context: Optional[FitsContext] = None
         if filepath:
-            self.load(filepath)
+            self.load(filepath, loader_name=loader_name, **loader_kwargs)
 
     #  -  -  -  I/O  -  -  - 
-    def load(self, filepath: str) -> None:
-        """Load a CSV file, ensure required columns exist, and prime the array cache."""
+    def load(self, filepath: str, loader_name: Optional[str] = None, **loader_kwargs) -> None:
+        """Load a lightcurve file via LoaderRegistry, ensure columns, and prime cache."""
+        from .loaders import loaders_registry
         self.filename = filepath
-        self.df = pd.read_csv(filepath)
+        result = loaders_registry.load(filepath, loader_name=loader_name, **loader_kwargs)
+        self.df = result.df
+        self.metadata = result.metadata
+        self.fits_context = result.fits_context
         self._ensure_columns()
         self._fill_arrays_cache()
 
@@ -80,6 +89,23 @@ class LightCurveData:
         """Persist the current DataFrame back to the original CSV path."""
         if self.df is not None and self.filename:
             self.df.to_csv(self.filename, index=False)
+
+    def has_point_filenames(self) -> bool:
+        """Return True when individual point filenames are present for the lightcurve."""
+        if 'has_point_filenames' in self.metadata:
+            return bool(self.metadata['has_point_filenames'])
+        if self.df is None or 'filename' not in self.df.columns:
+            return False
+        valid = self.df['filename'].dropna().astype(str).str.strip()
+        if len(valid) == 0:
+            return False
+        base = os.path.basename(self.filename) if self.filename else "lightcurve.csv"
+        stem = Path(self.filename).stem if self.filename else "lightcurve"
+        if valid.nunique() > 1:
+            return True
+        if valid.iloc[0] not in (base, stem, "lightcurve.csv"):
+            return True
+        return False
 
     #  -  -  -  internals  -  -  - 
     def _ensure_columns(self):
@@ -107,6 +133,13 @@ class LightCurveData:
         self.arr['band'] = df.get('band', pd.Series(dtype=object)).astype(str).to_numpy(copy=False)
         self.arr['flags'] = df.get('sextractor_flags', pd.Series(dtype=int)).to_numpy(dtype=int, copy=False)
         self.arr['rejected'] = df.get('rejected', pd.Series(dtype=bool)).to_numpy(dtype=bool, copy=False)
+        # Batch column (if present)
+        if 'batch_number' in df.columns:
+            self.arr['batch_number'] = df['batch_number'].to_numpy(copy=False)
+        elif 'batch' in df.columns:
+            self.arr['batch_number'] = df['batch'].to_numpy(copy=False)
+        else:
+            self.arr['batch_number'] = None
         # JPL-derived optional columns
         self.arr['reduced_mag'] = df.get('reduced_mag', pd.Series(dtype=float)).to_numpy(dtype=float, copy=False)
         self.arr['corrected_jd'] = df.get('corrected_jd', pd.Series(dtype=float)).to_numpy(dtype=float, copy=False)
@@ -117,6 +150,54 @@ class LightCurveData:
             return
         self.df.loc[index, 'rejected'] = not bool(self.df.loc[index, 'rejected'])
         self.arr['rejected'] = self.df['rejected'].to_numpy(dtype=bool, copy=False)
+
+    def has_batches(self) -> bool:
+        """Return True if batch information is present in the dataset."""
+        if self.df is None:
+            return False
+        col = 'batch_number' if 'batch_number' in self.df.columns else 'batch' if 'batch' in self.df.columns else None
+        if col is None:
+            return False
+        return not self.df[col].isna().all()
+
+    def get_batches(self) -> List[int]:
+        """Return sorted list of unique batch identifiers."""
+        if not self.has_batches():
+            return []
+        col = 'batch_number' if 'batch_number' in self.df.columns else 'batch'
+        vals = self.df[col].dropna().unique().tolist()
+        try:
+            return sorted(vals, key=lambda x: int(x))
+        except Exception:
+            return sorted(vals, key=lambda x: str(x))
+
+    def get_batch_indices(self, batch_val) -> List[int]:
+        """Return row indices of points belonging to a specific batch."""
+        if not self.has_batches():
+            return []
+        col = 'batch_number' if 'batch_number' in self.df.columns else 'batch'
+        return self.df.index[self.df[col] == batch_val].tolist()
+
+    def move_points_magnitude(self, indices: Iterable[int], delta_mag: float, mode: str = 'target') -> None:
+        """Adjust magnitude of selected points by delta_mag and sync caches."""
+        if self.df is None or not indices:
+            return
+        idx_list = list(indices)
+        if mode == 'control':
+            if 'mag_control' in self.df.columns:
+                self.df.loc[idx_list, 'mag_control'] += delta_mag
+            if 'control_mag_inst' in self.df.columns:
+                self.df.loc[idx_list, 'control_mag_inst'] += delta_mag
+        else:
+            if 'mag' in self.df.columns:
+                self.df.loc[idx_list, 'mag'] += delta_mag
+            if 'inst_mag' in self.df.columns:
+                self.df.loc[idx_list, 'inst_mag'] += delta_mag
+            if 'rel_mag' in self.df.columns:
+                self.df.loc[idx_list, 'rel_mag'] += delta_mag
+            if 'reduced_mag' in self.df.columns:
+                self.df.loc[idx_list, 'reduced_mag'] += delta_mag
+        self._fill_arrays_cache()
 
     def get_bands(self) -> List[str]:
         """Return the unique photometric filter bands, in the canonical order."""

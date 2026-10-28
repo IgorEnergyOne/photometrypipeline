@@ -21,6 +21,12 @@ from .config import (  # noqa: F401
 )
 from .config_dialog import ConfigDialog                  # noqa: F401
 from .models import FitsContext, LightCurveData          # noqa: F401
+from .loaders import (                                   # noqa: F401
+    BaseLoader, CSVLoader, AtlasLoader, CustomTextLoader,
+    LoaderRegistry, loaders_registry,
+    LightCurveLoadResult, TextImportConfig,
+)
+from .import_dialog import TextImportDialog              # noqa: F401
 from .plot_settings import PlotSettings                  # noqa: F401
 from .plot import BlitManager, LightCurvePlot            # noqa: F401
 from .image_viewer import AsteroidImageViewer            # noqa: F401
@@ -34,6 +40,10 @@ __all__ = [
     "StarPickerDialog", "apply_new_control_star", "reset_control_star",
     "read_ldac_df", "collect_fits_ldac_pairs",
     "FitsContext", "LightCurveData",
+    "BaseLoader", "CSVLoader", "AtlasLoader", "CustomTextLoader",
+    "LoaderRegistry", "loaders_registry",
+    "LightCurveLoadResult", "TextImportConfig",
+    "TextImportDialog",
     "PlotSettings",
     "BlitManager", "LightCurvePlot",
     "AsteroidImageViewer",

@@ -44,6 +44,40 @@ def debug_print(*args, **kwargs):
         print("[DEBUG]", *args, **kwargs)
 
 
+_PROVISIONAL_DESIG = re.compile(r'^\d{4}\s+(?:[A-Z]{2}\d*|P-L|T-[123])$')
+
+
+def format_asteroid_name(name: str) -> str:
+    """Return *name* in the conventional form with the number in brackets.
+
+    JPL target names put the provisional designation in brackets instead::
+
+        format_asteroid_name("153201 (2000 WO107)")   # -> "(153201) 2000 WO107"
+        format_asteroid_name("1024 Hale (A923 XC)")   # -> "(1024) Hale"
+        format_asteroid_name("(2009 FF)")             # -> "2009 FF"
+        format_asteroid_name("1627 Ivar")             # -> "(1627) Ivar"
+
+    Anything not recognised as an asteroid name is returned unchanged.
+    """
+    s = str(name).strip()
+    # numbered: "<number> [<name>] (<designation>)"
+    m = re.match(r'^(\d+)\s+(.*?)\s*\(([^()]+)\)$', s)
+    if m:
+        number, proper, desig = m.groups()
+        return f"({number}) {proper or desig}"
+    # unnumbered: "(<designation>)"
+    m = re.match(r'^\(([^()]*[^\d()][^()]*)\)$', s)
+    if m:
+        return m.group(1).strip()
+    if s.isdigit():
+        return f"({s})"
+    # numbered without designation: "<number> <name>" (but not "2025 FA22")
+    m = re.match(r'^(\d+)\s+(\S.*)$', s)
+    if m and not _PROVISIONAL_DESIG.match(s):
+        return f"({m.group(1)}) {m.group(2)}"
+    return s
+
+
 def next_version(path: str) -> str:
     """Return a non-existing filename by appending or incrementing a ``_N`` suffix.
 

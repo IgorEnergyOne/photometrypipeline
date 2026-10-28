@@ -5,6 +5,8 @@ Main application window (LightCurveGUI) for pp_interactive_src.
 from __future__ import annotations
 import os
 import re
+import argparse
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -15,6 +17,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.rcParams['keymap.save'] = []
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.widgets import RectangleSelector
 import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
@@ -25,6 +28,8 @@ from .constants import (DEFAULT_PERIOD, DEFAULT_PHASE_MAX, OFFSET_ALL_KEY,
 from .config import get_config, AppConfig
 from .jpl import iterative_lighttime_correction, calc_reduced_mag
 from .models import FitsContext, LightCurveData
+from .loaders import loaders_registry, TextImportConfig
+from .import_dialog import TextImportDialog
 from .plot_settings import PlotSettings
 from .plot import LightCurvePlot
 from .image_viewer import AsteroidImageViewer
@@ -95,10 +100,19 @@ class LightCurveGUI:
         # Plot display toggles
         self.show_legend: bool = _d.show_legend
         self.show_grid:   bool = _d.show_grid
+        self.show_batch_markers: bool = False
+        self.show_batch_markers_var = ttk.BooleanVar(value=False)
 
         # JPL-derived corrections toggles
         self.use_reduced_mag_var = tk.BooleanVar(value=False)
         self.use_lighttime_var = tk.BooleanVar(value=False)
+
+        # Edit Mode state
+        self.edit_mode = False
+        self.selected_point_indices: Set[int] = set()
+        self.edit_step_var = ttk.DoubleVar(value=0.01)
+        self.selected_batch_var = ttk.StringVar(value='')
+        self.rect_selector: Optional[RectangleSelector] = None
 
         # Build UI
         self._build_ui()
@@ -109,10 +123,18 @@ class LightCurveGUI:
         # Bindings
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.bind("q", lambda e: self.confirm_exit())
+        self.root.bind("e", lambda e: self.toggle_edit_mode())
         self.root.bind("r", lambda e: self.toggle_rejection())
+        self.root.bind("v", lambda e: self.toggle_point_selection())
+        self.root.bind("f", lambda e: self.reset_view())
+        self.root.bind("b", lambda e: self.select_current_batch())
+        self.root.bind("<B>", lambda e: self.cycle_and_select_batch())
+        self.root.bind("m", lambda e: self.toggle_batch_markers())
         self.root.bind("a", lambda e: self.cancel_selection())
         self.root.bind("<Left>", lambda e: self.move_point(-1))
         self.root.bind("<Right>", lambda e: self.move_point(+1))
+        self.root.bind("<Up>", lambda e: self.on_up_key(e))
+        self.root.bind("<Down>", lambda e: self.on_down_key(e))
         self.root.bind("s", lambda e: self.adjust_lc_offset(-self._get_offset_step()))
         self.root.bind("d", lambda e: self.adjust_lc_offset(+self._get_offset_step()))
         self.root.bind("z", lambda e: self.adjust_rotation_period(-1))
@@ -202,7 +224,7 @@ class LightCurveGUI:
         top = FlowFrame(top_frame, padding=6)
         top.pack(fill=X, expand=True)
 
-        ttk.Button(top, text="Open CSV", command=self.open_csv).pack(side=LEFT, padx=4)
+        self._build_open_menu(top)
         self._build_save_menu(top)
 
         ttk.Label(top, text="Mode:").pack(side=LEFT, padx=(10, 0))
@@ -275,6 +297,8 @@ class LightCurveGUI:
                                                 command=_on_toggle_legend)
         self.plot_settings_menu.add_checkbutton(label="Show Grid", variable=self.show_grid_var,
                                                 command=_on_toggle_grid)
+        self.plot_settings_menu.add_checkbutton(label="Show Batch Markers", variable=self.show_batch_markers_var,
+                                                command=self.set_show_batch_markers)
         self.plot_settings_menu.add_checkbutton(label="Show Rejected", variable=self.toggle_rejected_var,
                                                 command=self.set_show_rejected)
         self.plot_settings_menu.add_separator()
@@ -423,6 +447,42 @@ class LightCurveGUI:
         phase_max_entry.bind("<Return>", lambda _e: (self._on_phase_max_changed(), self.root.focus_set()))
         phase_max_entry.bind("<FocusOut>", lambda _e: self._on_phase_max_changed())
 
+        # Collapsible Edit Mode Frame
+        self.edit_container = ttk.Frame(self.menus_wrapper)
+        self.edit_container.pack(side=LEFT, anchor='n', padx=(10, 0))
+
+        self.edit_toggle_btn = ttk.Button(self.edit_container, text="[ + ] Edit Mode (e)", command=self.toggle_edit_mode, style='Link.TButton')
+        self.edit_toggle_btn.pack(side=LEFT, anchor='w')
+
+        self.edit_inner = ttk.Frame(self.edit_container, padding=6, borderwidth=1, relief="groove")
+        # Initially HIDDEN
+
+        edit_frm = self.edit_inner
+        self.edit_status_lbl = ttk.Label(edit_frm, text="Edit: OFF", font=("TkDefaultFont", 9, "bold"))
+        self.edit_status_lbl.pack(side=LEFT, padx=(0, 6))
+
+        ttk.Label(edit_frm, text="Step (mag):").pack(side=LEFT, padx=(2, 2))
+        self.edit_step_entry = ttk.Entry(edit_frm, textvariable=self.edit_step_var, width=6)
+        self.edit_step_entry.pack(side=LEFT, padx=2)
+        self.edit_step_entry.bind("<Return>", lambda _e: self.root.focus_set())
+
+        ttk.Button(edit_frm, text="Move Up", command=lambda: self.move_selected_points_vertically(-1)).pack(side=LEFT, padx=2)
+        ttk.Button(edit_frm, text="Move Down", command=lambda: self.move_selected_points_vertically(+1)).pack(side=LEFT, padx=2)
+
+        ttk.Separator(edit_frm, orient=VERTICAL).pack(side=LEFT, fill=Y, padx=5, pady=2)
+
+        ttk.Label(edit_frm, text="Batch:").pack(side=LEFT, padx=(2, 2))
+        self.batch_combo = ttk.Combobox(edit_frm, textvariable=self.selected_batch_var, state='readonly', width=6)
+        self.batch_combo.pack(side=LEFT, padx=2)
+        self.batch_combo.bind("<<ComboboxSelected>>", lambda _e: self._on_batch_combo_selected())
+
+        ttk.Button(edit_frm, text="Select Batch", command=self.select_batch_from_combo).pack(side=LEFT, padx=2)
+        ttk.Button(edit_frm, text="Select All", command=self.select_all_points).pack(side=LEFT, padx=2)
+        ttk.Button(edit_frm, text="Clear Sel", command=self.clear_point_selection).pack(side=LEFT, padx=2)
+
+        self.edit_selection_info_lbl = ttk.Label(edit_frm, text="Sel: 0 pts", foreground="gray")
+        self.edit_selection_info_lbl.pack(side=LEFT, padx=(5, 0))
+
         # Plot area
         plot_frame = ttk.Frame(self.center_pane)
         plot_frame.pack(side=TOP, fill=BOTH, expand=True, padx=6, pady=(4, 6))
@@ -430,7 +490,8 @@ class LightCurveGUI:
         self.fig, self.ax = plt.subplots(figsize=_figsize)
         self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
         self.canvas.get_tk_widget().pack(side=TOP, fill=BOTH, expand=True)
-        NavigationToolbar2Tk(self.canvas, plot_frame).update()
+        self.toolbar = NavigationToolbar2Tk(self.canvas, plot_frame)
+        self.toolbar.update()
         self.plot = LightCurvePlot(self.fig, self.ax, self.canvas, cfg=self.cfg)
         self.plot.selection = {'alias': None, 'index': None}
         self.canvas.mpl_connect("button_press_event", self.on_click)
@@ -450,11 +511,14 @@ class LightCurveGUI:
 
         # Hotkeys Label
         self.hotkeys_label = ttk.Label(bottom,
-                                       text="F1-help; q-quit; r-reject; a-cancel sel; S-show/hide image; <-/-> -move; z/x-period; s/d-offset")
+                                       text="F1-help; q-quit; e-edit; v-sel pt; f-reset view; b/B-sel batch; m-batch markers; Up/Down-move; r-rej; a-clear; S-img; <-/-> -navigate; z/x-period; s/d-offset")
         self.selected_point_label = ttk.Label(self.hotkeys_label, text="", foreground="black")
         self.selected_point_label.pack(side=RIGHT, padx=(15, 0))
         self.hotkeys_label.pack(side=BOTTOM, fill=X, padx=5, pady=(2, 2))
         self.master_frame.bind("<Configure>", lambda e: self.hotkeys_label.config(wraplength=e.width - 200))
+
+        # Setup RectangleSelector for edit mode box selection
+        self._init_rectangle_selector()
 
     def open_y_scale_dialog(self):
         """Open a custom dialog to set Y-axis Min, Max, Nticks, and Label."""
@@ -476,6 +540,16 @@ class LightCurveGUI:
             except Exception:
                 cur_min, cur_max = 0.0, 1.0
 
+        center = self.plot.curve_center(self.lc_offsets)
+        stored_offsets = self.plot._y_offsets_per_mode.get(self.mode)
+        if stored_offsets is not None:
+            cur_brighter, cur_fainter = stored_offsets
+        elif center is not None:
+            cur_brighter = center - cur_min
+            cur_fainter = cur_max - center
+        else:
+            cur_brighter = cur_fainter = (cur_max - cur_min) / 2.0
+
         cur_nticks = self.plot._y_nticks_per_mode.get(self.mode) or ""
         # Show the user-set label if present, otherwise the current auto label
         cur_label = getattr(self.plot, '_user_ylabel', None) or getattr(self.plot, 'ylabel', 'Magnitude')
@@ -495,15 +569,50 @@ class LightCurveGUI:
         label_var = ttk.StringVar(value=cur_label)
         ttk.Entry(frm, textvariable=label_var, width=15).grid(row=0, column=1, padx=5, pady=5)
 
-        # Min
-        ttk.Label(frm, text="Min:").grid(row=1, column=0, sticky='e', padx=5, pady=5)
-        min_var = ttk.StringVar(value=f"{cur_min:.3f}")
-        ttk.Entry(frm, textvariable=min_var, width=10).grid(row=1, column=1, padx=5, pady=5)
+        # Range mode: fixed Min/Max, or offsets from the curve centre
+        range_mode_var = ttk.StringVar(value="offset" if stored_offsets is not None else "minmax")
+        mode_frm = ttk.Frame(frm)
+        mode_frm.grid(row=1, column=0, columnspan=2, sticky='w', padx=5, pady=(5, 0))
+        ttk.Label(mode_frm, text="Range:").pack(side=LEFT, padx=(0, 5))
 
-        # Max
-        ttk.Label(frm, text="Max:").grid(row=2, column=0, sticky='e', padx=5, pady=5)
+        # Min / Max
+        minmax_frm = ttk.Frame(frm)
+        minmax_frm.grid(row=2, column=0, columnspan=2, sticky='ew')
+        ttk.Label(minmax_frm, text="Min:").grid(row=0, column=0, sticky='e', padx=5, pady=5)
+        min_var = ttk.StringVar(value=f"{cur_min:.3f}")
+        ttk.Entry(minmax_frm, textvariable=min_var, width=10).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Label(minmax_frm, text="Max:").grid(row=1, column=0, sticky='e', padx=5, pady=5)
         max_var = ttk.StringVar(value=f"{cur_max:.3f}")
-        ttk.Entry(frm, textvariable=max_var, width=10).grid(row=2, column=1, padx=5, pady=5)
+        ttk.Entry(minmax_frm, textvariable=max_var, width=10).grid(row=1, column=1, padx=5, pady=5)
+
+        # Offsets from centre (leave one blank for a symmetric +/- range)
+        offset_frm = ttk.Frame(frm)
+        offset_frm.grid(row=2, column=0, columnspan=2, sticky='ew')
+        center_txt = f"{center:.3f}" if center is not None else "n/a"
+        ttk.Label(offset_frm, text=f"Curve center: {center_txt}").grid(
+            row=0, column=0, columnspan=2, sticky='w', padx=5, pady=5)
+        ttk.Label(offset_frm, text="- (brighter):").grid(row=1, column=0, sticky='e', padx=5, pady=5)
+        brighter_var = ttk.StringVar(value=f"{cur_brighter:.3f}")
+        ttk.Entry(offset_frm, textvariable=brighter_var, width=10).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Label(offset_frm, text="+ (fainter):").grid(row=2, column=0, sticky='e', padx=5, pady=5)
+        fainter_var = ttk.StringVar(value=f"{cur_fainter:.3f}")
+        ttk.Entry(offset_frm, textvariable=fainter_var, width=10).grid(row=2, column=1, padx=5, pady=5)
+        ttk.Label(offset_frm, text="Leave one empty for a symmetric +/- range",
+                  font=("TkDefaultFont", 8)).grid(row=3, column=0, columnspan=2, sticky='w', padx=5)
+
+        def show_range_mode():
+            if range_mode_var.get() == "offset":
+                minmax_frm.grid_remove()
+                offset_frm.grid()
+            else:
+                offset_frm.grid_remove()
+                minmax_frm.grid()
+
+        ttk.Radiobutton(mode_frm, text="Min / Max", value="minmax", variable=range_mode_var,
+                        command=show_range_mode).pack(side=LEFT, padx=(0, 8))
+        ttk.Radiobutton(mode_frm, text="Offset from center", value="offset", variable=range_mode_var,
+                        command=show_range_mode).pack(side=LEFT)
+        show_range_mode()
 
         # Nticks
         ttk.Label(frm, text="Ticks (optional):").grid(row=3, column=0, sticky='e', padx=5, pady=5)
@@ -512,19 +621,30 @@ class LightCurveGUI:
 
         def apply():
             try:
-                v_min = float(min_var.get())
-                v_max = float(max_var.get())
-
                 nt_str = nticks_var.get().strip()
                 nt = int(nt_str) if nt_str else None
+
+                # Apply per-mode limits
+                if range_mode_var.get() == "offset":
+                    b_str = brighter_var.get().strip()
+                    f_str = fainter_var.get().strip()
+                    if not b_str and not f_str:
+                        raise ValueError
+                    v_brighter = float(b_str or f_str)
+                    v_fainter = float(f_str or b_str)
+                    if v_brighter == 0 and v_fainter == 0:
+                        raise ValueError
+                    self.plot.set_y_offsets(v_brighter, v_fainter, nt)
+                else:
+                    v_min = float(min_var.get())
+                    v_max = float(max_var.get())
+                    self.plot.set_y_limits(min(v_min, v_max), max(v_min, v_max), nt)
 
                 new_label = label_var.get().strip()
                 # Store as user override so it persists across redraws in any mode
                 self.plot._user_ylabel = new_label if new_label else None
                 self.plot.ylabel = new_label or self.plot.ylabel
 
-                # Apply per-mode limits
-                self.plot.set_y_limits(min(v_min, v_max), max(v_min, v_max), nt)
                 self.plot.invalidate_layout()
                 self._refresh_plot_callback()
                 dlg.destroy()
@@ -552,6 +672,25 @@ class LightCurveGUI:
     # Helpers for collapsing/expanding
 
 
+    def _build_open_menu(self, parent):
+        """Build the Open hybrid button + drop-down menu and attach to *parent*."""
+        open_container = ttk.Frame(parent)
+        open_container.pack(side=LEFT, padx=4)
+
+        # Main button triggers default unified open with auto-detection
+        ttk.Button(open_container, text="Open", command=self.open_lightcurve, bootstyle="primary").pack(side=LEFT)
+
+        # Drop-down menu button for explicit loader selection (renders native arrow indicator)
+        self.open_menu_btn = ttk.Menubutton(open_container, text="", bootstyle="primary")
+        self.open_menu = tk.Menu(self.open_menu_btn, tearoff=0, font=("TkDefaultFont", 10))
+        self.open_menu.add_command(label="Open (Auto-Detect)...", command=self.open_lightcurve)
+        self.open_menu.add_separator()
+        self.open_menu.add_command(label="Open Pipeline CSV...", command=lambda: self.open_lightcurve(loader_name="csv"))
+        self.open_menu.add_command(label="Open ATLAS Lightcurve...", command=lambda: self.open_lightcurve(loader_name="atlas"))
+        self.open_menu.add_command(label="Open Custom Delimited Text...", command=lambda: self.open_custom_text())
+        self.open_menu_btn["menu"] = self.open_menu
+        self.open_menu_btn.pack(side=LEFT, padx=(1, 0))
+
     def _build_save_menu(self, parent):
         """Build the Save drop-down Menubutton and attach it to *parent*."""
         self.save_menu_btn = ttk.Menubutton(parent, text="Save")
@@ -569,6 +708,13 @@ class LightCurveGUI:
             "Hotkeys & Controls\n"
             "--------------------\n"
             "q              Quit application\n"
+            "e              Toggle Edit Mode (select and vertically shift points/batches)\n"
+            "v              Toggle selection of focused point (in Edit Mode)\n"
+            "f              Reset view (undo zoom / pan)\n"
+            "b              Select all points in the same batch as current point\n"
+            "B (Shift+b)    Cycle through batches and select each batch\n"
+            "m              Toggle batch markers (different marker shapes per batch)\n"
+            "Up / Down      Move selected point(s) vertically by Step in Edit Mode\n"
             "r              Toggle rejection for selected point\n"
             "R              Show / Hide rejected points\n"
             "F              Toggle flagged-point colour (filter colour <-> flagged colour)\n"
@@ -576,14 +722,15 @@ class LightCurveGUI:
             "S              Show / Hide image for selected point\n"
             "o              Toggle overlay of the image\n"
             "<- / ->        Move selected point left/right\n"
-            "s / d           Change vertical offset\n"
+            "s / d          Change vertical offset\n"
             "z / x          Decrease / Increase rotation period\n"
             "\n"
             "Mouse:\n"
-            "Click on a point to select it.\n"
+            "Click on a point to select/deselect it.\n"
+            "In Edit Mode: click and drag a selection box to select multiple points.\n"
             "\n"
             "Options:\n"
-            "- Mode: target / instrumental / control.\n"
+            "- Mode: target / instrumental / relative / control.\n"
             "- Error Bars: calibrated / instrumental / none.\n"
             "- Time Axis: minutes / JD / MJD / rotation phase.\n"
             "- Rotation Step (h): sets increment used by z/x.\n"
@@ -614,46 +761,135 @@ class LightCurveGUI:
 
 
     def open_csv(self):
-        """Prompt for one or more CSV files and load them as lightcurves."""
-        files = filedialog.askopenfilenames(initialdir=os.getcwd(), filetypes=[("CSV Files", "*.csv")])
+        """Legacy helper delegating to open_lightcurve(loader_name='csv')."""
+        self.open_lightcurve(loader_name="csv")
+
+    def open_lightcurve(self, loader_name: Optional[str] = None):
+        """Prompt for one or more files and load them using the modular loaders."""
+        if loader_name == "csv":
+            filetypes = [("CSV Files", "*.csv *.CSV"), ("All Files", "*.*")]
+        elif loader_name == "atlas":
+            filetypes = [("ATLAS Files", "*.ATL *.atl *.txt *.TXT"), ("All Files", "*.*")]
+        else:
+            filetypes = [
+                ("All Supported Formats", "*.csv *.CSV *.ATL *.atl *.txt *.TXT *.dat *.DAT"),
+                ("CSV Files", "*.csv *.CSV"),
+                ("ATLAS Files", "*.ATL *.atl *.txt *.TXT"),
+                ("Text / Data Files", "*.txt *.TXT *.dat *.DAT"),
+                ("All Files", "*.*"),
+            ]
+
+        files = filedialog.askopenfilenames(initialdir=os.getcwd(), filetypes=filetypes)
         if not files:
             return
-        
+
+        f = files[0]
+
+        # Determine if custom text configuration dialog is needed
+        # (e.g. for ambiguous .txt/.dat that aren't ATLAS or CSV)
+        loader_kwargs = {}
+        detected = loaders_registry.detect_loader(f)
+        if loader_name == "custom_text" or (loader_name is None and detected.name == "custom_text"):
+            # Open column mapping dialog
+            dlg = TextImportDialog(self.root, f, cfg=self.cfg)
+            if dlg.result_config is None:
+                return  # user cancelled
+            loader_name = "custom_text"
+            loader_kwargs["config"] = dlg.result_config
+
         # Single-file mode: clear existing data
         self.lightcurves.clear()
         self.lc_visible.clear()
         self.lc_offsets.clear()
         self.fits_contexts.clear()
         self.selected_bands.clear()
+        self.plot.reset_y_ranges()
 
-        # Load only the first selected file
-        f = files[0]
+        # Load lightcurve
         try:
-            lc = LightCurveData(f)
+            lc = LightCurveData(f, loader_name=loader_name, **loader_kwargs)
         except Exception as e:
             messagebox.showerror("Load error", f"Failed to load {f}: {e}")
             return
-            
+
         alias = self._unique_alias(os.path.basename(f))
         self.lightcurves[alias] = lc
         self.lc_visible[alias] = True
-        
+
+        # If loader provided a FitsContext (e.g. from ATLAS headers), store it
+        if lc.fits_context is not None:
+            self.fits_contexts[alias] = lc.fits_context
+
         # initialize per-file offsets map
         bands = lc.get_bands()
         self.lc_offsets[alias] = {OFFSET_ALL_KEY: 0.0}
         for b in bands:
             self.lc_offsets[alias][b] = 0.0
-            
+
         # Select this lightcurve
         self.current_lc_alias = alias
-        
+
         self._rebuild_band_menu() if hasattr(self, "_rebuild_band_menu") else None
-        
+
         # Sync offset UI
         self._sync_offset_var_to_scope()
         self._refresh_offset_scope_choices()
+        self._update_batch_combo_values()
 
         # also refresh color menu to show newly available bands
+        if hasattr(self, "_rebuild_color_menu"):
+            self._rebuild_color_menu()
+        elif hasattr(self, "plot_settings") and hasattr(self.plot_settings, "rebuild_menu"):
+            self.plot_settings.rebuild_menu()
+
+        self.request_plot_update()
+
+    def open_custom_text(self):
+        """Prompt specifically for a delimited text file and show mapping dialog."""
+        filetypes = [
+            ("Text / Data Files", "*.txt *.TXT *.dat *.DAT *.csv *.CSV"),
+            ("All Files", "*.*"),
+        ]
+        files = filedialog.askopenfilenames(initialdir=os.getcwd(), filetypes=filetypes)
+        if not files:
+            return
+
+        f = files[0]
+        dlg = TextImportDialog(self.root, f, cfg=self.cfg)
+        if dlg.result_config is None:
+            return  # user cancelled
+
+        self.lightcurves.clear()
+        self.lc_visible.clear()
+        self.lc_offsets.clear()
+        self.fits_contexts.clear()
+        self.selected_bands.clear()
+        self.plot.reset_y_ranges()
+
+        try:
+            lc = LightCurveData(f, loader_name="custom_text", config=dlg.result_config)
+        except Exception as e:
+            messagebox.showerror("Load error", f"Failed to load {f}: {e}")
+            return
+
+        alias = self._unique_alias(os.path.basename(f))
+        self.lightcurves[alias] = lc
+        self.lc_visible[alias] = True
+
+        if lc.fits_context is not None:
+            self.fits_contexts[alias] = lc.fits_context
+
+        bands = lc.get_bands()
+        self.lc_offsets[alias] = {OFFSET_ALL_KEY: 0.0}
+        for b in bands:
+            self.lc_offsets[alias][b] = 0.0
+
+        self.current_lc_alias = alias
+        self._rebuild_band_menu() if hasattr(self, "_rebuild_band_menu") else None
+        self._sync_offset_var_to_scope()
+        self._refresh_offset_scope_choices()
+        self._update_batch_combo_values()
+
         if hasattr(self, "_rebuild_color_menu"):
             self._rebuild_color_menu()
         elif hasattr(self, "plot_settings") and hasattr(self.plot_settings, "rebuild_menu"):
@@ -1031,50 +1267,55 @@ class LightCurveGUI:
             correction_flags += " -use_lt_corrected"
 
         filters = lc.get_bands()
+        if len(filters) > 1:
+            groups = [(f, work_df[work_df['band'] == f]) for f in filters]
+            groups = [(f, df_filt) for f, df_filt in groups if not df_filt.empty]
+        else:
+            groups = [(filters[0] if filters else None, work_df)]
+        multi = len(groups) > 1
+
+        # Each band needs the header of one of its own frames, otherwise pp_atlas
+        # reports the filter (and phot. system) of the single selected FITS file.
+        search_roots = [os.path.dirname(os.path.abspath(fits_filepath))]
+        if lc.filename:
+            search_roots.append(os.path.dirname(os.path.abspath(lc.filename)))
+
+        unresolved = []
         tmps = []
         tmp_atls = []
-        if len(filters) > 1:
-            for f in filters:
-                df_filt = work_df[work_df['band'] == f]
-                if df_filt.empty:
-                    continue
-                tmpf = f"tmp_atlas_{f}.csv"
-                tmp_atl = f"{tmpf[:-4]}.ATL"
-                tmp_atls.append(tmp_atl)
-                df_filt.to_csv(tmpf, header=True, index=False)
+        try:
+            for f, df_filt in groups:
+                header_fits = self._find_band_fits(df_filt, search_roots)
+                filter_flag = ""
+                if header_fits is None:
+                    header_fits = fits_filepath
+                    if multi and f is not None:
+                        filter_flag = f" -orig_filter {shlex.quote(str(f))}"
+                        unresolved.append(str(f))
+                if multi:
+                    tmpf = f"tmp_atlas_{f}.csv"
+                    out_atl = f"{tmpf[:-4]}.ATL"
+                    tmp_atls.append(out_atl)
+                else:
+                    tmpf = 'tmp_atlas.csv'
+                    out_atl = file
                 tmps.append(tmpf)
-                atlas_cmd = (f"pp_atlas -fname_header {fits_filepath} "
-                             f"-fname_photo {tmpf} -fname_out {tmpf[:-4]}.ATL"
-                             f"{correction_flags}")
+                df_filt.to_csv(tmpf, header=True, index=False)
+                atlas_cmd = (f"pp_atlas -fname_header {shlex.quote(header_fits)} "
+                             f"-fname_photo {tmpf} -fname_out {shlex.quote(out_atl)}"
+                             f"{correction_flags}{filter_flag}")
                 subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
-            atlas_cmd = (f"pp_atlas -combine "
-                         + " ".join([f"{tmp_file[:-4]}.ATL" for tmp_file in tmps])
-                         + f" -fname_out {file}")
-            try:
+            if multi:
+                atlas_cmd = (f"pp_atlas -combine " + " ".join(tmp_atls)
+                             + f" -fname_out {shlex.quote(file)}")
                 subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
-            except Exception as e:
-                messagebox.showerror("Atlas save failed", f"Error calling atlas command: {e}")
-            finally:
-                for tmp_atl, tmp_csv in zip(tmp_atls, tmps):
-                    if os.path.exists(tmp_atl):
-                        os.remove(tmp_atl)
-                    if os.path.exists(tmp_csv):
-                        os.remove(tmp_csv)
-        else:
-            tmp = 'tmp_atlas.csv'
-            tmps.append(tmp)
-            work_df.to_csv(tmp, header=True, index=False)
-            atlas_cmd = (f"pp_atlas -fname_header {fits_filepath} "
-                         f"-fname_photo {tmp} -fname_out {file}"
-                         f"{correction_flags}")
-            try:
-                subprocess.call(['/bin/sh', '-i', '-c', atlas_cmd])
-            except Exception as e:
-                messagebox.showerror("Atlas save failed", f"Error calling atlas command: {e}")
-            finally:
-                for tmp in tmps:
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
+        except Exception as e:
+            messagebox.showerror("Atlas save failed", f"Error calling atlas command: {e}")
+            return
+        finally:
+            for tmp in tmps + tmp_atls:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
 
         # -- 7. Summary -------------------------------------------------------
         notes = []
@@ -1083,7 +1324,41 @@ class LightCurveGUI:
         if use_reduced_mag:
             notes.append("reduced magnitudes H(a)")
         extra = f"\nApplied: {', '.join(notes)}" if notes else ""
+        if unresolved:
+            extra += ("\n\nNo FITS image found for band(s) " + ", ".join(unresolved)
+                      + "; the band name was written as the observing filter.")
         messagebox.showinfo("Saved", f"ATLAS file saved as {file}{extra}")
+
+    @staticmethod
+    def _find_band_fits(df: pd.DataFrame, search_roots: List[str]) -> Optional[str]:
+        """Return the FITS image of one of the frames listed in ``df['filename']``,
+        looked up in *search_roots* and their immediate subdirectories."""
+        if 'filename' not in df.columns:
+            return None
+        stems = list(dict.fromkeys(Path(str(n)).stem for n in df['filename'].dropna()))
+        if not stems:
+            return None
+
+        dirs = []
+        for root in search_roots:
+            if not os.path.isdir(root):
+                continue
+            dirs.append(root)
+            try:
+                dirs.extend(sorted(e.path for e in os.scandir(root) if e.is_dir()))
+            except OSError:
+                pass
+
+        for d in dict.fromkeys(dirs):
+            try:
+                names = set(os.listdir(d))
+            except OSError:
+                continue
+            for stem in stems:
+                for ext in ('.fits', '.fit', '.fts'):
+                    if stem + ext in names:
+                        return os.path.join(d, stem + ext)
+        return None
 
     def rename_rejected_files(self):
         """
@@ -1923,6 +2198,21 @@ class LightCurveGUI:
         self.show_rejected = bool(self.toggle_rejected_var.get())
         self.request_plot_update()
 
+    def set_show_batch_markers(self):
+        """Toggle display of batch-specific markers from the Plot Settings checkbutton."""
+        self.show_batch_markers = bool(self.show_batch_markers_var.get())
+        if hasattr(self.plot, "invalidate_layout"):
+            self.plot.invalidate_layout()
+        self.request_plot_update()
+
+    def toggle_batch_markers(self):
+        """Hotkey m: toggle display of batch-specific markers."""
+        self.show_batch_markers = not self.show_batch_markers
+        self.show_batch_markers_var.set(self.show_batch_markers)
+        if hasattr(self.plot, "invalidate_layout"):
+            self.plot.invalidate_layout()
+        self.request_plot_update()
+
     def toggle_show_rejected(self):
         """Hotkey R: show/hide rejected points."""
         self.show_rejected = not self.show_rejected
@@ -2197,6 +2487,12 @@ class LightCurveGUI:
             self.current_lc_alias = alias
             self.current_point_index = idx
             self.current_point_band = b
+            if self.edit_mode:
+                if idx in self.selected_point_indices:
+                    self.selected_point_indices.remove(idx)
+                else:
+                    self.selected_point_indices.add(idx)
+                self._update_edit_selection_label()
             self._update_selected_point_label()
             if self.offset_scope_var.get() == 'auto':
                 self.offset_scope_combo.set(b if b else 'ALL')
@@ -2227,6 +2523,8 @@ class LightCurveGUI:
         self.plot.selection = {'alias': None, 'index': None}
         self.current_point_index = None
         self.current_point_band = None
+        self.selected_point_indices.clear()
+        self._update_edit_selection_label()
         self._update_selected_point_label()
         self.request_plot_update()
         self.asteroid_viewer.update_image()  # Update (clear) image window
@@ -2250,6 +2548,8 @@ class LightCurveGUI:
         # Update plot selection and redraw
         self.plot.selection['alias'] = self.current_lc_alias
         self.plot.selection['index'] = self.current_point_index
+        if self.edit_mode and self.current_point_index is not None:
+            self._update_edit_selection_label()
         self._update_selected_point_label()
         self.request_plot_update()
 
@@ -2271,7 +2571,15 @@ class LightCurveGUI:
             return
 
         try:
-            filename = str(lc.df['filename'].iloc[self.current_point_index])
+            if hasattr(lc, 'has_point_filenames') and lc.has_point_filenames():
+                filename = str(lc.df['filename'].iloc[self.current_point_index])
+            else:
+                curve_name = self.current_lc_alias or (os.path.basename(lc.filename) if lc.filename else "point")
+                for ext in ('.csv', '.txt', '.dat', '.atl', '.ldac', '.fits'):
+                    if curve_name.lower().endswith(ext):
+                        curve_name = curve_name[:-len(ext)]
+                        break
+                filename = f"{curve_name}_{self.current_point_index}"
             self.selected_point_label.config(text=f"Selected point: {filename}")
         except Exception:
             self.selected_point_label.config(text="")
@@ -2621,6 +2929,296 @@ class LightCurveGUI:
         marker_dialog.bind('<Return>', lambda e: apply_settings())
         marker_dialog.bind('<Escape>', lambda e: marker_dialog.destroy())
         update_preview()
+
+    #  -  -  -  Edit Mode Handlers  -  -  -
+    def _init_rectangle_selector(self):
+        """Initialize Matplotlib RectangleSelector for box selecting points."""
+        try:
+            self.rect_selector = RectangleSelector(
+                self.ax,
+                self._on_rect_select,
+                useblit=True,
+                button=[1],
+                minspanx=5,
+                minspany=5,
+                spandirect='both',
+                interactive=False,
+                props=dict(facecolor='cyan', edgecolor='blue', alpha=0.2, fill=True),
+            )
+            self.rect_selector.set_active(self.edit_mode)
+        except Exception as e:
+            debug_print(f"Error initializing RectangleSelector: {e}")
+            self.rect_selector = None
+
+    def _on_rect_select(self, eclick, erelease):
+        """Callback for RectangleSelector box drag completion."""
+        if not self.edit_mode:
+            return
+        if eclick.xdata is None or eclick.ydata is None or erelease.xdata is None or erelease.ydata is None:
+            return
+
+        x0, x1 = float(eclick.xdata), float(erelease.xdata)
+        y0, y1 = float(eclick.ydata), float(erelease.ydata)
+
+        matched = self.plot.select_points_in_region(
+            x0, x1, y0, y1,
+            self.lightcurves,
+            self.lc_offsets,
+            self.mode,
+            self.time_mode,
+            getattr(self, "selected_bands", set()) if isinstance(getattr(self, "selected_bands", None), set) else set(),
+            self.show_rejected,
+        )
+
+        if matched:
+            alias = self._ensure_active_alias()
+            for m_alias, idx, b in matched:
+                if alias is None or m_alias == alias:
+                    self.current_lc_alias = m_alias
+                    self.selected_point_indices.add(idx)
+                    self.current_point_index = idx
+                    self.current_point_band = b
+            self._update_selected_point_label()
+            self._update_edit_selection_label()
+            self.request_plot_update()
+
+    def toggle_edit_mode(self):
+        """Toggle Edit Mode on/off."""
+        self.edit_mode = not self.edit_mode
+        if self.edit_mode:
+            self.edit_toggle_btn.config(text="[ - ] Edit Mode (e)")
+            self.edit_inner.pack(side=TOP, fill=X)
+            self.edit_status_lbl.config(text="Edit: ON", foreground="green")
+            if self.rect_selector is not None:
+                self.rect_selector.set_active(True)
+            self._update_batch_combo_values()
+            if self.current_point_index is not None:
+                self.selected_point_indices.add(self.current_point_index)
+        else:
+            self.edit_toggle_btn.config(text="[ + ] Edit Mode (e)")
+            self.edit_inner.pack_forget()
+            self.edit_status_lbl.config(text="Edit: OFF", foreground="black")
+            if self.rect_selector is not None:
+                self.rect_selector.set_active(False)
+            self.selected_point_indices.clear()
+
+        self._update_edit_selection_label()
+        if hasattr(self, 'plot') and hasattr(self.plot, 'invalidate_layout'):
+            self.plot.invalidate_layout()
+        self.request_plot_update()
+
+    def reset_view(self):
+        """Hotkey 'f': drop any zoom/pan and redraw the plot in its default view
+        (auto-scaled, or the manual Y range set for the current mode)."""
+        self.plot.invalidate_layout()
+        self.request_plot_update()
+        # forget the toolbar's zoom/pan history so its Home/Back match the new view
+        _safe(self.toolbar.update)
+
+    def toggle_point_selection(self):
+        """Hotkey 'v': toggle selection of the currently focused point."""
+        if not self.edit_mode:
+            self.toggle_edit_mode()
+
+        if self.current_point_index is not None:
+            if self.current_point_index in self.selected_point_indices:
+                self.selected_point_indices.remove(self.current_point_index)
+            else:
+                self.selected_point_indices.add(self.current_point_index)
+            self._update_edit_selection_label()
+            self.request_plot_update()
+
+    def select_all_points(self):
+        """Select all points of the active lightcurve."""
+        alias = self._ensure_active_alias()
+        if not alias or alias not in self.lightcurves:
+            return
+        lc = self.lightcurves[alias]
+        if lc.df is None or lc.df.empty:
+            return
+        if not self.edit_mode:
+            self.toggle_edit_mode()
+        self.selected_point_indices = set(range(len(lc.df)))
+        self._update_edit_selection_label()
+        self.request_plot_update()
+
+    def clear_point_selection(self):
+        """Clear all selected points."""
+        self.selected_point_indices.clear()
+        self._update_edit_selection_label()
+        self.request_plot_update()
+
+    def _update_edit_selection_label(self):
+        """Update the label displaying number of selected points."""
+        if hasattr(self, 'edit_selection_info_lbl'):
+            n = len(self.selected_point_indices)
+            self.edit_selection_info_lbl.config(
+                text=f"Sel: {n} pts",
+                foreground="black" if n > 0 else "gray"
+            )
+
+    def _update_batch_combo_values(self):
+        """Update the batch selection combobox with available batch IDs."""
+        if not hasattr(self, 'batch_combo'):
+            return
+        alias = self.current_lc_alias
+        if alias and alias in self.lightcurves:
+            lc = self.lightcurves[alias]
+            if lc.has_batches():
+                batches = [str(b) for b in lc.get_batches()]
+                self.batch_combo['values'] = batches
+                if batches and self.selected_batch_var.get() not in batches:
+                    self.selected_batch_var.set(batches[0])
+                return
+        self.batch_combo['values'] = []
+        self.selected_batch_var.set('')
+
+    def select_batch_from_combo(self):
+        """Select all points belonging to the batch currently selected in the combobox."""
+        alias = self._ensure_active_alias()
+        if not alias or alias not in self.lightcurves:
+            return
+        lc = self.lightcurves[alias]
+        if not lc.has_batches():
+            messagebox.showinfo("Batches", "No batch information found in this dataset.")
+            return
+
+        b_str = self.selected_batch_var.get()
+        if not b_str:
+            return
+
+        for b_val in lc.get_batches():
+            if str(b_val) == b_str:
+                indices = lc.get_batch_indices(b_val)
+                if not self.edit_mode:
+                    self.toggle_edit_mode()
+                self.selected_point_indices = set(indices)
+                if indices:
+                    self.current_point_index = indices[0]
+                    self.plot.selection = {'alias': alias, 'index': indices[0]}
+                self._update_edit_selection_label()
+                self._update_selected_point_label()
+                self.request_plot_update()
+                break
+
+    def _on_batch_combo_selected(self):
+        """Handle combobox selection event."""
+        self.select_batch_from_combo()
+
+    def select_current_batch(self):
+        """Hotkey 'b': select all points in the batch of the current point."""
+        alias = self._ensure_active_alias()
+        if not alias or alias not in self.lightcurves:
+            return
+        lc = self.lightcurves[alias]
+        if not lc.has_batches():
+            messagebox.showinfo("Batches", "No batch information found in this dataset.")
+            return
+
+        if self.current_point_index is None:
+            batches = lc.get_batches()
+            if batches:
+                b_val = batches[0]
+            else:
+                return
+        else:
+            df = lc.df
+            col = 'batch_number' if 'batch_number' in df.columns else 'batch'
+            if col in df.columns and not pd.isna(df[col].iloc[self.current_point_index]):
+                b_val = df[col].iloc[self.current_point_index]
+            else:
+                batches = lc.get_batches()
+                b_val = batches[0] if batches else None
+                if b_val is None:
+                    return
+
+        indices = lc.get_batch_indices(b_val)
+        if not self.edit_mode:
+            self.toggle_edit_mode()
+        self.selected_batch_var.set(str(b_val))
+        self.selected_point_indices = set(indices)
+        self._update_edit_selection_label()
+        self.request_plot_update()
+
+    def cycle_and_select_batch(self):
+        """Hotkey 'B' (Shift+B): cycle to the next batch and select its points."""
+        alias = self._ensure_active_alias()
+        if not alias or alias not in self.lightcurves:
+            return
+        lc = self.lightcurves[alias]
+        if not lc.has_batches():
+            messagebox.showinfo("Batches", "No batch information found in this dataset.")
+            return
+
+        batches = lc.get_batches()
+        if not batches:
+            return
+
+        cur_batch_str = self.selected_batch_var.get()
+        cur_idx = -1
+        for i, b in enumerate(batches):
+            if str(b) == cur_batch_str:
+                cur_idx = i
+                break
+        next_idx = (cur_idx + 1) % len(batches)
+        next_batch = batches[next_idx]
+        self.selected_batch_var.set(str(next_batch))
+        indices = lc.get_batch_indices(next_batch)
+        if not self.edit_mode:
+            self.toggle_edit_mode()
+        self.selected_point_indices = set(indices)
+        if indices:
+            self.current_point_index = indices[0]
+            self.plot.selection = {'alias': alias, 'index': indices[0]}
+        self._update_edit_selection_label()
+        self._update_selected_point_label()
+        self.request_plot_update()
+
+    def move_selected_points_vertically(self, direction: int):
+        """Nudge magnitude of selected points/current point vertically.
+        direction: -1 for visually UP (decrease magnitude), +1 for visually DOWN (increase magnitude).
+        """
+        alias = self._ensure_active_alias()
+        if not alias or alias not in self.lightcurves:
+            return
+        lc = self.lightcurves[alias]
+        if lc.df is None or lc.df.empty:
+            return
+
+        try:
+            step = float(self.edit_step_var.get())
+            if not np.isfinite(step) or step <= 0:
+                step = 0.01
+        except Exception:
+            step = 0.01
+
+        delta_mag = direction * step
+
+        target_indices = self.selected_point_indices
+        if not target_indices and self.current_point_index is not None:
+            target_indices = {self.current_point_index}
+
+        if not target_indices:
+            return
+
+        lc.move_points_magnitude(target_indices, delta_mag, mode=self.mode)
+        if hasattr(self.plot, 'invalidate_layout'):
+            self.plot.invalidate_layout()
+        self.request_plot_update()
+
+    def on_up_key(self, event=None):
+        """Handler for Up arrow key: in edit mode moves points up, otherwise adjusts offset."""
+        if self.edit_mode or bool(self.selected_point_indices):
+            self.move_selected_points_vertically(-1)
+        else:
+            self.adjust_lc_offset(-self._get_offset_step())
+
+    def on_down_key(self, event=None):
+        """Handler for Down arrow key: in edit mode moves points down, otherwise adjusts offset."""
+        if self.edit_mode or bool(self.selected_point_indices):
+            self.move_selected_points_vertically(+1)
+        else:
+            self.adjust_lc_offset(+self._get_offset_step())
 
     def confirm_exit(self):
         """Ask for confirmation and quit the application."""

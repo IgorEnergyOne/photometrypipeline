@@ -105,6 +105,9 @@ phase_wrap_linewidth = 0.8
 # Phase-wrap boundary vertical line alpha  [0.0 – 1.0]
 phase_wrap_alpha = 0.6
 
+# Minimum auto-scaled Y-axis range (mag); smaller curves are padded around their centre
+min_y_range = 0.2
+
 [colors]
 # Default colour for flagged (non-rejected, quality-flag > 0) data points
 flagged = "orange"
@@ -137,4 +140,27 @@ z  = "#753427"
 G  = "green"
 BP = "blue"
 RP = "red"
+
+[text_import]
+# Last-used import settings and presets for delimited text files (*.txt, *.dat)
+
+[text_import.last_used]
+delimiter = "whitespace"
+skip_rows = 0
+comment_char = "#"
+has_header = true
+time_format = "julian_date"
+default_band = "V"
+col_time = "0"
+col_mag = "1"
+col_sig = "2"
+col_band = ""
+col_rejected = ""
+col_inst_mag = ""
+col_inst_sig = ""
+col_batch = ""
+
+[text_import.presets]
+# Named presets for delimited text files (saved by the user)
+
 
