@@ -675,39 +675,27 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
             extract_other_catalog=extract_other_catalog+mag_keys+aper_param_keys,
             tolerance=None)
 
+        # column offsets in match[1]: extract_other_catalog, then mag_keys
+        # (instrumental, plus calibrated if calibration succeeded), then
+        # aper_param_keys
+        inst_idx = len(extract_other_catalog)
+        if len(mag_keys) > 2 and not instrumental:
+            cal_idx = inst_idx + 2
+        else:
+            # no calibration available (or not wanted): report instrumental
+            cal_idx = inst_idx
+        aper_idx = inst_idx + len(mag_keys)
+
         for i in range(len(match[0][0])):
-            # derive calibrated magnitudes, if available
-            try:
-                cal_mag = match[1][len(extract_other_catalog)+2][i]
-                cal_magerr = match[1][len(extract_other_catalog)+3][i]
-                # print(len(extract_other_catalog))
-                # print([f"{idx}, {match[1][j].name}: {float(match[1][j][i])}" for idx, j in enumerate(range(len(match[1])))])
-            except IndexError:
-                # use instrumental magnitudes
-                cal_mag = match[1][len(extract_other_catalog)][i]
-                cal_magerr = match[1][len(extract_other_catalog)+1][i]
-            # if writing only instrumental data
-            if instrumental:
-                data.append([match[0][2][i], match[0][0][i], match[0][1][i],
-                             match[1][0][i], match[1][1][i],
-                             match[1][len(extract_other_catalog)][i],
-                             match[1][len(extract_other_catalog) + 1][i],
-                             match[1][len(extract_other_catalog)][i],
-                             match[1][len(extract_other_catalog) + 1][i],
-                             cat.obstime, cat.catalogname,
-                             match[1][2][i], match[1][3][i],
-                             cat.origin, match[1][4][i], match[1][5][i],
-                             match[1][8][i], match[1][9][i], match[1][10][i], cat.airmass])
-            else:
-                data.append([match[0][2][i], match[0][0][i], match[0][1][i],
-                             match[1][0][i], match[1][1][i],
-                             match[1][len(extract_other_catalog)][i],
-                             match[1][len(extract_other_catalog)+1][i],
-                             cal_mag, cal_magerr,
-                             cat.obstime, cat.catalogname,
-                             match[1][2][i], match[1][3][i],
-                             cat.origin, match[1][4][i], match[1][5][i],
-                             match[1][10][i],  match[1][11][i], match[1][12][i], cat.airmass])
+            data.append([match[0][2][i], match[0][0][i], match[0][1][i],
+                         match[1][0][i], match[1][1][i],
+                         match[1][inst_idx][i], match[1][inst_idx+1][i],
+                         match[1][cal_idx][i], match[1][cal_idx+1][i],
+                         cat.obstime, cat.catalogname,
+                         match[1][2][i], match[1][3][i],
+                         cat.origin, match[1][4][i], match[1][5][i],
+                         match[1][aper_idx][i], match[1][aper_idx+1][i],
+                         match[1][aper_idx+2][i], cat.airmass])
             # format: ident, RA_exp, Dec_exp, RA_img, Dec_img,
             #         mag_inst, sigmag_instr, mag_cal, sigmag_cal
             #         obstime, filename, img_x, img_y, origin, flags
