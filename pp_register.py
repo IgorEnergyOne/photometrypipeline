@@ -205,6 +205,11 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
                                                  rad +
                                                  obsparam['reg_search_radius'],
                                                  100, save_catalog=False)
+        if checkrefcat.query_status == 'unavailable':
+            logging.warning(('astrometric reference catalog %s unreachable; '
+                             + 'try other catalog') % refcat)
+            goodfits, badfits = [], filenames
+            continue
         if n_sources < _pp_conf.min_sources_astrometric_catalog:
             logging.info(('Only %d sources in astrometric reference catalog; '
                           + 'try other catalog') % n_sources)
@@ -228,6 +233,11 @@ def register(filenames, telescope, sex_snr, source_minarea, source_maxarea, apra
                                             100000,
                                             max_mag=obsparam['reg_max_mag'],
                                             save_catalog=True)
+        if astcat.query_status == 'unavailable':
+            logging.warning(('astrometric reference catalog %s unreachable; '
+                             + 'try other catalog') % refcat)
+            goodfits, badfits = [], filenames
+            continue
 
         # translate source_tolerance into SCAMP properties
         #   code      SCAMP_code   keep

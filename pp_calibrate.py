@@ -64,6 +64,7 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                              display=False):
     """create a photometric catalog of the field of view"""
 
+    query_status = {}
     for catalogname in preferred_catalogs:
         cat = catalog(catalogname, display)
 
@@ -73,10 +74,17 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                                          use_all_stars=use_all_stars,
                                          save_catalog=True,
                                          max_mag=max_mag)
+        query_status[catalogname] = cat.query_status
 
         if display:
             print(n_sources, 'sources downloaded from', catalogname)
         if n_sources < min_sources:
+            if cat.query_status == 'unavailable':
+                logging.warning('%s unreachable, try other catalog' %
+                                catalogname)
+            else:
+                logging.info('%s: only %d sources in this field, '
+                             'try other catalog' % (catalogname, n_sources))
             continue
 
         if 'URAT' in catalogname:
@@ -214,6 +222,15 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                 continue
 
     # end up here if none of the catalogs has n_sources > min_sources
+    if query_status and all(s == 'unavailable'
+                            for s in query_status.values()):
+        if display:
+            print('ERROR: all reference catalogs unreachable (%s); '
+                  'check network / VizieR status' %
+                  ', '.join(query_status))
+        logging.error('all reference catalogs unreachable (%s)' %
+                      ', '.join(query_status))
+        return None
     if display:
         print('ERROR: not enough sources in reference catalog %s (%d)' %
               (catalogname, n_sources))

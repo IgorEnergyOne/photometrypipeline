@@ -77,8 +77,13 @@ end_atlas = """\n===============------------------------========================
 END OF OBJECT   """
 
 
-def form_atlas(filename_header, filename_photometry, use_reduced_mag=False, use_lt_corrected=False):
-    """forms atlas file from the resulting pipeline data and fits header"""
+def form_atlas(filename_header, filename_photometry, use_reduced_mag=False, use_lt_corrected=False,
+               orig_filter=None):
+    """forms atlas file from the resulting pipeline data and fits header
+
+    orig_filter overrides the observing filter read from the fits header (needed when
+    the header comes from an image taken in a different filter than the photometry)
+    """
     header = toolbox.get_fits_header(filename_header)
     obsparam = toolbox.get_obsparam(header)  # inst_sigma (reduced sigma) * 2**0.5- cal_sigma - zeropoint_sigma
     obs_dict = toolbox.init_obs_dict()
@@ -115,7 +120,8 @@ def form_atlas(filename_header, filename_photometry, use_reduced_mag=False, use_
     # get the photometric catalog used, drop the '_transformed' from the catalog name
     catalog = photometry_data['catalog'].iloc[0].replace('_transformed', '')
 
-    orig_filter = header.get(obsparam.get('filter'))
+    if orig_filter is None:
+        orig_filter = header.get(obsparam.get('filter'))
     # get the photo filter in which the images were processed (not the one in fits header)
     reduc_filter = photometry_data['band'].iloc[0]
 
@@ -150,7 +156,7 @@ def form_atlas(filename_header, filename_photometry, use_reduced_mag=False, use_
         "exptime": obsparam.get('exptime'),
         "airmass": obsparam.get('airmass'),
         "filter": reduc_filter,
-        "phot_system": toolbox.detect_phot_system(header.get(obsparam.get('filter'))),
+        "phot_system": toolbox.detect_phot_system(orig_filter),
         'relative_phot': 'F',
         'reduced_mag': 'T' if use_reduced_mag else 'F',
         'lt_corrected': 'T' if use_lt_corrected else 'F',
@@ -240,6 +246,8 @@ if __name__ == "__main__":
                         help='mark the ATLAS file as containing reduced magnitudes (sets REDUCED MAG.: T)')
     parser.add_argument('-use_lt_corrected', action='store_true', default=False,
                         help='mark the ATLAS file as lighttime-corrected (sets LT CORRECTED: T)')
+    parser.add_argument('-orig_filter', default=None,
+                        help='observing filter to report instead of the one in the fits header')
     parser.add_argument('-combine', nargs='+',
                         help='combine multiple ATLAS files. Can be a single file containing a list of paths, '
                              'or a list of directories containing .ATL files')
@@ -266,7 +274,8 @@ if __name__ == "__main__":
         exec(open(rootpath + '/setup/telescopes.py').read())
         text_atlas = form_atlas(filename_header, filename_photo,
                                 use_reduced_mag=args.use_reduced_mag,
-                                use_lt_corrected=args.use_lt_corrected)
+                                use_lt_corrected=args.use_lt_corrected,
+                                orig_filter=args.orig_filter)
         # transform text from UNIX to DOS format
         text_atlas = text_atlas.replace('\n', '\r\n')
         print('\n#-----------------------\nresulting ATLAS file:\n\n' + text_atlas)

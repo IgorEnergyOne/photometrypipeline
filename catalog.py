@@ -49,8 +49,10 @@ except ImportError:
     sys.exit()
 
 try:
+    import requests
     from astroquery.sdss import SDSS
-    from toolbox import ResilientVizier as Vizier
+    from astroquery.exceptions import RemoteServiceError
+    from toolbox import ResilientVizier as Vizier, CatalogUnavailableError
 except ImportError:
     print('Module astroquery not found. Please install with: pip install '
           'astroquery')
@@ -83,6 +85,9 @@ class catalog(object):
         self.magsys = ''  # [AB|Vega|instrumental]
         self.display = display
         self.filtername = None
+        # outcome of the last download_catalog() call:
+        # 'ok' | 'empty' (service answered, no sources) | 'unavailable'
+        self.query_status = None
 
     # data access functions
 
@@ -188,11 +193,41 @@ class catalog(object):
                (sort=['ascending', 'descending', None])
         return: number of sources downloaded
 
+        self.query_status tells why the result may be zero:
+          'ok'          - sources were retrieved
+          'empty'       - the service answered, but no sources matched
+                          (no coverage, or all rejected by filters/cuts)
+          'unavailable' - the service could not be reached or reported
+                          an error
+
         astrometric catalogs: ra_deg, dec_deg, e_ra_deg, e_dec_deg,
                               mag, e_mag, [epoch_jd, Gaia only]
         photometric catalogs: ra_deg, dec_deg, e_ra_deg, e_dec_deg,
                               [mags], [e_mags], epoch_jd
         """
+        self.query_status = None
+        try:
+            n_sources = self._download_catalog(ra_deg, dec_deg, rad_deg,
+                                               max_sources, save_catalog,
+                                               max_mag, use_all_stars)
+        except (CatalogUnavailableError, RemoteServiceError,
+                requests.RequestException) as exc:
+            if self.display:
+                print('catalog {:s} unreachable: {}'.format(
+                    self.catalogname, exc))
+            logging.error('catalog {:s} unreachable: {}'.format(
+                self.catalogname, exc))
+            self.query_status = 'unavailable'
+            return 0
+
+        if self.query_status is None:
+            self.query_status = 'ok' if n_sources > 0 else 'empty'
+        return n_sources
+
+    def _download_catalog(self, ra_deg, dec_deg, rad_deg,
+                          max_sources, save_catalog=False,
+                          max_mag=21, use_all_stars=False):
+        """query implementation behind download_catalog()"""
 
         # setup Vizier query
         # note: column filters uses original Vizier column names
@@ -776,9 +811,9 @@ class catalog(object):
                     if self.display:
                         print('no data available from {:s}'.format(
                             self.catalogname))
-                        logging.error('no data available from {:s}'.format(
-                            self.catalogname))
-                        return 0
+                    logging.error('no data available from {:s}'.format(
+                        self.catalogname))
+                    return 0
 
                 self.data = self.data[mask]
 
@@ -832,7 +867,7 @@ class catalog(object):
                 return 0
 
             # rename column names using PP conventions
-            self.data.rename_column('SDSS16', 'ident')
+            self.data.rename_column('objID', 'ident')
             self.data.rename_column('RA_ICRS', 'ra_deg')
             self.data.rename_column('DE_ICRS', 'dec_deg')
             self.data.rename_column('e_RA_ICRS', 'e_ra_deg')
@@ -851,6 +886,7 @@ class catalog(object):
                     self.catalogname))
             logging.error('catalog {:s} not available.'.format(
                 self.catalogname))
+            self.query_status = 'unavailable'
             return 0
 
         if self.display:

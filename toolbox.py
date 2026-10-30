@@ -34,7 +34,7 @@ from astropy.time import Time
 from astroquery.jplhorizons import Horizons
 from astroquery.jplsbdb import SBDB
 from astroquery.vizier import Vizier
-from astroquery.exceptions import RemoteServiceError
+from astroquery.exceptions import RemoteServiceError, TableParseError
 
 try:
     from past.utils import old_div
@@ -192,6 +192,11 @@ def load_vizier_mirrors(path):
     return mirrors
 
 
+class CatalogUnavailableError(Exception):
+    """Raised when a catalog service cannot be reached or reports an error,
+    as opposed to a successful query that simply returned no sources."""
+
+
 class ResilientVizier:
     """Transparent wrapper around :class:`astroquery.vizier.Vizier` that
     automatically switches to an alternative mirror on connection failure.
@@ -229,7 +234,15 @@ class ResilientVizier:
         requests.ConnectionError,
         requests.Timeout,
         requests.exceptions.ReadTimeout,
+        requests.HTTPError,
     )
+
+    # VizieR reports failures inside an HTTP 200 VOTable, e.g.
+    # <INFO name="QUERY_STATUS" value="ERROR">.  A genuinely empty query
+    # carries no QUERY_STATUS at all.
+    _QUERY_ERROR_RE = re.compile(
+        rb'<INFO[^>]*name="QUERY_STATUS"[^>]*value="ERROR"')
+    _ERROR_INFO_RE = re.compile(rb'<INFO[^>]*name="Error"[^>]*value="([^"]*)"')
 
     def __init__(self, **kwargs):
         """Accept the same keyword arguments as :class:`~astroquery.vizier.Vizier`."""
@@ -279,13 +292,44 @@ class ResilientVizier:
     # Public query methods (mirror the Vizier API)
     # ------------------------------------------------------------------
 
+    @classmethod
+    def _check_response(cls, vizier, response):
+        """Parse a raw VizieR response, raising if the service failed.
+
+        Returns a (possibly empty) ``TableList``.  An empty list means the
+        query succeeded but no sources matched.  Note that a truncated query
+        (``row_limit`` reached) reports QUERY_STATUS=OVERFLOW followed by
+        ERROR while still delivering rows, so ERROR only counts as a failure
+        when no rows came back.
+        """
+        response.raise_for_status()
+        if response.content[:5] != b'<?xml':
+            raise RemoteServiceError(
+                'non-VOTable response from {}'.format(response.url))
+        try:
+            result = vizier._parse_result(response)
+        except TableParseError as exc:
+            raise RemoteServiceError(str(exc))
+        if len(result) == 0 and cls._QUERY_ERROR_RE.search(response.content):
+            errors = [e.decode(errors='replace').strip() for e in
+                      cls._ERROR_INFO_RE.findall(response.content)]
+            raise RemoteServiceError(
+                '; '.join(e for e in errors if e) or 'QUERY_STATUS=ERROR')
+        return result
+
     def _run_with_failover(self, method_name, *args, **kwargs):
-        """Execute ``method_name`` on a real Vizier, retrying after mirror switch."""
+        """Execute ``method_name`` on a real Vizier, retrying after mirror switch.
+
+        Raises :class:`CatalogUnavailableError` once all retries are exhausted.
+        """
         last_exc = None
         for attempt in range(self.__class__.max_retries + 1):
             try:
                 v = self._build_vizier()
-                return getattr(v, method_name)(*args, **kwargs)
+                async_method = getattr(v, method_name + '_async', None)
+                if async_method is None:
+                    return getattr(v, method_name)(*args, **kwargs)
+                return self._check_response(v, async_method(*args, **kwargs))
             except self.__class__._NETWORK_ERRORS as exc:
                 last_exc = exc
                 logging.warning(
@@ -300,7 +344,8 @@ class ResilientVizier:
                     f"({exc}) – switching mirror"
                 )
                 self.__class__._switch_mirror()
-        raise last_exc  # re-raise if all retries exhausted
+        raise CatalogUnavailableError(
+            '{}: {}'.format(type(last_exc).__name__, last_exc)) from last_exc
 
     def query_region(self, *args, **kwargs):
         return self._run_with_failover('query_region', *args, **kwargs)
@@ -733,8 +778,11 @@ def get_full_name(asteroid_id) -> str:
         return name
 
 
-def init_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories.dat') -> dict:
+def init_obs_dict(dict_path: str = None) -> dict:
     """read the data with observatories locations and their codes"""
+    if dict_path is None:
+        photpipedir = os.environ.get('PHOTPIPEDIR', '')
+        dict_path = os.path.join(photpipedir, 'user_scripts/observatories.dat') if photpipedir else 'user_scripts/observatories.dat'
     obs_dict = {}
     with open(dict_path, 'r') as file:
         obs_file = file.readlines()[1:]
@@ -744,8 +792,11 @@ def init_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_script
     return obs_dict
 
 
-def init_mpc_obs_dict(dict_path: str = os.environ.get('PHOTPIPEDIR') + '/user_scripts/observatories_mpc.dat') -> dict:
+def init_mpc_obs_dict(dict_path: str = None) -> dict:
     """read the data with mpc observatories locations and their codes"""
+    if dict_path is None:
+        photpipedir = os.environ.get('PHOTPIPEDIR', '')
+        dict_path = os.path.join(photpipedir, 'user_scripts/observatories_mpc.dat') if photpipedir else 'user_scripts/observatories_mpc.dat'
     obs_dict = {}
     obs_file = pd.read_fwf(dict_path, colspecs=[(0, 4), (4, 14), (14, 23), (23, 33), (33, 200)])
     obs_file['Lat'] = obs_file.apply(lambda x: math.degrees(math.atan2(float(x['sin']), float(x['cos']))), axis=1)
