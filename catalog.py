@@ -52,7 +52,8 @@ try:
     import requests
     from astroquery.sdss import SDSS
     from astroquery.exceptions import RemoteServiceError
-    from toolbox import ResilientVizier as Vizier, CatalogUnavailableError
+    from toolbox import CatalogUnavailableError
+    from catalog_providers import fetch_raw
 except ImportError:
     print('Module astroquery not found. Please install with: pip install '
           'astroquery')
@@ -224,23 +225,40 @@ class catalog(object):
             self.query_status = 'ok' if n_sources > 0 else 'empty'
         return n_sources
 
+    def _fetch(self, field, rad_deg, max_sources, max_mag):
+        """
+        query self.catalogname through its configured providers
+        (catalog_providers.fetch_raw); sets self.origin
+        return: astropy table with original VizieR column names, or
+                None if no sources are available
+        """
+        data, self.origin = fetch_raw(self.catalogname, field, rad_deg,
+                                      max_sources, max_mag, self.display)
+        if data is None:
+            if self.display:
+                print('no data available from {:s}'.format(
+                    self.catalogname))
+            logging.error('no data available from {:s}'.format(
+                self.catalogname))
+        return data
+
     def _download_catalog(self, ra_deg, dec_deg, rad_deg,
                           max_sources, save_catalog=False,
                           max_mag=21, use_all_stars=False):
         """query implementation behind download_catalog()"""
 
-        # setup Vizier query
-        # note: column filters uses original Vizier column names
-        # -> green column names in Vizier
+        # catalogs are queried through catalog_providers; every provider
+        # returns original VizieR column names (-> green column names in
+        # VizieR), which are renamed to PP conventions below
 
         if self.display:
-            print(('query Vizier for {:s} at {:7.3f}/{:+.3f} in '
+            print(('query {:s} at {:7.3f}/{:+.3f} in '
                    + 'a {:.2f} deg radius').format(self.catalogname,
                                                    ra_deg, dec_deg,
                                                    rad_deg),
                   end=' ', flush=True)
 
-        logging.info(('query Vizier for {:s} at {:7.3f}/{:+.3f} in '
+        logging.info(('query {:s} at {:7.3f}/{:+.3f} in '
                       + 'a {:.2f} deg radius').format(self.catalogname,
                                                       ra_deg, dec_deg,
                                                       rad_deg))
@@ -250,32 +268,11 @@ class catalog(object):
 
         # -----------------------------------------------------------------
 
-        # use vizier query for Pan-STARRS
+        # Pan-STARRS
         if self.catalogname == 'PANSTARRS':
 
-            vquery = Vizier(columns=['objID', 'RAJ2000', 'DEJ2000',
-                                     'e_RAJ2000', 'e_DEJ2000',
-                                     'gmag', 'e_gmag',
-                                     'rmag', 'e_rmag',
-                                     'imag', 'e_imag',
-                                     'zmag', 'e_zmag',
-                                     'ymag', 'e_ymag'],
-                            column_filters={"rmag":
-                                            ("<{:f}".format(max_mag))},
-                            row_limit=max_sources,
-                            timeout=300)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="II/349/ps1",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -305,29 +302,8 @@ class catalog(object):
 
         elif self.catalogname == 'PANSTARRS_KB':
 
-            vquery = Vizier(columns=['objID', 'RAJ2000', 'DEJ2000',
-                                     'e_RAJ2000', 'e_DEJ2000',
-                                     'gmag', 'e_gmag',
-                                     'rmag', 'e_rmag',
-                                     'imag', 'e_imag',
-                                     'zmag', 'e_zmag',
-                                     'ymag', 'e_ymag'],
-                            column_filters={"rmag":
-                                            ("<{:f}".format(max_mag))},
-                            row_limit=max_sources,
-                            timeout=300)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="II/349/ps1",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -357,23 +333,8 @@ class catalog(object):
         # --------------------------------------------------------------------
         # use astroquery vizier query for SkyMapper
         elif self.catalogname == 'SkyMapper':
-            vquery = Vizier(columns=['all'],
-                            column_filters={"rPSF":
-                                            ("<{:f}".format(max_mag))},
-                            row_limit=max_sources,
-                            timeout=300)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="II/358/smss",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # throw out columns we don't need
@@ -418,29 +379,8 @@ class catalog(object):
 
         elif self.catalogname == 'GAIA':
             # astrometric and photometric catalog (as of DR2)
-            vquery = Vizier(columns=['Source', 'RA_ICRS', 'DE_ICRS',
-                                     'e_RA_ICRS', 'e_DE_ICRS', 'pmRA',
-                                     'pmDE', 'Epoch',
-                                     'Gmag', 'e_Gmag',
-                                     'BPmag', 'e_BPmag',
-                                     'RPmag', 'eRPmag', 'Var'],
-                            column_filters={"phot_g_mean_mag":
-                                                ("<{:f}".format(max_mag)),
-                                            "Var": "!=VARIABLE"},  #remove variable stars from the catalog
-                            row_limit=max_sources,
-                            timeout=300)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="I/345/gaia2",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -462,31 +402,10 @@ class catalog(object):
 
         elif self.catalogname == 'GAIA3':
             # astrometric and photometric catalog (as of DR2)
-            vquery = Vizier(columns=['Source', 'RA_ICRS', 'DE_ICRS',
-                                     'e_RA_ICRS', 'e_DE_ICRS', 'pmRA',
-                                     'pmDE', 'Epoch',
-                                     'Gmag', 'e_Gmag',
-                                     'BPmag', 'e_BPmag',
-                                     'RPmag', 'e_RPmag', 'VarFlag'],
-                            column_filters={"phot_g_mean_mag":
-                                                ("<{:f}".format(max_mag)),
-                                            "VarFlag": "!=VARIABLE"},  # remove variable stars from the catalog
-                            row_limit=max_sources,
-                            timeout=300)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="I/355/gaiadr3",
-                                                cache=False)[0]
-                self.data['Epoch'] = 2016.0
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
+            self.data['Epoch'] = 2016.0
             # rename column names using PP conventions
             self.data.rename_column('Source', 'ident')
             self.data.rename_column('RA_ICRS', 'ra_deg')
@@ -506,25 +425,8 @@ class catalog(object):
 
         elif self.catalogname == 'USNO-B1':
             # astrometric and photometric catalog
-            vquery = Vizier(columns=['USNO-B1.0', 'RAJ2000', 'DEJ2000',
-                                     'e_RAJ2000', 'e_DEJ2000',
-                                     'R2mag'],
-                            column_filters={"R2mag":
-                                                ("<{:f}".format(max_mag))},
-                            row_limit=max_sources,
-                            timeout=300)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="I/284/out",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -541,25 +443,8 @@ class catalog(object):
 
         elif self.catalogname == 'TGAS':
             # astrometric catalog
-            vquery = Vizier(columns=['Source', 'RA_ICRS', 'DE_ICRS',
-                                     'e_RA_ICRS', 'e_DE_ICRS', 'pmRA',
-                                     'pmDE', 'phot_g_mean_mag'],
-                            column_filters={"phot_g_mean_mag":
-                                                ("<{:f}".format(max_mag))},
-                            row_limit=max_sources,
-                            timeout=300)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="I/337/tgas",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -581,25 +466,8 @@ class catalog(object):
 
         elif self.catalogname == '2MASS':
             # photometric catalog
-            vquery = Vizier(columns=['2MASS', 'RAJ2000', 'DEJ2000', 'errMaj',
-                                     'errMin', 'errPA', 'Jmag', 'e_Jmag',
-                                     'Hmag', 'e_Hmag', 'Kmag', 'e_Kmag',
-                                     'Qflg', 'Rflg'],
-                            column_filters={"Jmag":
-                                                ("<{:f}".format(max_mag))},
-                            row_limit=max_sources)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="II/246/out",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # filter columns to only have really good detections
@@ -650,23 +518,8 @@ class catalog(object):
 
         elif self.catalogname == 'URAT-1':
             # astrometric catalog
-            vquery = Vizier(columns=['URAT1', 'RAJ2000', 'DEJ2000',
-                                     'sigm', 'f.mag', 'e_f.mag', ],
-                            column_filters={"f.mag":
-                                                ("<{:f}".format(max_mag))},
-                            row_limit=max_sources)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="I/329/urat1",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -688,26 +541,8 @@ class catalog(object):
 
         elif self.catalogname == 'APASS9':
             # photometric catalog
-            vquery = Vizier(columns=['recno', 'RAJ2000', 'DEJ2000',
-                                     'e_RAJ2000',
-                                     'e_DEJ2000', 'Vmag', 'e_Vmag',
-                                     'Bmag', 'e_Bmag', "g'mag", "e_g'mag",
-                                     "r'mag", "e_r'mag", "i'mag", "e_i'mag"],
-                            column_filters={"Vmag":
-                                                ("<{:f}".format(max_mag))},
-                            row_limit=max_sources)
-
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="II/336/apass9",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -729,27 +564,8 @@ class catalog(object):
             self.data.rename_column("e_i'mag", 'e_imag')
 
         elif self.catalogname == 'SDSS-R9':
-            vquery = Vizier(columns=['SDSS9', 'RA_ICRS', 'DE_ICRS',
-                                     'e_RA_ICRS',
-                                     'e_DE_ICRS', 'umag', 'e_umag',
-                                     'gmag', 'e_gmag', 'rmag', 'e_rmag',
-                                     'imag', 'e_imag', 'zmag', 'e_zmag'],
-                            column_filters={"gmag":
-                                                ("<{:f}".format(max_mag)),
-                                            "mode": "1",
-                                            "q_mode": "+"},
-                            row_limit=max_sources)
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="V/139/sdss9",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -845,25 +661,8 @@ class catalog(object):
             self.data['e_dec_deg'] = self.data['e_dec_deg'] * u.arcsec
 
         elif self.catalogname == 'SDSS-R16':
-            vquery = Vizier(columns=['objID', 'RA_ICRS', 'DE_ICRS',
-                                     'e_RA_ICRS',
-                                     'e_DE_ICRS', 'umag', 'e_umag',
-                                     'gmag', 'e_gmag', 'rmag', 'e_rmag',
-                                     'imag', 'e_imag', 'zmag', 'e_zmag'],
-                            column_filters={"gmag":
-                                                ("<{:f}".format(max_mag))},
-                            row_limit=max_sources)
-            try:
-                self.data = vquery.query_region(field,
-                                                radius=rad_deg * u.deg,
-                                                catalog="V/154/sdss16",
-                                                cache=False)[0]
-            except IndexError:
-                if self.display:
-                    print('no data available from {:s}'.format(
-                        self.catalogname))
-                logging.error('no data available from {:s}'.format(
-                    self.catalogname))
+            self.data = self._fetch(field, rad_deg, max_sources, max_mag)
+            if self.data is None:
                 return 0
 
             # rename column names using PP conventions
@@ -991,7 +790,8 @@ class catalog(object):
 
         # create header table
         hdr_col = fits.Column(name='Field Header Card', format='1680A',
-                              array=["obtained through Vizier"])
+                              array=["obtained through {:s}".format(
+                                  self.origin or 'Vizier')])
         hdrhdu = fits.BinTableHDU.from_columns(fits.ColDefs([hdr_col]))
         hdrhdu.header['EXTNAME'] = ('LDAC_IMHEAD')
         # hdrhdu.header['TDIM1'] = ('(80, 36)') # remove?

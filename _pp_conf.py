@@ -173,6 +173,28 @@ allcatalogs_magsys = {'URAT-1': 'Vega',
                       'SkyMapper': 'AB',
                       'USNO-B1': 'Vega'}
 
+# catalog query providers, tried in this order until one answers
+# (see catalog_providers.py); catalogs not listed use ['vizier'] only
+#   'mast'      - MAST Pan-STARRS1 mean-object table
+#   'gaia_tap'  - ESA Gaia archive
+#   'gaia_apass9' - APASS DR9 copy in the ESA Gaia archive
+#   'irsa'      - IRSA 2MASS point source catalog
+#   'skyserver' - SDSS SkyServer (DR12 for SDSS-R9, DR16 for SDSS-R16)
+catalog_providers = {'PANSTARRS': ['mast', 'vizier'],
+                     'PANSTARRS_KB': ['mast', 'vizier'],
+                     'GAIA': ['gaia_tap', 'vizier'],
+                     'GAIA3': ['vizier', 'gaia_tap'],
+                     '2MASS': ['vizier', 'irsa'],
+                     'APASS9': ['gaia_apass9', 'vizier'],
+                     'SDSS-R9': ['skyserver', 'vizier'],
+                     'SDSS-R16': ['skyserver', 'vizier']}
+
+# after a provider fails, skip it for this many seconds (per catalog)
+provider_cooldown_s = 900
+
+# Pan-STARRS1 data release used by the MAST provider ('dr1' or 'dr2')
+mast_ps1_release = 'dr2'
+
 # ---- pipeline preferences
 # (if you don't know what you're doing, better don't mess around here)
 
