@@ -164,9 +164,11 @@ def _mast_ps1(catalogname, field, rad_deg, max_sources, max_mag):
     from astroquery.mast import Catalogs
 
     if rad_deg > MAST_MAX_RADIUS_DEG:
-        raise CatalogUnavailableError(
-            'MAST PS1 radius {:.2f} deg exceeds {:.1f} deg limit'.format(
-                rad_deg, MAST_MAX_RADIUS_DEG))
+        logging.warning(
+            'MAST PS1 radius {:.3f} deg exceeds {:.1f} deg limit; '
+            'clamping query radius to {:.1f} deg'.format(
+                rad_deg, MAST_MAX_RADIUS_DEG, MAST_MAX_RADIUS_DEG))
+        rad_deg = MAST_MAX_RADIUS_DEG
 
     release = getattr(_pp_conf, 'mast_ps1_release', 'dr2')
     bands = 'grizy'
