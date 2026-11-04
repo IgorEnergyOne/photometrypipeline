@@ -55,6 +55,11 @@ logging.basicConfig(filename=_pp_conf.log_filename,
 # photometric fitting routines
 
 
+def _outside_window(color, lo, hi):
+    """True where color is outside [lo, hi] or unknown (NaN)"""
+    return ~((color >= lo) & (color <= hi))
+
+
 def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
                              preferred_catalogs,
                              min_sources=_pp_conf.min_sources_photometric_catalog,
@@ -101,52 +106,39 @@ def create_photometrycatalog(ra_deg, dec_deg, rad_deg, filtername,
             sol_JH = 0.29  # J-H
             n_rejected = 0
             n_raw = cat.shape[0]
+            # colors outside the solar window or unknown (NaN) are rejected
+            solcol = _pp_conf.solcol
             if ('SDSS' in cat.catalogname or
                     'APASS' in cat.catalogname):
-                n_rejected += cat.reject_sources_with(
-                    (cat['gmag']-cat['rmag']) < sol_gr-_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['gmag']-cat['rmag']) > sol_gr+_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['rmag']-cat['imag']) < sol_ri-_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['rmag']-cat['imag']) > sol_ri+_pp_conf.solcol)
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['gmag']-cat['rmag'], sol_gr-solcol, sol_gr+solcol))
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['rmag']-cat['imag'], sol_ri-solcol, sol_ri+solcol))
             elif 'SkyMapper' in cat.catalogname:
                 cat.transform_filters('g')  # derive Sloan griz
-                n_rejected += cat.reject_sources_with(
-                    (cat['_gmag']-cat['_rmag']) < sol_gr-_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_gmag']-cat['_rmag']) > sol_gr+_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_rmag']-cat['_imag']) < sol_ri-_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_rmag']-cat['_imag']) > sol_ri+_pp_conf.solcol)
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['_gmag']-cat['_rmag'], sol_gr-solcol, sol_gr+solcol))
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['_rmag']-cat['_imag'], sol_ri-solcol, sol_ri+solcol))
             elif 'PANSTARRS' in cat.catalogname:
                 cat.transform_filters('g')
                 # derive Sloan griz
-                n_rejected += cat.reject_sources_with(
-                    (cat['_gmag']-cat['_rmag']) < sol_gr-_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_gmag']-cat['_rmag']) > sol_gr+_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_rmag']-cat['_imag']) < sol_ri-_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_rmag']-cat['_imag']) > sol_ri+_pp_conf.solcol)
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['_gmag']-cat['_rmag'], sol_gr-solcol, sol_gr+solcol))
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['_rmag']-cat['_imag'], sol_ri-solcol, sol_ri+solcol))
             elif 'GAIA' in cat.catalogname:
                 cat.transform_filters('g')  # derive Sloan gri
-                n_rejected += cat.reject_sources_with(
-                    (cat['_gmag']-cat['_rmag']) < sol_gr-_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_gmag']-cat['_rmag']) > sol_gr+_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_rmag']-cat['_imag']) < sol_ri-_pp_conf.solcol)
-                n_rejected += cat.reject_sources_with(
-                    (cat['_rmag']-cat['_imag']) > sol_ri+_pp_conf.solcol)
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['_gmag']-cat['_rmag'], sol_gr-solcol, sol_gr+solcol))
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['_rmag']-cat['_imag'], sol_ri-solcol, sol_ri+solcol))
             elif '2MASS' in cat.catalogname:
                 # derive UKIRT ZJHK (Casagrande et al. 2012)
                 cat.transform_filters('K')
-                n_rejected += cat.reject_sources_with(
-                    (cat['_Jmag']-cat['_Hmag']) < sol_JH-_pp_conf.solcol)
+                # lower limit only (as before)
+                n_rejected += cat.reject_sources_with(_outside_window(
+                    cat['_Jmag']-cat['_Hmag'], sol_JH-solcol, np.inf))
             else:
                 if display:
                     print('Warning: solar colors not supported for catalog',

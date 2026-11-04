@@ -74,6 +74,26 @@ logging.basicConfig(filename=_pp_conf.log_filename,
                     datefmt=_pp_conf.log_datefmt)
 
 
+def _masked_to_nan(table):
+    """replace masked float columns with plain columns holding NaN
+
+    Catalog providers mark missing values (e.g., Pan-STARRS -999 for
+    magnitudes or errors without valid measurements) as masked. Masks
+    do not survive comparisons (evaluated on the underlying value) and
+    arithmetic followed by Column(), so missing values would silently
+    turn into numbers (e.g., errors of 0). Downstream code treats NaN
+    as missing, hence masked float values are converted to NaN.
+    """
+    for name in table.colnames:
+        col = table[name]
+        if hasattr(col, 'mask') and col.dtype.kind == 'f':
+            table.replace_column(name, Column(
+                col.filled(np.nan), name=name, unit=col.unit,
+                description=col.description, format=col.format,
+                meta=col.meta))
+    return table
+
+
 class catalog(object):
     def __init__(self, catalogname, display=False):
         self.data = None  # will be an astropy table
@@ -240,7 +260,8 @@ class catalog(object):
                     self.catalogname))
             logging.error('no data available from {:s}'.format(
                 self.catalogname))
-        return data
+            return data
+        return _masked_to_nan(data)
 
     def _download_catalog(self, ra_deg, dec_deg, rad_deg,
                           max_sources, save_catalog=False,
