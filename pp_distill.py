@@ -274,9 +274,9 @@ def moving_primary_target(catalogs, man_targetname, offset, is_asteroid=None,
                     logging.warning('  aspect field %s not available in '
                                     'Horizons response: %s' % (col, e))
             objects.append(obj_entry)
-            logging.info('Successfully grabbed Horizons position for %s ' %
+            logging.debug('Successfully grabbed Horizons position for %s ' %
                          cat.obj.replace('_', ' '))
-            logging.info('HORIZONS call: %s' % obj.uri)
+            logging.debug('HORIZONS call: %s' % obj.uri)
             if display and not message_shown:
                 print(cat.obj.replace('_', ' '), "identified")
                 message_shown = True
@@ -585,7 +585,7 @@ def distill(catalogs, man_targetname, offset, fixed_targets_file, posfile,
                                 'for key %s — aspect data was not retrieved '
                                 'properly (check moving_primary_target logs)' % str(key))
             else:
-                logging.info('aspect_lookup: stored aspect data for key %s: %s'
+                logging.debug('aspect_lookup: stored aspect data for key %s: %s'
                              % (str(key), aspect_data))
             aspect_lookup[key] = aspect_data
     logging.info('aspect_lookup has %d entries; keys: %s'
