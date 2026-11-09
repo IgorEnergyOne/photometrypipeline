@@ -5,12 +5,12 @@ Every reference catalog is queried through an ordered list of providers
 (_pp_conf.catalog_providers; default: VizieR only). The first provider
 that answers wins; a provider that fails is skipped and the next one is
 tried. Each non-VizieR provider returns its table with the same raw
-column names and units as the corresponding VizieR query, so the
-catalog-specific post-processing in catalog._download_catalog() is
-identical regardless of where the data came from.
+column names and units as the corresponding VizieR query, so the post-processing 
+in catalog._download_catalog() is identical regardless of where the data came from.
 """
 
 import http.client
+import io
 import logging
 import time
 
@@ -18,7 +18,7 @@ import numpy as np
 import requests
 import astropy.units as u
 from astropy.io import ascii
-from astropy.table import MaskedColumn
+from astropy.table import MaskedColumn, Table
 from astroquery.exceptions import RemoteServiceError
 from astroquery.exceptions import TimeoutError as AstroqueryTimeoutError
 
@@ -35,6 +35,18 @@ except ImportError:
 UNAVAILABLE_ERRORS = (CatalogUnavailableError, RemoteServiceError,
                       AstroqueryTimeoutError, http.client.HTTPException,
                       OSError) + _PYVO_ERRORS  # OSError covers requests
+
+
+# ARI Heidelberg TAP service URL for Gaia catalogs
+ARI_TAP_SYNC_URL = 'https://gaia.ari.uni-heidelberg.de/tap/sync'
+
+# zero-point uncertainties VizieR adds to Gaia magnitude errors
+_GAIA_SIGMA0 = {'g': 0.0027553202, 'bp': 0.0027901700, 'rp': 0.0037793818}
+
+
+# Gaia release -> (TAP table, epoch, name of the VizieR variability column)
+_GAIA_RELEASES = {'GAIA': ('gaiadr2.gaia_source', 2015.5, 'Var'),
+                  'GAIA3': ('gaiadr3.gaia_source', 2016.0, 'VarFlag')}
 
 # ---------------------------------------------------------------------------
 # VizieR query definitions (column names are original VizieR names)
@@ -200,35 +212,24 @@ def _mast_ps1(catalogname, field, rad_deg, max_sources, max_mag):
     _set_units(tab, {m: u.mag for m in mags})
     return tab, origin
 
+def _gaia_adql(table, field, rad_deg, max_sources, max_mag):
+    """ADQL cone search of a gaia_source table, without variable stars"""
+    return ("SELECT TOP {:d} source_id, ra, dec, ra_error, dec_error, "
+            "pmra, pmdec, "
+            "phot_g_mean_mag, phot_g_mean_flux_over_error, "
+            "phot_bp_mean_mag, phot_bp_mean_flux_over_error, "
+            "phot_rp_mean_mag, phot_rp_mean_flux_over_error, "
+            "phot_variable_flag FROM {:s} "
+            "WHERE 1=CONTAINS(POINT('ICRS', ra, dec), "
+            "CIRCLE('ICRS', {:.8f}, {:.8f}, {:.8f})) "
+            "AND phot_g_mean_mag < {:f} "
+            "AND phot_variable_flag != 'VARIABLE'").format(
+                int(max_sources), table, field.ra.deg, field.dec.deg,
+                rad_deg, max_mag)
 
-# zero-point uncertainties VizieR adds to Gaia magnitude errors
-_GAIA_SIGMA0 = {'g': 0.0027553202, 'bp': 0.0027901700, 'rp': 0.0037793818}
 
-
-def _gaia_tap(catalogname, field, rad_deg, max_sources, max_mag):
-    """ESA Gaia archive TAP (raw VizieR I/345 or I/355 names)"""
-    from astroquery.gaia import Gaia
-
-    table, epoch, varcol = {'GAIA': ('gaiadr2.gaia_source', 2015.5, 'Var'),
-                            'GAIA3': ('gaiadr3.gaia_source', 2016.0,
-                                      'VarFlag')}[catalogname]
-    query = ("SELECT TOP {:d} source_id, ra, dec, ra_error, dec_error, "
-             "pmra, pmdec, "
-             "phot_g_mean_mag, phot_g_mean_flux_over_error, "
-             "phot_bp_mean_mag, phot_bp_mean_flux_over_error, "
-             "phot_rp_mean_mag, phot_rp_mean_flux_over_error, "
-             "phot_variable_flag FROM {:s} "
-             "WHERE 1=CONTAINS(POINT('ICRS', ra, dec), "
-             "CIRCLE('ICRS', {:.8f}, {:.8f}, {:.8f})) "
-             "AND phot_g_mean_mag < {:f} "
-             "AND phot_variable_flag != 'VARIABLE'").format(
-                 int(max_sources), table, field.ra.deg, field.dec.deg,
-                 rad_deg, max_mag)
-    tab = Gaia.launch_job_async(query, verbose=False).get_results()
-    origin = 'ESA Gaia archive {:s}'.format(table)
-    if len(tab) == 0:
-        return None, origin
-
+def _gaia_to_vizier(tab, epoch, varcol):
+    """convert a gaia_source result to raw VizieR names and units"""
     for band, name in (('g', 'G'), ('bp', 'BP'), ('rp', 'RP')):
         foe = np.ma.asarray(tab['phot_{:s}_mean_flux_over_error'.format(band)],
                             dtype=float)
@@ -248,7 +249,42 @@ def _gaia_tap(catalogname, field, rad_deg, max_sources, max_mag):
     _set_units(tab, {'RA_ICRS': u.deg, 'DE_ICRS': u.deg,
                      'e_RA_ICRS': u.mas, 'e_DE_ICRS': u.mas,
                      'Gmag': u.mag, 'BPmag': u.mag, 'RPmag': u.mag})
-    return tab, origin
+    return tab
+
+
+def _gaia_tap(catalogname, field, rad_deg, max_sources, max_mag):
+    """ESA Gaia archive TAP (raw VizieR I/345 or I/355 names)"""
+    from astroquery.gaia import Gaia
+
+    table, epoch, varcol = _GAIA_RELEASES[catalogname]
+    query = _gaia_adql(table, field, rad_deg, max_sources, max_mag)
+    tab = Gaia.launch_job_async(query, verbose=False).get_results()
+    origin = 'ESA Gaia archive {:s}'.format(table)
+    if len(tab) == 0:
+        return None, origin
+    return _gaia_to_vizier(tab, epoch, varcol), origin
+
+
+def _gaia_ari(catalogname, field, rad_deg, max_sources, max_mag):
+    """ARI Heidelberg Gaia TAP service (raw VizieR I/345 or I/355 names)"""
+    table, epoch, varcol = _GAIA_RELEASES[catalogname]
+    query = _gaia_adql(table, field, rad_deg, max_sources, max_mag)
+    response = requests.post(ARI_TAP_SYNC_URL,
+                             data={'REQUEST': 'doQuery', 'LANG': 'ADQL',
+                                   'FORMAT': 'votable', 'QUERY': query},
+                             timeout=300)
+    response.raise_for_status()
+    origin = 'ARI Heidelberg {:s}'.format(table)
+
+    if (response.content[:5] != b'<?xml'
+            or Vizier._QUERY_ERROR_RE.search(response.content)):
+        raise RemoteServiceError('ARI Heidelberg: {:s}'.format(
+            response.text[:200].strip()))
+
+    tab = Table.read(io.BytesIO(response.content), format='votable')
+    if len(tab) == 0:
+        return None, origin
+    return _gaia_to_vizier(tab, epoch, varcol), origin
 
 
 def _gaia_apass9(catalogname, field, rad_deg, max_sources, max_mag):
@@ -365,6 +401,7 @@ def _skyserver(catalogname, field, rad_deg, max_sources, max_mag):
 PROVIDERS = {'vizier': (_vizier, 'VizieR'),
              'mast': (_mast_ps1, 'MAST'),
              'gaia_tap': (_gaia_tap, 'Gaia archive'),
+             'gaia_ari': (_gaia_ari, 'ARI Heidelberg'),
              'gaia_apass9': (_gaia_apass9, 'Gaia archive'),
              'irsa': (_irsa_2mass, 'IRSA'),
              'skyserver': (_skyserver, 'SkyServer')}

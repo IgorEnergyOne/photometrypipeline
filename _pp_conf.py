@@ -174,16 +174,18 @@ allcatalogs_magsys = {'URAT-1': 'Vega',
                       'USNO-B1': 'Vega'}
 
 # catalog query providers, tried in this order until one answers
+# added as a consequence of unreliable work of the Vizier service (see catalog_providers.py)
 # (see catalog_providers.py); catalogs not listed use ['vizier'] only
 #   'mast'      - MAST Pan-STARRS1 mean-object table
 #   'gaia_tap'  - ESA Gaia archive
+#   'gaia_ari'  - ARI Heidelberg copy of the Gaia catalogs
 #   'gaia_apass9' - APASS DR9 copy in the ESA Gaia archive
 #   'irsa'      - IRSA 2MASS point source catalog
 #   'skyserver' - SDSS SkyServer (DR12 for SDSS-R9, DR16 for SDSS-R16)
 catalog_providers = {'PANSTARRS': ['mast', 'vizier'],
                      'PANSTARRS_KB': ['mast', 'vizier'],
                      'GAIA': ['gaia_tap', 'vizier'],
-                     'GAIA3': ['vizier', 'gaia_tap'],
+                     'GAIA3': ['gaia_ari', 'gaia_tap', 'vizier'],
                      '2MASS': ['vizier', 'irsa'],
                      'APASS9': ['gaia_apass9', 'vizier'],
                      'SDSS-R9': ['skyserver', 'vizier'],
